@@ -17,9 +17,9 @@ async def test_seed_is_not_part_of_the_recipe_hash(factory):
     assert a.run_key.seed != b.run_key.seed and a.run_key.as_str() != b.run_key.as_str()
 
 
-async def test_seeds_pool_into_one_cell(factory, tmp_path):
+async def test_seeds_pool_into_one_cell(factory, tmp_path, p0_tasks):
     factory.store = ResultsStore(f"sqlite:///{tmp_path / 'r.db'}")
-    await smoke(factory, "v2-base", "scripted", ["scripted/replay"], seeds=3)
+    await smoke(factory, "v2-base", "scripted", ["scripted/replay"], seeds=3, concurrency=4, task_ids=p0_tasks)
     _, cells = factory.store.aggregate()
     assert {c.e.n for c in cells if c.task_class.startswith("SINGLE_STEP|READ")} == {3}
 

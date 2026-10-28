@@ -22,7 +22,7 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.1"]
 mlops = ["mlflow>=2.14"]
 inspect = ["inspect-ai>=0.3.285,<0.4"]        # optional outer shell; see docs/adr/0001-inspect-ai.md
-dev = ["pytest>=8", "pytest-asyncio>=1.0", "ruff>=0.15"]
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15"]
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

@@ -39,10 +39,12 @@ def _exec(sb, *code_lines):
                           check=False, capture_output=True, text=True, timeout=60)
 
 
-def _hf_containers():
-    out = subprocess.run([settings.DOCKER_BIN, "ps", "-aq", "--filter", "label=hf.sandbox=1"],
+def _existing(names) -> set[str]:
+    """Which of these containers still exist. Only this test's own containers are checked: tests run in
+    parallel, so other hf containers may be alive at any moment."""
+    out = subprocess.run([settings.DOCKER_BIN, "ps", "-a", "--format", "{{.Names}}", "--filter", "label=hf.sandbox=1"],
                          check=True, capture_output=True, text=True, timeout=30)
-    return out.stdout.split()
+    return set(out.stdout.split()) & set(names)
 
 
 # ------------------------------------------------------------- no Docker needed
@@ -89,14 +91,21 @@ def test_unknown_sandbox_kind_is_rejected():
 
 async def test_runs_and_grades_identically_in_docker(factory, docker_required, monkeypatch):
     monkeypatch.setattr(settings, "SANDBOX", "docker")
-    before = set(_hf_containers())
+    started = []
+    real_run_args = DockerSandbox.run_args
+
+    def recording_run_args(self):
+        started.append(self.container)
+        return real_run_args(self)
+
+    monkeypatch.setattr(DockerSandbox, "run_args", recording_run_args)
     for task_id in ("fs-02", "sql-02"):
         rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v2-base"], "scripted/replay",
                             "scripted")
         assert rec.status.value == "SUCCESS", rec.grades
         snap = next(g for g in rec.grades if g["grader_id"] == "state_diff")["snapshot"]
         assert snap["sandbox"] == "docker" and snap["sandbox_image"].startswith("hf-sandbox:")
-    assert set(_hf_containers()) == before                 # every container removed after its run
+    assert len(started) == 2 and not _existing(started)    # every container removed after its run
 
 
 def test_no_network(sandbox):
@@ -144,10 +153,9 @@ async def test_mcp_servers_run_inside_the_container(factory, sandbox):
 
 
 def test_failed_start_leaves_no_container(factory, docker_required):
-    before = set(_hf_containers())
     sb = DockerSandbox("dk-fail")
     sb.run_args = lambda: ["run", "-d", "--name", sb.container, "--label", "hf.sandbox=1", sb.image, "/nonexistent"]
     with pytest.raises(HarnessError):
         sb.reset(factory.tasks.get("fs-01"))
     sb.teardown()
-    assert set(_hf_containers()) == before
+    assert not _existing([sb.container])
