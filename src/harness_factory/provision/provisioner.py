@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
-from harness_factory.env.sandbox import LocalSandbox
+from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.observability.tracer import Tracer
@@ -95,13 +95,13 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                            backend=backend or backend_for(provider.kind, canonical_model, task),
                            retries=recipe.config.retries, backoff_s=recipe.config.backoff_s)
 
-    sandbox = LocalSandbox(label=task.id)
+    sandbox = make_sandbox(label=task.id)
     try:
         sandbox.reset(task)
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
-        async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env()) as pool:
+        async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str())
             assembler = assembler or PromptAssembler()
             messages = assembler.assemble(recipe, task, sorted(model_name(r) for r in allowed))
@@ -112,7 +112,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                 snapshot={"prompt_hash": PromptAssembler.prompt_hash(
                               messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,
-                          "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed)},
+                          "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
+                          **sandbox.describe()},
             )
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,
                               task_class=task_class(task, declared), weight_profile=weight_profile(task, declared))

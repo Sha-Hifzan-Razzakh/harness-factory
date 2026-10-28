@@ -12,6 +12,7 @@ uv run ruff check src tests
 uv run hfx validate                 # recipes vs tools.yaml, prompts, tiers
 uv run hfx reference                # every task's reference.py passes its own oracle
 uv run hfx smoke --models scripted/replay --strict   # offline P0 gate, same as CI
+HF_SANDBOX=docker uv run hfx smoke --models scripted/replay --strict   # same, inside containers
 ```
 
 The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its own `hf`.
@@ -38,6 +39,9 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **Isolation.** Every run gets a fresh sandbox. Nothing may read or write outside `HF_WORKSPACE` / `HF_DB`.
+  The Docker isolation contract is `DockerSandbox.run_args()`; weakening any flag must fail
+  `tests/test_docker_sandbox.py`. A new MCP server module goes in `env/mcp/impl/` so the sandbox image picks
+  it up (`SERVER_FILES`), and may import only `mcp` and the standard library.
 - **Secrets.** Only in `.env` / environment. Never in recipes, prompts, task files, traces or test fixtures.
 - **Budget semantics.** `max_steps` counts model calls and gates only the next model call; the tool calls a step
   asked for still run. Tool, token and wall-time limits gate everything.

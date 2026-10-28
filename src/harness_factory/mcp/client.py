@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from enum import Enum
 from typing import Any
@@ -12,6 +14,8 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from pydantic import BaseModel
 
 from harness_factory.env.mcp.servers import MCPServerSpec
+
+Launcher = Callable[[MCPServerSpec], tuple[str, list[str], dict[str, str]]]
 
 
 class Transport(str, Enum):
@@ -48,9 +52,10 @@ class ToolResult(BaseModel):
 class MCPClient:
     """Async context manager. Elicitation and sampling are refused in P0 (MCP-06, MCP-07 arrive in P3)."""
 
-    def __init__(self, spec: MCPServerSpec, env: dict[str, str]) -> None:
+    def __init__(self, spec: MCPServerSpec, env: dict[str, str], launcher: Launcher | None = None) -> None:
         self.spec = spec
         self.env = env
+        self.launcher = launcher
         self.transport = Transport.STDIO
         self.protocol_version: str | None = None
         self.capabilities = CapabilitySet()
@@ -58,9 +63,11 @@ class MCPClient:
         self._session: ClientSession | None = None
 
     async def __aenter__(self) -> MCPClient:
-        cmd, args = self.spec.command()
-        import os
-        params = StdioServerParameters(command=cmd, args=args, env={**os.environ, **self.env})
+        if self.launcher is not None:                       # the sandbox decides how the server process starts
+            cmd, args, extra = self.launcher(self.spec)
+        else:
+            (cmd, args), extra = self.spec.command(), self.env
+        params = StdioServerParameters(command=cmd, args=args, env={**os.environ, **extra})
         read, write = await self._stack.enter_async_context(stdio_client(params))
         self._session = await self._stack.enter_async_context(ClientSession(read, write))
         init = await self._session.initialize()

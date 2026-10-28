@@ -19,7 +19,7 @@ hfx reference             # every task's reference solution passes its own oracl
 hfx smoke                 # P0 gate offline: 5 tasks x 3 scripted models
 hfx smoke --recipe v1-base,v2-base,v3-staged --models scripted/replay   # compare shapes
 hfx results --cells       # per-cell mean E, bootstrap CI, pass rate
-pytest -q                 # 49 tests
+pytest -q                 # 58 tests (9 Docker tests skip without a daemon)
 ```
 
 ## Real models
@@ -35,6 +35,33 @@ hfx smoke --provider groq --models llama-3.3-70b,gpt-oss-120b,qwen3-32b
 `smoke` runs a quota preflight first. If the worst case (tasks × models × seeds × max_steps) exceeds the
 provider's daily request limit, it refuses to start. The quota ledger lives in memory per process; P2 moves it to
 Redis.
+
+## Sandboxes
+
+| `HF_SANDBOX` | What runs where | Use for |
+|---|---|---|
+| `local` (default) | Fresh temp directory per run; MCP servers are local subprocesses confined to it by path checks | scripted runs, development |
+| `docker` | Same directories, bind-mounted into a container; MCP servers run inside it via `docker exec -i` | real models |
+
+The Docker sandbox's isolation contract lives in one place, `DockerSandbox.run_args()`:
+
+- `--network none`: the only interface is `lo`;
+- `--read-only` root filesystem: only `/work`, `/state` and a small `/tmp` are writable;
+- `--cap-drop ALL` and `no-new-privileges`;
+- pid, memory and CPU limits;
+- runs as your user, so files the run writes stay yours.
+
+Tests check every point of the contract against a live container. CI runs them with `HF_REQUIRE_DOCKER=1`, so
+they fail rather than skip.
+
+The image (`hf-sandbox:<content hash>`) builds itself on first use. It contains only Python, the `mcp` package
+closure and the server modules. Dependencies are resolved on the host for the image's Python and CPU, pinned to
+the versions in your environment (from `uv.lock`), and copied in. The Dockerfile has no `RUN` step, so the build
+needs no network inside containers. Any base image that provides Python works; set `HF_SANDBOX_BASE_IMAGE` and
+`HF_SANDBOX_PYTHON` to match it.
+
+Graders read the host-side directories, so a run grades identically in either sandbox. The sandbox kind and
+image tag are recorded in each run's snapshot.
 
 ## Observability and MLOps stack
 
@@ -171,7 +198,6 @@ These prove the factory measures differences before any API budget is spent.
 
 ## Not in P0
 
-- **P1:** DockerSandbox with network isolation (LocalSandbox is a temp directory).
 - **P1:** V4 planner and V5 orchestrator shapes.
 - **P2:** fault injection and robustness R.
 - **P2:** efficiency C normalised against the class median.

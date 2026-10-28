@@ -50,6 +50,11 @@ SANDBOXES_DIR = VAR / "sandboxes"
 OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")  # e.g. http://localhost:4318
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
 
+SANDBOX = os.environ.get("HF_SANDBOX", "local")                                 # local | docker
+SANDBOX_BASE_IMAGE = os.environ.get("HF_SANDBOX_BASE_IMAGE", "python:3.12-slim")
+SANDBOX_PYTHON = os.environ.get("HF_SANDBOX_PYTHON", "3.12")                     # must match the base image
+DOCKER_BIN = os.environ.get("HF_DOCKER", "docker")
+
 
 def ensure_dirs() -> None:
     for d in (VAR, TRACES_DIR, SANDBOXES_DIR):
