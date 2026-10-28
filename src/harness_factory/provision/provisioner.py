@@ -6,6 +6,7 @@ until then task_class() supplies the class key every result is filed under.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -101,9 +102,11 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                            timeout_s=recipe.config.call_timeout_s or settings.CALL_TIMEOUT_S)
     budget.excluded_s = lambda: gateway.infra_wait_s
 
-    sandbox = make_sandbox(label=task.id)
+    # Sandbox set-up and tear-down can block (Docker run/rm, image builds): keep them off the event loop so one
+    # run's container start never stalls the other workers.
+    sandbox = await asyncio.to_thread(make_sandbox, task.id)
     try:
-        sandbox.reset(task)
+        await asyncio.to_thread(sandbox.reset, task)
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
@@ -124,4 +127,4 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,
                               task_class=task_class(task, declared), weight_profile=weight_profile(task, declared))
     finally:
-        sandbox.teardown()
+        await asyncio.to_thread(sandbox.teardown)

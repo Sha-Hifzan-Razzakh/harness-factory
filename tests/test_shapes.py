@@ -183,3 +183,18 @@ async def test_stage_prompts_list_only_that_stages_tools(factory):
     prompts = PromptAssembler().stage_prompts(recipe, task, ["fs__list_dir", "fs__read_file", "fs__write_file"])
     assert "fs__write_file" not in prompts["inspect"] and "fs__write_file" not in prompts["verify"]
     assert "fs__write_file" in prompts["act"]
+
+
+async def test_v3_retry_needs_the_exact_marker(factory):
+    """'Retrying is not needed' must not send the run back to act; only the 'RETRY:' marker does."""
+    backend = ScriptedBackend([
+        {"content": "nothing to read"},
+        {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "notes/todo.txt", "content": "buy milk"}}]},
+        {"content": "done"},
+        {"content": "Retrying is not needed: notes/todo.txt is correct."},
+    ])
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=backend)
+    assert [s["name"] for s in _spans(rec, "handoff")] == ["stage:inspect", "stage:act", "stage:verify"]
+    assert rec.status.value == "SUCCESS"
+

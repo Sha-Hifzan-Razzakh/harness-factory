@@ -107,5 +107,4 @@ class Tracer:
         with path.open("w") as f:
             for s in sorted(self.spans, key=lambda x: x.start_ns):
                 f.write(json.dumps(s.model_dump(mode="json")) + "\n")
-        self.flush()
         return path

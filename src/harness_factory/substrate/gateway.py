@@ -179,7 +179,8 @@ class ModelGateway:
         served = self.catalog.served(self.provider.id, slot.canonical_model)
         attempt = 0
         while True:
-            waited = await self.ledger.acquire(self.provider.id)  # paces to the provider's limits; may raise
+            reserve = approx_tokens(messages) + slot.max_output_tokens // 4   # rough: prompt + a typical reply
+            waited = await self.ledger.acquire(self.provider.id, reserve)  # paces to provider limits; may raise
             self.infra_wait_s += waited
             with self.tracer.span(SpanKind.model_call, slot.canonical_model, provider=self.provider.id,
                                   provider_model_id=served.provider_model_id, attempt=attempt) as span:
@@ -195,6 +196,7 @@ class ModelGateway:
                 except Exception as raw:  # classified below; nothing escapes untyped
                     e = raw if isinstance(raw, HarnessError) else classify_provider_error(raw)
                     span.status, span.error = "error", e.kind.value
+                    self.ledger.record_tokens(self.provider.id, 0, reserve)     # release the reservation
                     span.attributes["error_detail"] = e.message[:300]
                     if e.kind == ErrorKind.QUOTA_EXHAUSTED:
                         self.ledger.mark_exhausted(self.provider.id)  # other workers stop calling this provider
@@ -211,7 +213,7 @@ class ModelGateway:
                     span.attributes["tool_calls"] = len(comp.message.get("tool_calls") or [])
                     if comp.message.get("content"):
                         span.attributes["content_preview"] = str(comp.message["content"])[:500]
-                    self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out)
+                    self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out, reserve)
                     return comp
             attempt += 1
             self.infra_wait_s += wait

@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from harness_factory import settings
@@ -45,6 +46,7 @@ WORKDIR /work
 
 _ARCH = {"amd64": "x86_64", "x86_64": "x86_64", "arm64": "aarch64", "aarch64": "aarch64"}
 _ensured: dict[str, str] = {}
+_ensure_lock = threading.Lock()          # sandboxes start in worker threads; build each image once
 
 
 def docker(*args: str, timeout: float = 120, check: bool = True) -> subprocess.CompletedProcess:
@@ -105,8 +107,11 @@ def ensure_image(base: str | None = None, python: str | None = None) -> str:
     base = base or settings.SANDBOX_BASE_IMAGE
     python = python or settings.SANDBOX_PYTHON
     key = f"{base}|{python}"
-    if key in _ensured:
-        return _ensured[key]
+    with _ensure_lock:
+        return _ensured.get(key) or _ensure_locked(key, base, python)
+
+
+def _ensure_locked(key: str, base: str, python: str) -> str:
     tag = image_tag(base, python, server_arch())
     if docker("image", "inspect", tag, check=False, timeout=30).returncode != 0:
         with tempfile.TemporaryDirectory(prefix="hf-image-") as tmp:

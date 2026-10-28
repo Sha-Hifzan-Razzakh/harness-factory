@@ -15,6 +15,17 @@ from pydantic import BaseModel
 
 from harness_factory.env.mcp.servers import MCPServerSpec
 
+# What a tool-server process may inherit from the factory's environment. Everything else (API keys above all)
+# stays out: a tool server only needs to start Python (or the docker CLI) and find its own files.
+SAFE_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TEMP", "TMP", "SYSTEMROOT",
+                 "PYTHONPATH", "VIRTUAL_ENV", "SSL_CERT_FILE", "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT",
+                 "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY", "XDG_RUNTIME_DIR")
+
+
+def process_env(extra: dict[str, str]) -> dict[str, str]:
+    return {**{k: v for k, v in os.environ.items() if k in SAFE_ENV_KEYS}, **extra}
+
+
 Launcher = Callable[[MCPServerSpec], tuple[str, list[str], dict[str, str]]]
 
 
@@ -67,7 +78,7 @@ class MCPClient:
             cmd, args, extra = self.launcher(self.spec)
         else:
             (cmd, args), extra = self.spec.command(), self.env
-        params = StdioServerParameters(command=cmd, args=args, env={**os.environ, **extra})
+        params = StdioServerParameters(command=cmd, args=args, env=process_env(extra))
         read, write = await self._stack.enter_async_context(stdio_client(params))
         self._session = await self._stack.enter_async_context(ClientSession(read, write))
         init = await self._session.initialize()

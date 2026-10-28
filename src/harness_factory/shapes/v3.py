@@ -21,7 +21,7 @@ from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
 from harness_factory.shapes.common import DONE, finish, model_turn, run_tool_calls
 from harness_factory.shapes.result import RunResult
 
-RETRY_PREFIX = "RETRY"
+RETRY_PREFIX = "RETRY:"          # exactly what prompts/stage/verify.j2 asks for; "Retrying is not needed" is not one
 
 
 class FlowState(TypedDict):

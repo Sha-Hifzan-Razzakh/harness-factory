@@ -12,6 +12,7 @@ Fixed windows, in-process: every async worker in one campaign shares one ledger.
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -36,6 +37,7 @@ class QuotaLedger:
     catalog: ProviderCatalog
     clock: Callable[[], float] = time.time
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    jitter_s: float = 1.0          # spread wake-ups so paced workers don't all burst at the window edge
     _minute: dict[str, _Window] = field(default_factory=dict)
     _day: dict[str, _Window] = field(default_factory=dict)
     _totals: dict[str, int] = field(default_factory=lambda: defaultdict(int))
@@ -68,22 +70,28 @@ class QuotaLedger:
         left = self.remaining(provider)
         return any(left[k] is not None and left[k] <= 0 for k in ("rpd", "tpd"))
 
-    async def acquire(self, provider: str) -> float:
+    async def acquire(self, provider: str, tokens: int = 0) -> float:
         """Reserve one request slot, waiting for the minute window if needed. No await between check and charge,
-        so concurrent workers on one event loop can never over-book a window. Returns the seconds this caller
-        waited (the shared `waits` total mixes all workers, so it cannot be attributed to one run)."""
+        so concurrent workers on one event loop can never over-book a window. `tokens` is an estimate reserved in
+        the token windows up front (corrected by record_tokens), so a burst of workers can't overshoot tpm.
+        Returns the seconds this caller waited (the shared `waits` total mixes all workers)."""
         waited = 0.0
         while True:
             if self.exhausted(provider):
                 raise HarnessError(ErrorKind.QUOTA_EXHAUSTED, f"{provider}: daily quota spent")
             left = self.remaining(provider)
-            minute_full = any(left[k] is not None and left[k] <= 0 for k in ("rpm", "tpm"))
+            tpm_short = left["tpm"] is not None and left["tpm"] < min(tokens, self._tpm(provider))
+            minute_full = (left["rpm"] is not None and left["rpm"] <= 0) or tpm_short or \
+                (left["tpm"] is not None and left["tpm"] <= 0)
             if not minute_full:
-                self._minute[provider].requests += 1
-                self._day[provider].requests += 1
+                for w in (self._minute[provider], self._day[provider]):
+                    w.requests += 1
+                    w.tokens += tokens
                 self._totals[provider] += 1
                 return waited
             wait = max(0.05, self._minute[provider].start + MINUTE - self.clock())
+            if self.jitter_s:
+                wait += random.uniform(0, self.jitter_s)
             self.waits[provider] += wait
             waited += wait
             await self.sleep(wait)
@@ -95,9 +103,15 @@ class QuotaLedger:
         d.requests = max(d.requests, lim.rpd if lim.rpd is not None else d.requests)
         self._spent_until[provider] = d.start + DAY
 
-    def record_tokens(self, provider: str, tokens: int) -> None:
+    def record_tokens(self, provider: str, tokens: int, reserved: int = 0) -> None:
+        """Book actual usage, releasing what acquire() reserved for this call."""
         for store, length in ((self._minute, MINUTE), (self._day, DAY)):
-            self._roll(store, provider, length).tokens += tokens
+            w = self._roll(store, provider, length)
+            w.tokens = max(0, w.tokens + tokens - reserved)
+
+    def _tpm(self, provider: str) -> int:
+        lim = self.catalog.get(provider).limits.tpm
+        return lim if lim is not None else 1 << 62
 
     def charge(self, provider: str, requests: int = 1, tokens: int = 0) -> None:
         """Synchronous bookkeeping (no pacing), for callers outside the gateway."""

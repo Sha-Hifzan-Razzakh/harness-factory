@@ -44,3 +44,12 @@ async def test_undeclared_tool_fails_provisioning(factory, sandbox):
     with pytest.raises(HarnessError, match="drift"):
         async with MCPSessionPool(declared, ["fs"], sandbox.env()):
             pass
+
+
+def test_tool_servers_do_not_inherit_api_keys(monkeypatch):
+    from harness_factory.mcp.client import process_env
+    monkeypatch.setenv("GROQ_API_KEY", "secret")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "secret")
+    env = process_env({"HF_WORKSPACE": "/w"})
+    assert "GROQ_API_KEY" not in env and "OPENROUTER_API_KEY" not in env
+    assert env["HF_WORKSPACE"] == "/w" and "PATH" in env

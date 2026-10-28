@@ -94,7 +94,8 @@ def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -
 
 
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
-                  seed: int = 0, backend: Backend | None = None) -> EffectivenessRecord:
+                  seed: int = 0, backend: Backend | None = None, flush: bool = True) -> EffectivenessRecord:
+    """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end."""
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
                          ledger=f.ledger, seed=seed, backend=backend) as p:
@@ -153,6 +154,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
     if f.store:
         f.store.add(rec)
     f.tracker.log(rec, recipe)
+    if flush:
+        await asyncio.to_thread(Tracer.flush)
     return rec
 
 
@@ -227,11 +230,14 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4) -
         async with gate:
             try:
                 return await run_one(f, f.tasks.get(spec.task_id), f.recipes[spec.recipe_id], spec.canonical_model,
-                                     spec.provider, seed=spec.seed)
+                                     spec.provider, seed=spec.seed, flush=False)
             except Exception as e:  # noqa: BLE001  (reported per run with its spec; the campaign carries on)
                 return CampaignError(spec=spec, error=f"{type(e).__name__}: {str(e)[:500]}")
 
-    outcomes = await asyncio.gather(*(one(s) for s in specs))
+    try:
+        outcomes = await asyncio.gather(*(one(s) for s in specs))
+    finally:
+        await asyncio.to_thread(Tracer.flush)          # once per campaign, including an interrupted one
     return CampaignResult(
         records=[o for o in outcomes if isinstance(o, EffectivenessRecord)],
         errors=[o for o in outcomes if isinstance(o, CampaignError)],
