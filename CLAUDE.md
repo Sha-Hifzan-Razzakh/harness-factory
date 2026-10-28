@@ -34,13 +34,23 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 - **Run identity.** `RunKey` and the content hashes decide what counts as the same experiment. The recipe hash
   excludes the model on purpose (the model is a campaign axis). Changing what goes into a hash invalidates
   comparisons with older results, so call it out in the PR. A new optional recipe field goes in
-  `_HASH_OMIT_WHEN_NONE` (`recipes/model.py`) so existing recipe hashes do not change.
+  `_HASH_OMIT_WHEN_NONE` (`recipes/model.py`) so existing recipe hashes do not change. Campaign axes (model,
+  seed) are nulled before hashing (`_SLOT_AXES`). Prompt template sources are part of the recipe hash;
+  tool specs and the provider model id are in `RunKey.env_hash`. After changing an MCP server's tools, run
+  `hfx tools freeze` (CI runs `--check`).
 - **Scoring.** Changes to `ScoreWeights.composite`, oracle semantics or run status logic change every number in
   the results store. Call them out in the PR and update the requirements doc. The store's `composite` column is
   E₀ (before cost). The final E is computed at aggregation against a cost baseline (`results/cost.py`); never
   bake C into a stored run, because it is relative to other runs.
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
+- **How runs end** (`shapes/common.finish`, `runner._finalize_status`):
+  - A harness stop (budget, stage cap, context overflow, malformed output) is graded on the environment with
+    outcome × `OVERRUN_OUTCOME_FACTOR` and status at most PARTIAL.
+  - Infrastructure is INCOMPLETE; setup and crashes are ERROR. Neither is averaged into cell means.
+  - Provider exceptions are classified in exactly one place, `substrate/gateway.classify_provider_error`. Never
+    catch provider errors elsewhere.
+  - A 400 is the model's fault only when the provider says the output was malformed.
 - **Isolation.** Every run gets a fresh sandbox. Nothing may read or write outside `HF_WORKSPACE` / `HF_DB`.
   The Docker isolation contract is `DockerSandbox.run_args()`; weakening any flag must fail
   `tests/test_docker_sandbox.py`. A new MCP server module goes in `env/mcp/impl/` so the sandbox image picks
