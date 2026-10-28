@@ -121,29 +121,37 @@ def run(task: str = typer.Option(..., "--task"), recipe: str = typer.Option("v2-
 
 
 @app.command()
-def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or comma-separated ids to compare"), provider: str = typer.Option("scripted", "--provider"),
+def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or comma-separated ids to compare"),
+          provider: str = typer.Option("scripted", "--provider"),
           models: str | None = typer.Option(None, "--models", help="comma-separated canonical models"),
           seeds: int = typer.Option(1, "--seeds"),
+          concurrency: int = typer.Option(4, "--concurrency", "-j", help="runs in flight at once"),
           strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
-    """Every task x recipe x model on one provider. One recipe is the P0 gate; several compare shapes."""
-    from harness_factory.runner.runner import smoke as run_smoke
+    """Every task x recipe x model x seed on one provider, run in parallel and paced to the provider's limits.
+    One recipe is the P0 gate; several compare shapes."""
+    from harness_factory.runner.runner import plan, run_campaign
     f = _factory()
-    recipe_ids = recipe.split(",")
+    specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds)
     # Budget preflight (MOD-06): worst case = every run uses every step. Refuse if it cannot fit today's quota.
-    n_models = len(models.split(",")) if models else len(f.providers.get(provider).models)
-    worst = len(f.tasks.all()) * n_models * seeds * sum(f.recipes[r].config.max_steps for r in recipe_ids)
+    worst = sum(f.recipes[s.recipe_id].config.max_steps for s in specs)
     left = f.ledger.remaining(provider)["rpd"]
     if left is not None and worst > left:
         console.print(f"[yellow]preflight: worst case {worst} requests > {left} left today on {provider}; "
                       f"lower --seeds, pass fewer --models, or lower max_steps")
         raise typer.Exit(code=2)
-    recs = asyncio.run(run_smoke(f, recipe_ids, provider, models.split(",") if models else None, seeds))
+    result = asyncio.run(run_campaign(f, specs, concurrency))
+    recs = result.records
     console.print(_records_table(recs))
-    if len(recipe_ids) > 1 or not models or "," in models:
+    if len(set(recipe.split(","))) > 1 or not models or "," in models:
         console.print(_summary_table(recs))
     ok = sum(r.status.value == "SUCCESS" for r in recs)
-    console.print(f"{ok}/{len(recs)} SUCCESS")
-    if strict and ok != len(recs):
+    waits = ", ".join(f"{p} {w:.1f}s" for p, w in result.quota_wait_s.items()) or "none"
+    console.print(f"{ok}/{len(specs)} SUCCESS   {len(specs)} runs in {result.wall_s:.1f}s at concurrency "
+                  f"{result.concurrency}   quota waits: {waits}")
+    for e in result.errors:
+        console.print(f"[red]error[/] {e.spec.task_id} {e.spec.recipe_id} {e.spec.canonical_model} "
+                      f"seed {e.spec.seed}: {e.error}")
+    if result.errors or (strict and ok != len(specs)):
         raise typer.Exit(code=1)
 
 

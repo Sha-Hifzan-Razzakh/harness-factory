@@ -32,9 +32,25 @@ hfx run   --task fs-02 --model llama-3.3-70b --provider groq
 hfx smoke --provider groq --models llama-3.3-70b,gpt-oss-120b,qwen3-32b
 ```
 
-`smoke` runs a quota preflight first. If the worst case (tasks × models × seeds × max_steps) exceeds the
-provider's daily request limit, it refuses to start. The quota ledger lives in memory per process; P2 moves it to
-Redis.
+Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quota ledger:
+
+- **Pacing.** Before each model call, a worker reserves a request slot. If the provider's per-minute request or
+  token window is full, it waits for the window to roll. Waits are recorded on the `model_call` span
+  (`quota_wait_s`) and summed at the end of the campaign.
+- **Daily limits.** If a per-day limit is spent, the run ends **INCOMPLETE** instead of waiting a day. INCOMPLETE
+  is not a harness failure.
+- **Preflight.** `smoke` refuses to start when the worst case (every run using every step) exceeds today's
+  remaining request limit.
+- **Order.** Results come back in plan order, whatever the concurrency. A run that errors is reported with its
+  spec and does not stop the others.
+
+```bash
+hfx smoke --provider groq --recipe v2-base,v3-staged --models llama-3.3-70b,qwen3-32b --seeds 3 -j 8
+```
+
+Concurrency pays off most with real providers, where runs wait on the network. Scripted runs are CPU-bound:
+each run starts two fresh MCP server processes, so on a 2-core machine 8 workers give about 1.8×. The ledger is
+shared in-process. Sharing it across hosts (Redis) comes when campaigns span machines.
 
 ## Sandboxes
 
@@ -254,10 +270,9 @@ These prove the factory measures differences before any API budget is spent.
 
 - **P1:** V4 planner and V5 orchestrator shapes.
 - **P2:** fault injection and robustness R.
-- **P2:** shared Redis quota ledger and the allocation planner.
+- **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis).
 - **P2:** equivalence calibration across providers.
 - **P3:** approval gate (ASK is treated as DENY for now).
 - **P3:** elicitation and sampling.
 - **P3:** memory stores.
 - **P4:** profiler and selector.
-- **P2:** parallel workers (Inspect AI can be used for concurrency until then).
