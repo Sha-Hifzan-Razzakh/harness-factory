@@ -68,6 +68,18 @@ def test_image_tag_is_content_addressed():
     assert a != image_tag("python:3.12-slim", "3.12", "aarch64")
 
 
+def test_docker_unavailable_leaves_no_directories(monkeypatch):
+    """If the image can't be resolved (Docker down, build failed), the sandbox must not have created anything."""
+    import harness_factory.env.sandbox_image as si
+    monkeypatch.setattr(settings, "DOCKER_BIN", "/nonexistent/docker")
+    monkeypatch.setattr(si, "_ensured", {})
+    settings.ensure_dirs()
+    before = set(settings.SANDBOXES_DIR.iterdir())
+    with pytest.raises(HarnessError):
+        make_sandbox("x", kind="docker")
+    assert set(settings.SANDBOXES_DIR.iterdir()) == before
+
+
 def test_unknown_sandbox_kind_is_rejected():
     with pytest.raises(ValueError):
         make_sandbox("x", kind="vm")

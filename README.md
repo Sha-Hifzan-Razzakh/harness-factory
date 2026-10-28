@@ -52,6 +52,27 @@ Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quo
 hfx smoke --provider groq --recipe v2-base,v3-staged --models llama-3.3-70b,qwen3-32b --seeds 3 -j 8
 ```
 
+### Interrupted? Resume.
+
+A campaign can stop part-way: Ctrl-C, a crash, or today's quota running out. Run the same command with
+`--resume`:
+
+```bash
+hfx smoke ... --dry-run    # plan vs store: done / retry (INCOMPLETE or ERROR) / new, without running anything
+hfx smoke ... --resume     # skip runs that already have a scored result; rerun INCOMPLETE / ERROR ones
+```
+
+- **Which runs to skip.** Each planned run's RunKey is computed before it runs, by the same function the
+  provisioner uses. The plan is compared with the store by key, so editing a task, recipe, prompt or tool
+  re-runs exactly the affected runs.
+- **Newest result wins.** The store reads the newest row per RunKey, so a rerun replaces an earlier INCOMPLETE
+  row instead of being counted twice. Older rows are kept as history.
+- **Quota across restarts.** Provider usage is saved to `var/quota_ledger.json` (`HF_QUOTA_STATE`) after every
+  call, so a restarted campaign knows what today has already spent. Day windows reset at UTC midnight. A
+  provider whose own 429 said "spent for today" stays blocked until then.
+- **Ctrl-C.** Finished runs are already stored. In-flight runs tear down their tool servers, sandboxes and
+  containers before `hfx` exits.
+
 Concurrency pays off most with real providers, where runs wait on the network. Scripted runs are CPU-bound:
 each run starts two fresh MCP server processes, so on a 2-core machine 8 workers give about 1.8×. The ledger is
 shared in-process. Sharing it across hosts (Redis) comes when campaigns span machines.

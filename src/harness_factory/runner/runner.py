@@ -31,7 +31,7 @@ from harness_factory.providers.quota import QuotaLedger
 from harness_factory.provision.provisioner import provision
 from harness_factory.recipes.model import HarnessRecipe, load_recipes
 from harness_factory.results.model import EffectivenessRecord, FamilyScores, ScoreWeights
-from harness_factory.results.store import ResultsStore
+from harness_factory.results.store import UNSCORED, ResultsStore
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import ShapeRegistry
@@ -56,11 +56,13 @@ class Factory:
     graders: GradingPipeline = field(default_factory=default_pipeline)
 
     @staticmethod
-    def load(store: bool = True, results_url: str | None = None) -> Factory:
+    def load(store: bool = True, results_url: str | None = None, quota_state: Path | None = None) -> Factory:
+        """quota_state: where provider usage is persisted (default settings.QUOTA_STATE). Tests pass a temp path."""
         providers = load_provider_catalog(settings.PROVIDERS_FILE)
         return Factory(tasks=TaskRegistry(), recipes=load_recipes(settings.RECIPES_DIR),
                        declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers,
-                       ledger=QuotaLedger(providers), store=ResultsStore(results_url) if store else None)
+                       ledger=QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE),
+                       store=ResultsStore(results_url) if store else None)
 
 
 def _cost(spans, providers: ProviderCatalog, provider_id: str, wall_s: float) -> CostLedger:
@@ -219,11 +221,35 @@ class CampaignError(BaseModel):
 
 
 class CampaignResult(BaseModel):
-    records: list[EffectivenessRecord]          # in plan order
+    records: list[EffectivenessRecord]          # in plan order (runs made by this call)
     errors: list[CampaignError]
     concurrency: int
     wall_s: float
     quota_wait_s: dict[str, float]
+    skipped: list[RunSpec] = []                 # resume: already have a scored result in the store
+    reruns: int = 0                             # resume: had only an INCOMPLETE / ERROR result, ran again
+
+
+class PlanStatus(BaseModel):
+    """What a campaign plan looks like against the store: done (scored), retry (only INCOMPLETE/ERROR), new."""
+    done: list[RunSpec]
+    retry: list[RunSpec]
+    new: list[RunSpec]
+
+
+def plan_status(f: Factory, specs: list[RunSpec]) -> PlanStatus:
+    """Classify planned runs by their predicted RunKey (same function the provisioner uses)."""
+    from harness_factory.provision.provisioner import run_key_for
+
+    rows = f.store.rows() if f.store else []
+    scored = {r["run_key"] for r in rows if r["status"] not in UNSCORED}
+    seen = {r["run_key"] for r in rows}
+    done, retry, new = [], [], []
+    for s in specs:
+        key = run_key_for(f.tasks.get(s.task_id), f.recipes[s.recipe_id], s.canonical_model, s.provider, s.seed,
+                          declared=f.declared, providers=f.providers).as_str()
+        (done if key in scored else retry if key in seen else new).append(s)
+    return PlanStatus(done=done, retry=retry, new=new)
 
 
 def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
@@ -236,12 +262,23 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
             for t in tasks for r in recipe_ids for m in models for s in range(seeds)]
 
 
-async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4) -> CampaignResult:
+async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,
+                       resume: bool = False) -> CampaignResult:
     """Run specs with up to `concurrency` runs in flight. Workers share the Factory's QuotaLedger, so model
     calls are paced to each provider's limits however many workers there are. One failing run never stops
-    the others; its error is reported with its spec."""
+    the others; its error is reported with its spec.
+
+    resume: skip specs whose RunKey already has a scored result; rerun those with only INCOMPLETE / ERROR.
+    A rerun's row supersedes the old one (the store reads the newest row per RunKey)."""
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
+    skipped: list[RunSpec] = []
+    reruns = 0
+    if resume:
+        status = plan_status(f, specs)
+        skipped, reruns = status.done, len(status.retry)
+        todo = {id(s) for s in status.retry + status.new}
+        specs = [s for s in specs if id(s) in todo]
     gate = asyncio.Semaphore(concurrency)
     t0 = time.monotonic()
     waits_before = dict(f.ledger.waits)
@@ -254,8 +291,16 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4) -
             except Exception as e:  # noqa: BLE001  (reported per run with its spec; the campaign carries on)
                 return CampaignError(spec=spec, error=f"{type(e).__name__}: {str(e)[:500]}")
 
+    tasks = [asyncio.ensure_future(one(s)) for s in specs]
     try:
-        outcomes = await asyncio.gather(*(one(s) for s in specs))
+        outcomes = await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        # Ctrl-C: gather has already cancelled every run, but returns before they finish tearing down (MCP
+        # servers, sandboxes, containers). Wait for that cleanup, shielded and without cancelling anything again,
+        # before leaving; otherwise asyncio.run cancels them a second time mid-teardown and leaks processes and
+        # directories. Finished runs are already stored.
+        await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+        raise
     finally:
         await asyncio.to_thread(Tracer.flush)          # once per campaign, including an interrupted one
     return CampaignResult(
@@ -263,7 +308,8 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4) -
         errors=[o for o in outcomes if isinstance(o, CampaignError)],
         concurrency=concurrency, wall_s=round(time.monotonic() - t0, 3),
         quota_wait_s={p: round(w - waits_before.get(p, 0.0), 3) for p, w in f.ledger.waits.items()
-                      if w > waits_before.get(p, 0.0)})
+                      if w > waits_before.get(p, 0.0)},
+        skipped=skipped, reruns=reruns)
 
 
 async def smoke(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
