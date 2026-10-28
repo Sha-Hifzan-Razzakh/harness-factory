@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    env:
+      HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
+      COLUMNS: "160"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --python ${{ matrix.python }}
+
+      - name: Lint
+        run: uv run --no-sync ruff check src tests
+
+      - name: Tests
+        run: uv run --no-sync pytest -q
+
+      - name: Recipes validate
+        run: uv run --no-sync hfx validate
+
+      - name: Reference solutions pass their oracles
+        run: uv run --no-sync hfx reference
+
+      - name: P0 gate (offline, scripted model)
+        run: uv run --no-sync hfx smoke --models scripted/replay --strict
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traces-py${{ matrix.python }}
+          path: var/traces
+          if-no-files-found: ignore
