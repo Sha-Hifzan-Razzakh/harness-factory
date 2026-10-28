@@ -1,0 +1,40 @@
+id: sql-08
+version: 1
+domain: data
+instruction: What was the average value of paid orders placed in the third quarter of 2026 (July to September)?
+  An order's value is the sum of quantity times unit price over its items, before refunds. Exclude test accounts
+  (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R0
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- sql
+- read
+- aggregate
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: 1,?696\.11
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: sql.query
+  - id: data_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM order_items
+    rows:
+    - - 51

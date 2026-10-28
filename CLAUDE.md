@@ -7,7 +7,7 @@ and stores an effectiveness score per (task class × recipe × model). Read READ
 
 ```bash
 uv sync --extra dev                 # install from uv.lock
-uv run pytest -q                    # full suite (~35 s, spawns MCP servers as subprocesses)
+uv run pytest -q                    # full suite (a few minutes: every task runs through each shape; spawns MCP servers)
 uv run ruff check src tests
 uv run hfx validate                 # recipes vs tools.yaml, prompts, tiers
 uv run hfx reference                # every task's reference.py passes its own oracle
@@ -21,7 +21,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 
 | Change | Location | Also do |
 |---|---|---|
-| New task | `catalog/tasks/<id>/task.yaml` + `reference.py` | `hfx reference <id>` passes; add a guard check (`weight: 0, critical: true`) for "don't touch anything else" |
+| New task | `catalog/tasks/<id>/task.yaml` + `reference.py` | `hfx reference <id>` passes; add a guard check (`weight: 0, critical: true`) for "don't touch anything else"; the reference fits V3 caps (≤3 reads before the first write, ≤5 calls after); each trap gets a wrong-answer script in `tests/test_task_traps.py`; editing a seed changes the hash of every task using it |
 | New tool | MCP server in `src/harness_factory/env/mcp/impl/`, declare in `catalog/tools.yaml` | side effect + risk are mandatory; raise `ToolError`, never `ValueError` (MCP 2.x hides other exception messages from the model) |
 | New shape (V1, V3...) | `src/harness_factory/shapes/<v>.py` with `@ShapeRegistry.register(Variant.X)` | import it in `shapes/builtin.py`; never in `shapes/__init__.py` (import cycle) |
 | New recipe | `catalog/recipes/**.yaml`, model slot left empty | `hfx validate` passes; V3 recipes declare `workflow:` stages with prompts under `prompts/stage/` |

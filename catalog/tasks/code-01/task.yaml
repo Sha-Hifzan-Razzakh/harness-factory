@@ -1,0 +1,53 @@
+id: code-01
+version: 1
+domain: code
+instruction: Bump the service's own version from 2.3.1 to 2.4.0 everywhere it is declared.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- fs
+- code
+- multi-file
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: pyproject
+    kind: file_regex
+    weight: 0.5
+    path: pyproject.toml
+    pattern: ^version = "2\.4\.0"\s*$
+  - id: package
+    kind: file_regex
+    weight: 0.5
+    path: service/__init__.py
+    pattern: ^__version__ = "2\.4\.0"\s*$
+  - id: dependency_pins_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: requirements.txt
+    text: |
+      fastapi==0.118.0
+      uvicorn==0.37.0
+      shop-common==2.3.1
+  - id: changelog_history_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: CHANGELOG.md
+    text: '## [2.3.1] - 2026-09-30'
+  - id: project_name_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: pyproject.toml
+    text: name = "shop-service"

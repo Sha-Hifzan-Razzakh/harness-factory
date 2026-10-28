@@ -1,0 +1,17 @@
+{
+  "dev": {
+    "new_checkout": true,
+    "dark_mode": true,
+    "bulk_export": true
+  },
+  "staging": {
+    "new_checkout": false,
+    "dark_mode": true,
+    "bulk_export": false
+  },
+  "prod": {
+    "new_checkout": false,
+    "dark_mode": false,
+    "bulk_export": false
+  }
+}

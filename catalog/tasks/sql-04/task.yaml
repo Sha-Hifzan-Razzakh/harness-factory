@@ -1,0 +1,39 @@
+id: sql-04
+version: 1
+domain: data
+instruction: How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled
+  orders and test accounts (customers whose email ends in @example.test). Answer with the number.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R0
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- sql
+- read
+- dates
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?<![\d.])6(?![\d.])
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: sql.query
+  - id: data_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM orders
+    rows:
+    - - 37

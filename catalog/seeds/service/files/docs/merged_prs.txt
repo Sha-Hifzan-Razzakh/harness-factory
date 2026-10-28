@@ -1,0 +1,6 @@
+Merged since 2.3.1:
+#412 feat: saved carts for signed-in customers
+#415 fix: invoice PDF shows the wrong VAT rate for Sharjah
+#417 chore: bump pytest to 8.4
+#418 feat: dark mode for the admin console
+#421 fix: order search times out on large date ranges

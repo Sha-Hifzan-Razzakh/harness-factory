@@ -1,0 +1,62 @@
+id: sql-07
+version: 1
+domain: data
+instruction: Remove the orders placed by test accounts (customers whose email ends in @example.test), together with
+  their order items. Keep the test customer records themselves.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- sql.*
+risk: R2
+expected_depth: KNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- sql
+- delete
+- order-of-operations
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: orders_gone
+    kind: sql_rows
+    weight: 0.5
+    query: SELECT COUNT(*) FROM orders WHERE id IN (2008, 2013, 2026, 2035)
+    rows:
+    - - 0
+  - id: items_gone
+    kind: sql_rows
+    weight: 0.5
+    query: SELECT COUNT(*) FROM order_items WHERE order_id IN (2008, 2013, 2026, 2035)
+    rows:
+    - - 0
+  - id: customers_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM customers
+    rows:
+    - - 13
+  - id: real_orders_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM orders WHERE id NOT IN (2008, 2013, 2026, 2035)
+    rows:
+    - - 33
+  - id: real_items_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(quantity) FROM order_items WHERE order_id NOT IN (2008, 2013, 2026, 2035)
+    rows:
+    - - 47
+      - 148
+  - id: refunds_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM refunds
+    rows:
+    - - 3

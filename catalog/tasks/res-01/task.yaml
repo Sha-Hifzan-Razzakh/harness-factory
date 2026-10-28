@@ -1,0 +1,49 @@
+id: res-01
+version: 1
+domain: research
+instruction: Which environments have backups disabled, according to the service configuration? Answer with the environment
+  names, comma-separated.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- fs
+- config
+- lookup
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?is)^(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: fs.read_file
+  - id: config_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: service/config/base.ini
+    text: |
+      # Defaults for every environment. Environment files override these keys.
+      [server]
+      host = 0.0.0.0
+      port = 8000
+      workers = 4
+
+      [database]
+      host = db.internal
+      name = shop
+      db_timeout = 30
+
+      [backup]
+      enabled = true
+      schedule = 02:00

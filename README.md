@@ -13,13 +13,13 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 5 seed tasks and their class keys
+hfx tasks                 # 23 tasks and their class keys (3 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
-hfx smoke                 # P0 gate offline: 5 tasks x 3 scripted models
+hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
 hfx smoke --recipe v1-base,v2-base,v3-staged --models scripted/replay   # compare shapes
 hfx results --cells       # per-cell E0, C, cost-adjusted E, bootstrap CI, pass rate
-pytest -q                 # 58 tests (9 Docker tests skip without a daemon)
+pytest -q                 # ~215 tests (Docker tests skip without a daemon, Inspect without the extra)
 ```
 
 ## Real models
@@ -159,7 +159,9 @@ catalog/                  data, versioned with the code
   providers.yaml          provider catalog: canonical model -> provider id, limits, prices
   tools.yaml              declared MCP servers and tools (side effect, risk); discovery drift fails provisioning
   recipes/base/           harness recipes; the model slot is empty and filled per cell
-  seeds/base/             seed files and SQL shared by tasks
+  seeds/base/             small seed for the first five tasks
+  seeds/shop/             shop database (customers, products, price history, orders, refunds) + tickets, CSVs
+  seeds/service/          a service repo: configs per environment, feature flags, logs, changelog, runbook
   tasks/<id>/             task.yaml (instruction, allowance, oracle) + reference.py (PLAN, FINAL)
 prompts/                  Jinja2 prompt layers (system/, task/)
 observability/            OTel collector config
@@ -195,13 +197,13 @@ V3 stage tools are enforced: a write attempted in a read-only stage is refused a
 `tool_not_allowed` violation. Stage transitions are `handoff` spans, so the trace shows the path through the
 graph. A V3 recipe declares its graph under `workflow:` (see `catalog/recipes/base/v3_staged.yaml`).
 
-Offline comparison (`scripted/replay`, 5 tasks):
+Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks):
 
-| Recipe | Success | Model calls | Tokens |
-|---|---|---|---|
-| `v1-base` | 1/5 (fs-01 only) | 5 | ~1,000 |
-| `v2-base` | 5/5 | 13 | ~3,500 |
-| `v3-staged` | 5/5 | 23 | ~8,700 |
+| Recipe | Success | E₀ | C | E | Tokens |
+|---|---|---|---|---|---|
+| `v1-base` | 1/20 (fs-01 only) | 0.130 | 0.068 | 0.122 | ~4,500 |
+| `v2-base` | 20/20 | 1.000 | 0.311 | 0.945 | ~28,000 |
+| `v3-staged` | 20/20 | 1.000 | 0.714 | 0.871 | ~62,000 |
 
 V2 and V3 tie on E₀; efficiency C separates them (see *Cost and efficiency*).
 
@@ -343,17 +345,56 @@ three shapes and all three scripted models):
 | `v2-base` (noisy) | 5/5 | 0.908 | 0.40 | 0.841 |
 | `v3-staged` (noisy) | 5/5 | 0.908 | 0.85 | 0.763 |
 
+## Task catalog
+
+23 tasks over three seeds. The first five are the P0 smoke set. The other eighteen each hide a trap that a
+careless harness falls into: the right answer and the plausible wrong one differ, and
+`tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
+
+| Task | Class (depth, side effect, risk) | Split | The trap |
+|---|---|---|---|
+| `sql-03` | unknown path, read, R0 | DEV | Gross revenue names a different customer than revenue net of refunds |
+| `sql-04` | known path, read, R0 | DEV | Cancelled orders, test accounts and "paid only" each change the count |
+| `sql-08` | known path, read, R0 | DEV | Average order value: test accounts and the Sep 30 boundary move the result |
+| `sql-05` | unknown path, reversible, R2 | TEST | Price history has a future-dated entry and a price that went down |
+| `sql-06` | known path, reversible, R2 | DEV | Merge duplicate customers: deleting first orphans their orders |
+| `sql-07` | known path, reversible, R2 | HELD_OUT | Delete orders first and the item subquery finds nothing |
+| `mix-02` | known path, reversible, R1 | DEV | Top 5 products with a three-way tie broken by name |
+| `mix-03` | unknown path, reversible, R2 | DEV | The ticket asks to delete an order; the support policy forbids it |
+| `mix-04` | known path, reversible, R2 | TEST | CSV import where one existing email differs only in case |
+| `mix-05` | unknown path, reversible, R1 | DEV | Bank reconciliation: a pending order, a missing order, a wrong amount |
+| `ops-01` | unknown path, reversible, R1 | DEV | Staging points at prod's database; the right host is only in the docs |
+| `ops-02` | known path, reversible, R1 | DEV | Flip one JSON flag in one environment without breaking the JSON |
+| `ops-03` | unknown path, read, R0 | TEST | Most 5xx on one day: 4xx counts and the other days name other endpoints |
+| `ops-04` | known path, reversible, R1 | HELD_OUT | Rename a key in four files; the runbook mentions it too and must stay |
+| `docs-01` | known path, reversible, R1 | DEV | Changelog entry from merged PRs: categories, order, chores left out |
+| `docs-02` | unknown path, reversible, R1 | HELD_OUT | The new port is prod's, not the base default or staging's |
+| `code-01` | unknown path, reversible, R1 | TEST | Version bump; a dependency is pinned at the same version number |
+| `res-01` | unknown path, read, R0 | TEST | Backups per environment: env files override the base default |
+
+**Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
+the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
+tasks nobody tuned against.
+
 ## Writing a task
 
 Oracle checks, with weights summing to 1:
 
-- `file_equals`, `file_contains` (with `negate`), `file_absent`, `sql_rows`, `output_regex`;
+- `file_equals`, `file_contains` and `file_regex` (both with `negate`), `file_absent`, `json_valid`, `sql_rows`,
+  `output_regex`. Regexes run with `re.MULTILINE`; add `(?s)` to match across lines. A check is refused at load
+  time if it lacks the fields its kind needs or its regex doesn't compile.
 - `tool_called`: the answer must be grounded in a successful call.
 
 A check with `weight: 0, critical: true` is a **guard**: it earns nothing, but failing it zeroes the run. Use
 guards for "don't touch anything else", so a run that does nothing can't collect preservation credit.
 
 Every task ships a `reference.py`. `hfx reference` must pass before the task is marked `verified`.
+
+- **A reference must fit every gated shape.** The V3 gate runs it through `v3-staged`, so it needs at most 3
+  read calls before its first write (the inspect stage's cap is 4 calls, one of which ends the stage) and at
+  most 5 calls after that (act's cap is 6).
+- **Add a trap test for every trap.** One script per wrong approach in `tests/test_task_traps.py`, naming the
+  check that must fail.
 
 ## Offline models
 

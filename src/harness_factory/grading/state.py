@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from fnmatch import fnmatch
@@ -20,13 +21,23 @@ class StateDiffGrader:
     id = "state_diff"
 
     def _check(self, c: WeightedCheck, ctx: GradeContext) -> tuple[bool, str]:
-        if c.kind in ("file_equals", "file_contains", "file_absent"):
+        if c.kind in ("file_equals", "file_contains", "file_regex", "file_absent", "json_valid"):
             p = (ctx.workspace / (c.path or "")).resolve()
             if c.kind == "file_absent":
                 return (not p.exists(), "absent" if not p.exists() else "file exists")
             if not p.is_file():
                 return False, f"missing file {c.path}"
             body = p.read_text(errors="replace")
+            if c.kind == "json_valid":
+                try:
+                    json.loads(body)
+                except ValueError as e:
+                    return False, f"invalid JSON: {e}"
+                return True, "valid JSON"
+            if c.kind == "file_regex":
+                found = re.search(c.pattern or "", body, re.MULTILINE) is not None
+                ok = (not found) if c.negate else found
+                return ok, ("matched" if found else "no match") + (" (negated)" if c.negate else "")
             if c.kind == "file_equals":
                 ok = _norm(body) == _norm(c.text or "")
                 return ok, "equal" if ok else f"content differs: {body[:120]!r}"

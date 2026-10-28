@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -27,7 +28,8 @@ class Split(str, Enum):
     HELD_OUT = "HELD_OUT"
 
 
-CheckKind = Literal["file_equals", "file_contains", "file_absent", "sql_rows", "output_regex", "tool_called"]
+CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent", "json_valid", "sql_rows",
+                    "output_regex", "tool_called"]
 
 
 class WeightedCheck(BaseModel):
@@ -37,15 +39,27 @@ class WeightedCheck(BaseModel):
     critical: bool = False
     path: str | None = None          # file_* checks, relative to the workspace
     text: str | None = None          # file_equals / file_contains
-    negate: bool = False             # file_contains: must NOT contain
+    negate: bool = False             # file_contains / file_regex: must NOT match
     query: str | None = None         # sql_rows
     rows: list[list[Any]] | None = None
-    pattern: str | None = None       # output_regex; tool_called (fnmatch on tool ref, successful calls only)
+    pattern: str | None = None       # output_regex, file_regex (re.MULTILINE; add (?s) to cross lines);
+                                     # tool_called (fnmatch on tool ref, successful calls only)
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
         if self.weight == 0 and not self.critical:
             raise ValueError(f"check {self.id}: a zero-weight check must be critical")
+        needs = {"file_equals": ("path", "text"), "file_contains": ("path", "text"), "file_regex": ("path", "pattern"),
+                 "file_absent": ("path",), "json_valid": ("path",), "sql_rows": ("query", "rows"),
+                 "output_regex": ("pattern",), "tool_called": ("pattern",)}[self.kind]
+        missing = [f for f in needs if getattr(self, f) is None]
+        if missing:
+            raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
+        if self.pattern is not None and self.kind in ("file_regex", "output_regex"):
+            try:
+                re.compile(self.pattern)
+            except re.error as e:
+                raise ValueError(f"check {self.id}: bad pattern: {e}") from e
         return self
 
 
