@@ -50,7 +50,8 @@ async def test_step_cap_does_not_block_the_last_steps_tools(factory):
     capped = base.model_copy(update={"config": base.config.model_copy(update={"max_steps": 1})})
     rec = await run_one(factory, factory.tasks.get("fs-01"), capped, "scripted/replay", "scripted")
     assert rec.cost.tool_calls == 1                       # the write happened
-    assert rec.status.value == "BUDGET_EXCEEDED"          # but the loop could not take a second step
+    assert rec.status.value == "SUCCESS"                  # graded on the environment...
+    assert any(v.kind == "budget_exceeded" for v in rec.violations)   # ...with the overrun on record
 
 
 # ---------------------------------------------------------------- V3
@@ -197,4 +198,36 @@ async def test_v3_retry_needs_the_exact_marker(factory):
                         "scripted", backend=backend)
     assert [s["name"] for s in _spans(rec, "handoff")] == ["stage:inspect", "stage:act", "stage:verify"]
     assert rec.status.value == "SUCCESS"
+
+
+async def test_overrunning_after_solving_is_treated_the_same_in_v2_and_v3(factory):
+    """A model that solves the task, then keeps reading until stopped. V2 hits its step cap; V3 hits a stage cap.
+    Both are graded on the environment and both carry the overrun as a violation."""
+    write = {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "notes/todo.txt", "content": "buy milk"}}]}
+    look = {"tool_calls": [{"name": "fs__list_dir", "arguments": {"path": "notes"}}]}
+    base = factory.recipes["v2-base"]
+    v2 = base.model_copy(update={"config": base.config.model_copy(update={"max_steps": 6})})
+    r2 = await run_one(factory, factory.tasks.get("fs-01"), v2, "scripted/replay", "scripted",
+                       backend=ScriptedBackend([write] + [look] * 20))
+    r3 = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
+                       "scripted", backend=ScriptedBackend([{"content": "ok"}, write] + [look] * 30))
+    assert r2.status.value == r3.status.value == "SUCCESS"
+    assert any(v.kind == "budget_exceeded" for v in r2.violations)
+    assert any(v.kind == "stage_cap" for v in r3.violations)
+
+
+async def test_identical_writes_are_wasted(factory):
+    write = {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "notes/todo.txt", "content": "buy milk"}}]}
+    read = {"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "notes/todo.txt"}}]}
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([write, read, write, read, {"content": "done"}]))
+    assert rec.scores.trajectory == pytest.approx(0.5)      # 2nd write: no new effect; 2nd read: nothing changed
+
+
+async def test_v3_rechecks_on_a_read_only_task_are_not_wasted(factory):
+    q = {"tool_calls": [{"name": "sql__query", "arguments": {"sql": "SELECT COUNT(*) FROM customers WHERE city='Dubai'"}}]}
+    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([q, {"content": "3"}, q, {"content": "3"}, q,
+                                                             {"content": "3"}]))
+    assert rec.status.value == "SUCCESS" and rec.scores.trajectory == 1.0
 

@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 import harness_factory.shapes.builtin  # noqa: F401
@@ -34,7 +35,7 @@ from harness_factory.results.store import ResultsStore
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import ShapeRegistry
-from harness_factory.shapes.result import RunResult, RunStatus
+from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import Backend
 from harness_factory.tasks.model import Task
@@ -82,7 +83,8 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
 
 
 def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -> RunStatus:
-    if not result.finished:
+    """Every scored run gets its status from the environment. Unscored runs keep INCOMPLETE / ERROR."""
+    if not result.scored:
         return result.status
     state = next((g for g in grades if g.grader_id == "state_diff"), None)
     critical = any(v.critical for g in grades for v in g.violations) or any(v.critical for v in result.violations)
@@ -112,6 +114,11 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             except HarnessError as e:
                 result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
                                    error=f"{e.kind.value}: {e.message}", violations=list(inst.tools.violations))
+            except GraphRecursionError as e:  # the shape ran past its own step bound: the harness's doing
+                result = RunResult(run_key=inst.run_key, status=RunStatus.BUDGET_EXCEEDED, scored=True,
+                                   error=f"recursion limit: {str(e)[:300]}",
+                                   violations=[*inst.tools.violations,
+                                               Violation(kind="budget_exceeded", detail="graph recursion limit")])
             except Exception as e:  # noqa: BLE001  (a crash still gets graded, traced and recorded)
                 result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
                                    error=f"crash: {type(e).__name__}: {str(e)[:500]}",
@@ -133,7 +140,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         by_id = {g.grader_id: g for g in grades}
         violations = list(result.violations) + [v for g in grades for v in g.violations]
         scores = FamilyScores(
-            outcome=by_id["state_diff"].score if "state_diff" in by_id and result.finished else 0.0,
+            outcome=by_id["state_diff"].score if "state_diff" in by_id and result.scored else 0.0,
             trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
             efficiency=0.0,   # normalized against the class median at aggregation time (P2)
             safety=len(violations),

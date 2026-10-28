@@ -66,6 +66,30 @@ def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend
     return PlanBackend(load_reference(task), style)
 
 
+async def _start_sandbox(task: Task) -> LocalSandbox:
+    """Create and seed the sandbox in a worker thread. Threads cannot be cancelled, so if the run is cancelled
+    meanwhile (Ctrl-C), wait for the thread to finish and tear down what it made rather than leak it."""
+    def make_and_reset() -> LocalSandbox:
+        sb = make_sandbox(task.id)
+        try:
+            sb.reset(task)
+        except BaseException:
+            sb.teardown()
+            raise
+        return sb
+
+    job = asyncio.ensure_future(asyncio.to_thread(make_and_reset))
+    try:
+        return await asyncio.shield(job)
+    except asyncio.CancelledError:
+        try:
+            sb = await job
+        except Exception:  # noqa: BLE001  (creation failed: nothing to clean up)
+            raise asyncio.CancelledError from None
+        await asyncio.to_thread(sb.teardown)
+        raise
+
+
 @dataclass
 class Provisioned:
     instance: HarnessInstance
@@ -104,9 +128,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
 
     # Sandbox set-up and tear-down can block (Docker run/rm, image builds): keep them off the event loop so one
     # run's container start never stalls the other workers.
-    sandbox = await asyncio.to_thread(make_sandbox, task.id)
+    sandbox = await _start_sandbox(task)
     try:
-        await asyncio.to_thread(sandbox.reset, task)
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)

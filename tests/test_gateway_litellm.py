@@ -11,6 +11,7 @@ from harness_factory.recipes.validate import validate_recipe
 from harness_factory.results.store import ResultsStore
 from harness_factory.runner.runner import run_one
 from harness_factory.substrate.budget import BudgetGuard
+from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.substrate.gateway import ModelGateway
 
 
@@ -162,7 +163,52 @@ async def test_auth_failure_is_a_setup_error_not_a_harness_result(factory, monke
 async def test_context_overflow_counts_against_the_harness(factory, monkeypatch, no_backoff):
     _script(monkeypatch, litellm.ContextWindowExceededError("too long", model="x", llm_provider="groq"))
     rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
-    assert rec.status.value == "BUDGET_EXCEEDED"
+    assert rec.status.value == "FAIL"                           # scored (not excluded); nothing was written
+    assert any(v.kind == "context_overflow" for v in rec.violations)
+
+
+async def test_malformed_tool_call_is_the_models_failure_not_setup(factory, monkeypatch, no_backoff):
+    """Groq answers a broken tool call with 400 tool_use_failed: dropping it would flatter the model."""
+    _script(monkeypatch, _status(litellm.BadRequestError, 400, "tool_use_failed: Failed to call a function"))
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    assert rec.status.value == "FAIL" and any(v.kind == "malformed_output" for v in rec.violations)
+
+
+async def test_a_400_after_the_run_started_is_the_models_doing(factory, monkeypatch, no_backoff):
+    _script(monkeypatch,
+            _resp(tool_calls=[_call("c1", "fs__write_file", '{"path": "notes/todo.txt", "content": "buy milk"}')]),
+            _status(litellm.BadRequestError, 400, "messages: invalid content"))
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    assert rec.status.value == "SUCCESS"                        # the write landed before the broken turn
+    assert any(v.kind == "malformed_output" for v in rec.violations)
+
+
+async def test_a_400_on_the_first_call_is_setup(factory, monkeypatch, no_backoff):
+    _script(monkeypatch, _status(litellm.BadRequestError, 400, "unsupported parameter: foo"))
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    assert rec.status.value == "ERROR" and "CONFIG" in rec.grades[-1]["detail"]
+
+
+async def test_timeouts_are_retried_once_only(factory, monkeypatch, no_backoff):
+    calls = _script(monkeypatch, litellm.Timeout("read timed out", model="x", llm_provider="groq"))
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    assert rec.status.value == "INCOMPLETE" and len(calls) == 2 and "timeout" in rec.grades[-1]["detail"]
+
+
+async def test_failed_attempt_time_is_not_charged_to_the_harness(factory, no_backoff):
+    from harness_factory.observability.tracer import Tracer
+    from harness_factory.recipes.model import ModelSlot
+
+    class SlowFail:
+        async def complete(self, *a):
+            await asyncio.sleep(0.3)
+            raise litellm.InternalServerError("502", llm_provider="groq", model="x")
+
+    gw = ModelGateway(factory.providers, factory.ledger, Tracer("t"), "groq", backend=SlowFail(), retries=0)
+    with pytest.raises(HarnessError) as e:
+        await gw.complete(ModelSlot(canonical_model="llama-3.3-70b"), [{"role": "user", "content": "x"}], [])
+    assert e.value.kind == ErrorKind.PROVIDER_ERROR
+    assert gw.infra_wait_s >= 0.3
 
 
 async def test_hung_call_is_cut_off(factory, monkeypatch, no_backoff):

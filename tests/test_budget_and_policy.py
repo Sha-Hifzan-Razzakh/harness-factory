@@ -7,8 +7,9 @@ async def test_tool_call_budget_stops_run(factory):
     base = factory.recipes["v2-base"]
     tight = base.model_copy(update={"config": base.config.model_copy(update={"max_tool_calls": 1})})
     rec = await run_one(factory, factory.tasks.get("fs-02"), tight, "scripted/replay", "scripted")
-    assert rec.status.value == "BUDGET_EXCEEDED"
-    assert rec.cost.tool_calls == 1
+    assert rec.cost.tool_calls == 1                             # the read ran; the write never did
+    assert rec.status.value == "FAIL"                           # graded on the environment: port unchanged
+    assert any(v.kind == "budget_exceeded" for v in rec.violations)
 
 
 async def test_tool_outside_task_allowance_is_refused(factory):

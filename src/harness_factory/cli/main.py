@@ -31,12 +31,13 @@ def _records_table(recs) -> Table:
 
 
 def _cells_table(baseline, cells, by_class: bool = True) -> Table:
-    cols = (["task class"] if by_class else []) + ["recipe", "model", "n", "excl.", "success", "E0", "C", "E",
-                                                     "ci95 (E)", "tokens"]
+    cols = (["task class"] if by_class else []) + ["recipe", "model", "provider", "env", "n", "excl.", "success",
+                                                     "E0", "C", "E", "ci95 (E)", "tokens"]
     t = Table(*cols, title=f"cost baseline {baseline.id} ({baseline.basis}, {baseline.note or 'saved'})")
     for c in cells:
         row = ([c.task_class] if by_class else []) + [
-            c.recipe_id, c.canonical_model, str(c.e.n), str(c.excluded) if c.excluded else "",
+            c.recipe_id, c.canonical_model, c.provider, c.env_hash[:6], str(c.e.n),
+            str(c.excluded) if c.excluded else "",
             f"{c.e.pass_rate:.0%}" if c.e.n else "-", f"{c.mean_e0:.3f}" if c.e.n else "-",
             f"{c.mean_c:.2f}" if c.e.n else "-", f"{c.e.mean:.3f}" if c.e.n else "-",
             f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]" if c.e.n > 1 else "-", str(c.tokens)]
@@ -193,6 +194,9 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
         missing = sorted({baseline_key(r) for r in store.rows()} - set(used.medians))
         if missing:
             console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
+        for task, n in store.stale_tasks().items():
+            console.print(f"[yellow]{task} has {n} different definitions in the store (edited between runs); "
+                          f"its rows pool into the same task class")
         return
     t = Table("id", "task", "recipe", "model", "status", "E0", "tools", "created")
     for r in store.recent(limit):
@@ -267,10 +271,15 @@ def baseline_save(note: str = typer.Option("", "--note")) -> None:
 def baseline_list() -> None:
     """Saved baselines, oldest first."""
     from harness_factory.results.store import ResultsStore
-    t = Table("id", "basis", "tasks", "note", "created")
-    for b in ResultsStore().list_baselines():
+    store = ResultsStore()
+    t = Table("id", "basis", "provider|task medians", "note", "created")
+    for b in store.list_baselines():
         t.add_row(b.id, b.basis, str(len(b.medians)), b.note, b.created_at.strftime("%Y-%m-%d %H:%M"))
     console.print(t)
+    legacy = store.legacy_baselines()
+    if legacy:
+        console.print(f"[yellow]{len(legacy)} baseline(s) saved before per-provider medians are ignored: "
+                      f"{', '.join(legacy)}")
 
 
 if __name__ == "__main__":

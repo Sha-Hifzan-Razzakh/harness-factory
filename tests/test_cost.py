@@ -95,3 +95,21 @@ async def test_frozen_baseline_keeps_scores_stable_as_runs_arrive(factory, tmp_p
     assert {k: after_frozen[k] for k in before} == before                             # old cells unchanged
     assert live_baseline.id != frozen_id                                               # the live medians moved
     assert [b.id for b in store.list_baselines()] == [frozen_id]
+
+
+def test_cells_do_not_pool_providers(factory):
+    rows = [row(provider="groq", model="m"), row(provider="openrouter", model="m")]
+    for r in rows:
+        r["run_key"] = "t@1|th|r|m|" + r["provider"] + "|0|none|env" + r["provider"]
+    cells = aggregate_rows(rows, CostBaseline.from_rows(rows))
+    assert sorted(c.provider for c in cells) == ["groq", "openrouter"] and all(c.e.n == 1 for c in cells)
+
+
+def test_legacy_baselines_are_skipped_not_fatal(tmp_path):
+    import sqlalchemy as sa
+    store = ResultsStore(f"sqlite:///{tmp_path / 'r.db'}")
+    with store.engine.begin() as c:
+        c.execute(sa.text("INSERT INTO cost_baselines (id, basis, medians, counts, note, created_at) "
+                          "VALUES ('old000000000', 'tokens', '{}', '{}', '', '2026-10-01 00:00:00')"))
+    assert store.list_baselines() == [] and store.legacy_baselines() == ["old000000000"]
+

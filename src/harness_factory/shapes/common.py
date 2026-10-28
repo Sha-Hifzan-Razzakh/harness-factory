@@ -11,7 +11,7 @@ from typing import Any
 
 from harness_factory.recipes.model import ModelSlot
 from harness_factory.shapes.base import HarnessInstance
-from harness_factory.shapes.result import RunResult, RunStatus
+from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import INFRA_KINDS, ErrorKind, HarnessError
 
 DONE = "done"
@@ -47,20 +47,34 @@ async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
     return out, None
 
 
+# Harness-attributable early stops: the run is still graded on the environment, and the reason is recorded as a
+# (non-critical) violation. Overspending already shows up in Q (wasted calls) and C (cost), so zeroing the
+# outcome as well would double-count it, and would be unfair between shapes: a V3 stage cap ends a stage
+# "normally" where a V2 step cap ends the run.
+HARNESS_STOPS = {
+    f"error:{ErrorKind.BUDGET.value}": "context_overflow",
+    f"error:{ErrorKind.MODEL_PARSE.value}": "malformed_output",
+}
+
+
 def finish(inst: HarnessInstance, messages: list[dict[str, Any]], stop: str | None, output: Any,
            error_text: str | None = None) -> RunResult:
-    """Map how the shape ended to a RunResult. Grading later upgrades a finished run to SUCCESS or PARTIAL."""
+    """Map how the shape ended to a RunResult. Grading then sets SUCCESS / PARTIAL / FAIL for every scored run."""
     stop = stop or DONE
     result = RunResult(run_key=inst.run_key, messages=messages, output=output)
+    result.violations = list(inst.tools.violations)
     if stop == DONE:
-        result.finished = True
+        result.finished = result.scored = True
         result.status = RunStatus.FAIL
-    elif stop.startswith("budget:") or stop == f"error:{ErrorKind.BUDGET.value}":
-        result.status, result.error = RunStatus.BUDGET_EXCEEDED, f"{stop}: {error_text}" if error_text else stop
+    elif stop.startswith("budget:") or stop in HARNESS_STOPS:
+        kind = "budget_exceeded" if stop.startswith("budget:") else HARNESS_STOPS[stop]
+        result.scored = True
+        result.status = RunStatus.BUDGET_EXCEEDED
+        result.error = f"{stop}: {error_text}" if error_text else stop
+        result.violations.append(Violation(kind=kind, detail=result.error[:300]))
     elif stop.removeprefix("error:") in {k.value for k in INFRA_KINDS}:
         result.status, result.error = RunStatus.INCOMPLETE, f"{stop}: {error_text}"     # infrastructure
     else:
-        result.status, result.error = RunStatus.ERROR, f"{stop}: {error_text}"
-    result.violations = list(inst.tools.violations)
+        result.status, result.error = RunStatus.ERROR, f"{stop}: {error_text}"          # setup / factory
     result.ended_at = datetime.now(UTC)
     return result

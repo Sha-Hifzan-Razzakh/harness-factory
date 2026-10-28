@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from typing import Any, Protocol
 
 import anyio
@@ -56,11 +57,19 @@ def retry_after_s(e: BaseException) -> float | None:
     return None
 
 
-def classify_provider_error(e: BaseException) -> HarnessError:
-    """Map any provider/LiteLLM exception to a typed HarnessError. Order matters: subclasses first."""
+_MALFORMED = re.compile(r"tool_use_failed|failed to call a function|tool call validation|invalid tool call",
+                        re.IGNORECASE)
+
+
+def classify_provider_error(e: BaseException, mid_run: bool = False) -> HarnessError:
+    """Map any provider/LiteLLM exception to a typed HarnessError. Order matters: subclasses first.
+
+    mid_run: the run already had a successful model call. A request the provider accepted before and rejects
+    now (400/422) was broken by what the model produced, so it is the model's failure (MODEL_PARSE), not setup.
+    """
     import litellm
 
-    msg = str(e)[:500]
+    msg = str(e)[:500] or f"{type(e).__name__} (no message)"
     if isinstance(e, litellm.ContextWindowExceededError):
         return HarnessError(ErrorKind.BUDGET, f"context window exceeded: {msg}")      # the harness overflowed it
     if isinstance(e, litellm.RateLimitError):
@@ -70,12 +79,18 @@ def classify_provider_error(e: BaseException) -> HarnessError:
         err = HarnessError(ErrorKind.RATE_LIMITED, msg)
         err.retry_after = wait                                                         # type: ignore[attr-defined]
         return err
-    if isinstance(e, (litellm.AuthenticationError, litellm.PermissionDeniedError, litellm.NotFoundError,
-                      litellm.BadRequestError, litellm.UnprocessableEntityError)):
+    if isinstance(e, (litellm.AuthenticationError, litellm.PermissionDeniedError, litellm.NotFoundError)):
         return HarnessError(ErrorKind.CONFIG, msg)
-    if isinstance(e, (litellm.Timeout, litellm.APIConnectionError, litellm.InternalServerError,
-                      litellm.ServiceUnavailableError, litellm.BadGatewayError, litellm.APIError,
-                      TimeoutError)):
+    if isinstance(e, (litellm.BadRequestError, litellm.UnprocessableEntityError)):
+        if _MALFORMED.search(msg) or mid_run:
+            return HarnessError(ErrorKind.MODEL_PARSE, msg)                  # the model broke the request
+        return HarnessError(ErrorKind.CONFIG, msg)
+    if isinstance(e, (litellm.Timeout, TimeoutError)):
+        err = HarnessError(ErrorKind.PROVIDER_ERROR, f"timeout: {msg}")
+        err.timeout = True                                                   # type: ignore[attr-defined]
+        return err
+    if isinstance(e, (litellm.APIConnectionError, litellm.InternalServerError, litellm.ServiceUnavailableError,
+                      litellm.BadGatewayError, litellm.APIError)):
         return HarnessError(ErrorKind.PROVIDER_ERROR, msg)
     if isinstance(e, HarnessError):
         return e
@@ -134,10 +149,9 @@ class LiteLLMBackend:
         kwargs["drop_params"] = True               # a provider that rejects `seed` etc. drops it rather than 400s
         if timeout_s:
             kwargs["timeout"] = timeout_s
-        try:
-            resp = await litellm.acompletion(**kwargs)
-        except Exception as e:  # every provider failure is classified; none escapes untyped
-            raise classify_provider_error(e) from e
+        # Provider exceptions propagate raw: ModelGateway classifies them, because only it knows whether the run
+        # already had a successful call (which decides whether a 400 is setup or the model's doing).
+        resp = await litellm.acompletion(**kwargs)
         choice = resp.choices[0].message
         msg: dict[str, Any] = {"role": "assistant", "content": choice.content}
         if getattr(choice, "tool_calls", None):
@@ -169,7 +183,8 @@ class ModelGateway:
             raise HarnessError(ErrorKind.PROVISION, f"provider {provider_id} needs an explicit backend")
         self.retries = retries
         self.backoff_s = backoff_s
-        self.infra_wait_s = 0.0          # quota waits + retry backoff: excluded from the run's wall budget
+        self.infra_wait_s = 0.0          # quota waits, retry backoff, failed attempts: not the harness's time
+        self.successful_calls = 0
 
     async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict]) -> Completion:
         """One model call: take a quota slot, call with a hard timeout, classify failures, retry the transient
@@ -186,6 +201,7 @@ class ModelGateway:
                                   provider_model_id=served.provider_model_id, attempt=attempt) as span:
                 if waited:
                     span.attributes["quota_wait_s"] = round(waited, 3)
+                t_call = time.monotonic()
                 try:
                     if self.timeout_s:
                         # Backstop above the provider timeout: a hung backend can never hold a worker forever.
@@ -194,13 +210,16 @@ class ModelGateway:
                     else:
                         comp = await self.backend.complete(messages, tools, slot, self.provider, served)
                 except Exception as raw:  # classified below; nothing escapes untyped
-                    e = raw if isinstance(raw, HarnessError) else classify_provider_error(raw)
+                    e = raw if isinstance(raw, HarnessError) else classify_provider_error(
+                        raw, mid_run=self.successful_calls > 0)
                     span.status, span.error = "error", e.kind.value
+                    self.infra_wait_s += time.monotonic() - t_call             # a failed attempt is not a step
                     self.ledger.record_tokens(self.provider.id, 0, reserve)     # release the reservation
                     span.attributes["error_detail"] = e.message[:300]
                     if e.kind == ErrorKind.QUOTA_EXHAUSTED:
                         self.ledger.mark_exhausted(self.provider.id)  # other workers stop calling this provider
-                    if e.kind not in RETRYABLE_KINDS or attempt >= self.retries:
+                    limit = min(self.retries, 1) if getattr(e, "timeout", False) else self.retries
+                    if e.kind not in RETRYABLE_KINDS or attempt >= limit:
                         if e is raw:
                             raise
                         raise e from raw
@@ -214,6 +233,7 @@ class ModelGateway:
                     if comp.message.get("content"):
                         span.attributes["content_preview"] = str(comp.message["content"])[:500]
                     self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out, reserve)
+                    self.successful_calls += 1
                     return comp
             attempt += 1
             self.infra_wait_s += wait

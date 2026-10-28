@@ -19,7 +19,7 @@ from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
 from harness_factory.shapes.common import DONE, finish, model_turn, run_tool_calls
-from harness_factory.shapes.result import RunResult
+from harness_factory.shapes.result import RunResult, Violation
 
 RETRY_PREFIX = "RETRY:"          # exactly what prompts/stage/verify.j2 asks for; "Retrying is not needed" is not one
 
@@ -58,7 +58,9 @@ class WorkflowGraphShape:
         async def call_model(state: FlowState) -> dict:
             st = stages[state["stage"]]
             if state["stage_steps"] >= st.max_steps:
-                return {"reply": ""}                         # stage cap: end the stage without a reply
+                # Stage cap: end the stage without a reply, and record it like a step cap in any other shape.
+                inst.tools.violations.append(Violation(kind="stage_cap", detail=f"{st.id}: {st.max_steps} calls"))
+                return {"reply": ""}
             tools = inst.tools.tools_for_model(restrict=st.allows) if st.tools else []
             msg, stop, err = await model_turn(inst, slot, state["messages"], tools)
             if stop:

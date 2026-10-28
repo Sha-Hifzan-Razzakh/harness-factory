@@ -89,12 +89,25 @@ def record_row(rec: EffectivenessRecord) -> dict:
     )
 
 
+def env_of(row: dict) -> str:
+    """env_hash from a stored run key (rows written before env_hash existed have 7 fields)."""
+    parts = str(row.get("run_key", "")).split("|")
+    return parts[7] if len(parts) > 7 else "none"
+
+
 class CellResult(BaseModel):
-    """One cell (task class x recipe x model), scored against a cost baseline."""
+    """One cell (task class x recipe x model x provider x environment), scored against a cost baseline.
+
+    Provider and environment hash are part of the cell until cross-provider equivalence is calibrated (P2):
+    the same canonical model on two providers, or before and after a tools.yaml / providers.yaml edit, is not
+    yet known to be the same experiment.
+    """
     task_class: str
     recipe_id: str
     recipe_hash: str
     canonical_model: str
+    provider: str = ""
+    env_hash: str = "none"
     e: CellAggregate                  # cost-adjusted E over scored runs: mean, spread, ci95, pass rate
     mean_e0: float                    # before cost
     mean_c: float                     # efficiency penalty input, 0..1
@@ -109,16 +122,18 @@ UNSCORED = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
 
 
 def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
-    groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
-        groups[(r["task_class"], r["recipe_hash"], r["canonical_model"])].append(r)
+        groups[(r["task_class"], r["recipe_hash"], r["canonical_model"], r.get("provider", ""), env_of(r))].append(r)
     out = []
-    for (tc, rh, m), all_rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2])):
+    for (tc, rh, m, prov, env), all_rs in sorted(
+            groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
         rs = [r for r in all_rs if r["status"] not in UNSCORED]
         n = len(rs) or 1
         out.append(CellResult(
-            task_class=tc, recipe_id=all_rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m,
-            e=CellAggregate.from_values(f"{tc}|{rh}|{m}", [baseline.adjusted(r) for r in rs],
+            task_class=tc, recipe_id=all_rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m, provider=prov,
+            env_hash=env,
+            e=CellAggregate.from_values(f"{tc}|{rh}|{m}|{prov}|{env}", [baseline.adjusted(r) for r in rs],
                                         [r["status"] == RunStatus.SUCCESS.value for r in rs]),
             mean_e0=sum(r["composite"] for r in rs) / n,
             mean_c=sum(baseline.c(r) or 0.0 for r in rs) / n,
@@ -187,7 +202,19 @@ class ResultsStore:
     def list_baselines(self) -> list[CostBaseline]:
         with self.engine.connect() as c:
             rs = c.execute(select(cost_baselines).order_by(cost_baselines.c.created_at)).mappings().all()
-        return [_baseline_from_row(r) for r in rs]
+        return [_baseline_from_row(r) for r in rs if r["bases"]]       # pre-per-provider rows are skipped
+
+    def legacy_baselines(self) -> list[str]:
+        """Ids of baselines saved before per-provider medians: unreadable, listed so the CLI can say so."""
+        with self.engine.connect() as c:
+            return [r[0] for r in c.execute(select(cost_baselines.c.id).where(cost_baselines.c.bases.is_(None)))]
+
+    def stale_tasks(self) -> dict[str, int]:
+        """task_version -> number of distinct task hashes stored for it (> 1 = the task changed between runs)."""
+        hashes: dict[str, set[str]] = defaultdict(set)
+        for r in self.rows():
+            hashes[r["task_version"]].add(str(r["run_key"]).split("|")[1])
+        return {t: len(h) for t, h in sorted(hashes.items()) if len(h) > 1}
 
     def aggregate(self, baseline: CostBaseline | None = None) -> tuple[CostBaseline, list[CellResult]]:
         """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used."""
