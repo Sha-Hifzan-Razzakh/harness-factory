@@ -25,8 +25,8 @@ from sqlalchemy import (
 )
 
 from harness_factory import settings
-from harness_factory.results.cost import CostBaseline
-from harness_factory.results.model import CellAggregate, EffectivenessRecord
+from harness_factory.results.cost import CostBaseline, is_clean, weight_profile_of
+from harness_factory.results.model import CellAggregate, EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.shapes.result import RunStatus
 
 metadata = MetaData()
@@ -59,6 +59,7 @@ runs = Table(
     Column("created_at", DateTime, nullable=False),
     Column("output", Text),                                  # added after v1: nullable, see _migrate()
     Column("transcript_path", String),
+    Column("fault", String),                                 # fault profile id; NULL = clean run
 )
 
 cost_baselines = Table(
@@ -85,7 +86,7 @@ def record_row(rec: EffectivenessRecord) -> dict:
         wall_s=rec.cost.wall_s, usd=rec.cost.usd,
         violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
-        created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path,
+        created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path, fault=rec.fault,
     )
 
 
@@ -112,6 +113,8 @@ class CellResult(BaseModel):
     mean_e0: float                    # before cost
     mean_c: float                     # efficiency penalty input, 0..1
     excluded: int = 0                 # INCOMPLETE / ERROR runs: infrastructure or setup, not the harness
+    robustness: float | None = None   # R: faulted / clean mean outcome, capped at 1; None until faulted runs exist
+    n_faulted: int = 0                # scored faulted runs R was measured on
     tokens: int
     usd: float
 
@@ -121,23 +124,58 @@ class CellResult(BaseModel):
 UNSCORED = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
 
 
+def _cell_key(r: dict) -> tuple[str, str, str, str, str]:
+    return (r["task_class"], r["recipe_hash"], r["canonical_model"], r.get("provider", ""), env_of(r))
+
+
+def robustness(clean: list[dict], faulted: list[dict]) -> float | None:
+    """R = mean outcome under faults / mean outcome clean, capped at 1 (scored runs only).
+
+    The requirements define R with pass rates; at a few seeds per cell a pass rate is 0, 0.5 or 1, so R would
+    jump. Mean outcome gives the same answer when outcomes are 0/1 and also credits partial recovery."""
+    if not clean or not faulted:
+        return None
+    clean_o = sum(r["outcome"] for r in clean) / len(clean)
+    if clean_o <= 0:
+        return None                                   # nothing to degrade from: R is undefined, not 0 or 1
+    return min(1.0, (sum(r["outcome"] for r in faulted) / len(faulted)) / clean_o)
+
+
+def _e0_with_r(r: dict, rob: float | None) -> float:
+    """A run's composite recomputed once its cell's R is known (stored composite = E0 without R)."""
+    if rob is None:
+        return float(r["composite"])
+    critical = any(v.get("critical") for v in (r.get("violations") or []))
+    weights = ScoreWeights.for_profile(weight_profile_of(r["task_class"]))
+    return weights.composite(FamilyScores(outcome=r["outcome"], trajectory=r["trajectory"], robustness=rob),
+                             critical)
+
+
 def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
-    groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
+    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged."""
+    clean_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
+    faulted_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
-        groups[(r["task_class"], r["recipe_hash"], r["canonical_model"], r.get("provider", ""), env_of(r))].append(r)
+        (clean_groups if is_clean(r) else faulted_groups)[_cell_key(r)].append(r)
     out = []
-    for (tc, rh, m, prov, env), all_rs in sorted(
-            groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
+    for key, all_rs in sorted(clean_groups.items(),
+                              key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
+        tc, rh, m, prov, env = key
         rs = [r for r in all_rs if r["status"] not in UNSCORED]
+        faulted = [r for r in faulted_groups.get(key, []) if r["status"] not in UNSCORED]
+        rob = robustness(rs, faulted)
+        e0s = [_e0_with_r(r, rob) for r in rs]
         n = len(rs) or 1
         out.append(CellResult(
             task_class=tc, recipe_id=all_rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m, provider=prov,
             env_hash=env,
-            e=CellAggregate.from_values(f"{tc}|{rh}|{m}|{prov}|{env}", [baseline.adjusted(r) for r in rs],
+            e=CellAggregate.from_values(f"{tc}|{rh}|{m}|{prov}|{env}",
+                                        [baseline.adjusted(r, e0) for r, e0 in zip(rs, e0s, strict=True)],
                                         [r["status"] == RunStatus.SUCCESS.value for r in rs]),
-            mean_e0=sum(r["composite"] for r in rs) / n,
+            mean_e0=sum(e0s) / n,
             mean_c=sum(baseline.c(r) or 0.0 for r in rs) / n,
             excluded=len(all_rs) - len(rs),
+            robustness=rob, n_faulted=len(faulted),
             tokens=sum(r["tokens_in"] + r["tokens_out"] for r in all_rs), usd=sum(r["usd"] for r in all_rs)))
     return out
 

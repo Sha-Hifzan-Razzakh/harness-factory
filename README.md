@@ -231,6 +231,43 @@ V2 and V3 tie on E₀; efficiency C separates them (see *Cost and efficiency*).
      tool results), the answer and how the run ended;
    - a row in the results store, and in MLflow when that's enabled.
 
+## Robustness and fault injection
+
+R asks: how much of its result does a harness keep when its tools misbehave? Fault profiles in
+`catalog/faults/` make tools fail on purpose, at the tool layer only:
+
+| Profile | What happens |
+|---|---|
+| `first-call-fails` | The first call to every tool reports "temporarily unavailable". Deterministic: the clearest retry test |
+| `transient` | About 25% of calls fail transiently (error, 429, timeout) |
+| `garbled-reads` | Reads "succeed" but come back cut off or empty: silent failures only verification catches |
+
+```bash
+hfx smoke --recipe v2-base,v3-staged --models <m> --faults none,transient --seeds 3
+hfx results --cells        # R column: faulted / clean mean outcome per cell, with n
+```
+
+- **The model sees a realistic failure.** It's never told the failure was injected. Failing kinds (error,
+  timeout, 429, empty) do not run the tool. `garbled` does run it, so side effects happen, but the answer
+  comes back cut off.
+- **Deterministic.** Whether call n of a tool fails depends only on the profile, the run seed, the tool and n.
+  The profile's hash is `RunKey.fault_config_hash`, so a faulted run is its own experiment, and `--resume`
+  handles it like any other.
+- **Not the model's fault.** Injected failures are not counted as invalid calls in Q, and a retry after one is
+  not counted as waste.
+- **R per cell:** R = mean outcome of the cell's faulted runs ÷ mean outcome of its clean runs, capped at 1.
+  - Each clean run's composite is recomputed with R (w_r joins the weighted mean).
+  - Faulted runs never enter the cell's E mean or the cost medians.
+  - R stays undefined (`-`) until a cell has both kinds of run, or when its clean outcome is 0.
+
+Offline, `first-call-fails` separates exactly what it should:
+
+| Recipe | Model | R | E |
+|---|---|---|---|
+| `v2-base` | `scripted/replay` (never retries) | 0.19 | 0.703 |
+| `v2-base` | `scripted/retry` | 1.00 | 0.948 |
+| `v1-base` | either (one response, cannot retry) | 0.00 | 0.168 |
+
 ## How a run ends
 
 Every run ends in one of three ways, and only the first is scored:
@@ -336,7 +373,6 @@ These prove the factory measures differences before any API budget is spent.
 ## Not in P0
 
 - **P1:** V4 planner and V5 orchestrator shapes.
-- **P2:** fault injection and robustness R.
 - **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis);
   cross-provider equivalence calibration (then cells can pool providers).
 - **Known limits:**

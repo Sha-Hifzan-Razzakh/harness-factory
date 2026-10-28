@@ -42,6 +42,7 @@ TASKS_DIR = CATALOG / "tasks"
 RECIPES_DIR = CATALOG / "recipes"
 PROVIDERS_FILE = CATALOG / "providers.yaml"
 TOOLS_FILE = CATALOG / "tools.yaml"
+FAULTS_DIR = CATALOG / "faults"
 
 RESULTS_URL = os.environ.get("HF_RESULTS_URL", f"sqlite:///{VAR / 'results.db'}")
 TRACES_DIR = VAR / "traces"

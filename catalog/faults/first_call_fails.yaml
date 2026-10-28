@@ -1,0 +1,6 @@
+# The first call to every tool fails with a transient error; later calls work. Deterministic: the clearest
+# test of whether a harness retries.
+id: first-call-fails
+description: First call to each tool reports "temporarily unavailable".
+rules:
+  - {tools: ["*"], kind: error, nth: [1]}

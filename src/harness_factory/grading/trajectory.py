@@ -1,6 +1,6 @@
 """TrajectoryGrader (B8): quality of the path, Q = 1 - share of invalid and wasted tool calls.
 
-invalid  a tool call that returned an error (bad arguments, refused, tool failure)
+invalid  a tool call that returned an error (bad arguments, refused, tool failure); injected faults excluded
 wasted   - a read repeated (same tool, same arguments) since the world last changed, within the same scope;
          - a write repeated identically: it has no new effect, so it never counts as a change.
          The world changes on a write the run has not made before. A new V3 stage is a new scope: its built-in
@@ -28,7 +28,8 @@ class TrajectoryGrader:
         violations: list[Violation] = []
         if not calls:
             return Grade(grader_id=self.id, score=1.0, passed=True, detail=f"steps={steps}, no tool calls")
-        invalid = sum(1 for s in calls if s.status == "error")
+        # An injected fault is the environment failing, not the model: never counted as invalid.
+        invalid = sum(1 for s in calls if s.status == "error" and "fault" not in s.attributes)
         wasted = 0
         reads: set[tuple[str, str | None]] = set()         # reads since the world last changed, this scope
         writes: set[tuple[str, str | None]] = set()        # every distinct write made so far

@@ -12,6 +12,7 @@ from typing import Any
 
 import anyio
 
+from harness_factory.env.faults import FaultInjector
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import ToolResult
@@ -38,7 +39,8 @@ def tool_ref(model_tool_name: str) -> str:
 
 class ToolExecutor:
     def __init__(self, pool: MCPSessionPool, declared: ToolCatalogFile, allowed: set[str], policy: PolicySet,
-                 budget: BudgetGuard, tracer: Tracer, run_key: str) -> None:
+                 budget: BudgetGuard, tracer: Tracer, run_key: str, faults: FaultInjector | None = None) -> None:
+        self.faults = faults
         self.pool = pool
         self.declared = declared
         self.allowed = allowed
@@ -118,12 +120,23 @@ class ToolExecutor:
                               is_error=True)
         if spec.side_effect != SideEffect.READ:
             span.attributes["idempotency_key"] = self.idempotency_key(ref, args)
+        # Faults fire only on calls that passed every check above, so a refused call is never a "fault".
+        fault = self.faults.decide(ref) if self.faults else None
+        if fault is not None:
+            span.attributes["fault"] = fault                 # environment, not the model: excluded from Q
+        if fault in ("error", "timeout", "rate_limit"):
+            span.error = ErrorKind.TOOL_ERROR.value
+            return ToolResult(text=FaultInjector.message(fault, ref), is_error=True)
+        if fault == "empty":
+            return ToolResult(text="")
         try:
             with anyio.fail_after(spec.timeout_s):
                 result = await self.pool.call(ref, args)
         except TimeoutError:
             span.error = ErrorKind.TOOL_TIMEOUT.value
             return ToolResult(text=f"{ref} timed out after {spec.timeout_s}s", is_error=True)
+        if fault == "garbled":                               # it really ran; the answer came back cut off
+            result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
         if len(result.text) > MAX_INLINE_CHARS:
             span.attributes["truncated_from"] = len(result.text)
             result = result.model_copy(update={"text": result.text[:MAX_INLINE_CHARS] + "\n[truncated]"})

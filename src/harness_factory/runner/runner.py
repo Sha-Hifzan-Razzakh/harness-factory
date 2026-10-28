@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 import harness_factory.shapes.builtin  # noqa: F401
 from harness_factory import settings
+from harness_factory.env.faults import NO_FAULTS, FaultConfig, load_fault_profiles
 from harness_factory.env.mcp.servers import ToolCatalogFile, load_tool_catalog
 from harness_factory.env.sandbox import make_sandbox
 from harness_factory.env.state import StateInspector
@@ -52,6 +53,7 @@ class Factory:
     providers: ProviderCatalog
     ledger: QuotaLedger
     store: ResultsStore | None = None
+    faults: dict[str, FaultConfig] = field(default_factory=dict)
     tracker: ExperimentTracker = field(default_factory=ExperimentTracker)
     graders: GradingPipeline = field(default_factory=default_pipeline)
 
@@ -62,7 +64,15 @@ class Factory:
         return Factory(tasks=TaskRegistry(), recipes=load_recipes(settings.RECIPES_DIR),
                        declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers,
                        ledger=QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE),
-                       store=ResultsStore(results_url) if store else None)
+                       store=ResultsStore(results_url) if store else None,
+                       faults=load_fault_profiles(settings.FAULTS_DIR))
+
+    def fault(self, fault_id: str | None) -> FaultConfig | None:
+        if fault_id in (None, NO_FAULTS):
+            return None
+        if fault_id not in self.faults:
+            raise KeyError(f"unknown fault profile {fault_id!r}; known: {sorted(self.faults)}")
+        return self.faults[fault_id]
 
 
 def _cost(spans, providers: ProviderCatalog, provider_id: str, wall_s: float) -> CostLedger:
@@ -110,11 +120,13 @@ def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -
 
 
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
-                  seed: int = 0, backend: Backend | None = None, flush: bool = True) -> EffectivenessRecord:
-    """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end."""
+                  seed: int = 0, backend: Backend | None = None, flush: bool = True,
+                  fault: str | None = None) -> EffectivenessRecord:
+    """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end.
+    fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run."""
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
-                         ledger=f.ledger, seed=seed, backend=backend) as p:
+                         ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p:
         inst = p.instance
         shape = ShapeRegistry.get(recipe.variant)
         k = inst.run_key
@@ -172,6 +184,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             output=result.output if isinstance(result.output, str) else None,
             messages=result.messages,
             transcript_path=str(transcript_path),
+            fault=fault,
         )
     if f.store:
         f.store.add(rec)
@@ -207,12 +220,13 @@ async def run_reference(f: Factory, task: Task) -> Grade:
 
 
 class RunSpec(BaseModel):
-    """One planned run of a campaign: task x recipe x model x provider x seed."""
+    """One planned run of a campaign: task x recipe x model x provider x seed x fault profile."""
     task_id: str
     recipe_id: str
     canonical_model: str
     provider: str
     seed: int = 0
+    fault: str | None = None                   # fault profile id; None = clean
 
 
 class CampaignError(BaseModel):
@@ -247,19 +261,25 @@ def plan_status(f: Factory, specs: list[RunSpec]) -> PlanStatus:
     done, retry, new = [], [], []
     for s in specs:
         key = run_key_for(f.tasks.get(s.task_id), f.recipes[s.recipe_id], s.canonical_model, s.provider, s.seed,
-                          declared=f.declared, providers=f.providers).as_str()
+                          declared=f.declared, providers=f.providers, fault=f.fault(s.fault)).as_str()
         (done if key in scored else retry if key in seen else new).append(s)
     return PlanStatus(done=done, retry=retry, new=new)
 
 
 def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
-         seeds: int = 1, task_ids: list[str] | None = None) -> list[RunSpec]:
-    """Every task x recipe x model x seed, in a fixed order (results come back in this order)."""
+         seeds: int = 1, task_ids: list[str] | None = None,
+         faults: list[str | None] | None = None) -> list[RunSpec]:
+    """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
+    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both)."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
-    return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s)
-            for t in tasks for r in recipe_ids for m in models for s in range(seeds)]
+    faults = faults or [None]
+    for fid in faults:
+        f.fault(fid)                                         # unknown profile: fail before anything runs
+    return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
+                    fault=None if fid in (None, NO_FAULTS) else fid)
+            for t in tasks for r in recipe_ids for m in models for fid in faults for s in range(seeds)]
 
 
 async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,
@@ -287,7 +307,7 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,
         async with gate:
             try:
                 return await run_one(f, f.tasks.get(spec.task_id), f.recipes[spec.recipe_id], spec.canonical_model,
-                                     spec.provider, seed=spec.seed, flush=False)
+                                     spec.provider, seed=spec.seed, flush=False, fault=spec.fault)
             except Exception as e:  # noqa: BLE001  (reported per run with its spec; the campaign carries on)
                 return CampaignError(spec=spec, error=f"{type(e).__name__}: {str(e)[:500]}")
 

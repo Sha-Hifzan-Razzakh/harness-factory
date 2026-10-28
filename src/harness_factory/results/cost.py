@@ -50,6 +50,16 @@ def weight_profile_of(task_class: str) -> str:
     return task_class.split("|")[1].lower()
 
 
+def fault_of(row: Row) -> str:
+    """The fault profile hash in a stored run key ("none" = a clean run)."""
+    parts = str(row.get("run_key", "")).split("|")
+    return parts[6] if len(parts) > 6 else "none"
+
+
+def is_clean(row: Row) -> bool:
+    return fault_of(row) == "none"
+
+
 def baseline_key(row: Row) -> str:
     """Medians are per provider and task: a scripted replay run and a real Groq run never share a median."""
     return f"{row['provider']}|{row['task_version']}"
@@ -74,7 +84,8 @@ class CostBaseline(BaseModel):
 
     @staticmethod
     def from_rows(rows: Iterable[Row], note: str = "") -> CostBaseline:
-        rows = list(rows)
+        """Medians from clean runs only: a run with injected faults costs more by design (retries)."""
+        rows = [r for r in rows if is_clean(r)]
         bases: dict[str, CostBasis] = {}
         for provider in sorted({r["provider"] for r in rows}):
             ok = [r for r in rows if r["provider"] == provider and r["status"] == RunStatus.SUCCESS.value]
@@ -96,9 +107,10 @@ class CostBaseline(BaseModel):
         basis = self.bases.get(row["provider"])
         return None if median is None or basis is None else efficiency(row_cost(row, basis), median)
 
-    def adjusted(self, row: Row) -> float:
-        """Cost-adjusted E for one run. A provider/task outside the baseline gets C = 0."""
-        e0 = float(row["composite"])
+    def adjusted(self, row: Row, e0: float | None = None) -> float:
+        """Cost-adjusted E for one run (e0 overrides the stored composite, e.g. once R is known).
+        A provider/task outside the baseline gets C = 0."""
+        e0 = float(row["composite"]) if e0 is None else e0
         if e0 <= 0:
             return 0.0
         w_c = ScoreWeights.for_profile(weight_profile_of(row["task_class"])).w_c
