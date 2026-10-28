@@ -124,6 +124,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             grades=[{**g.model_dump(), "snapshot": inst.snapshot} if g.grader_id == "state_diff" else g.model_dump()
                     for g in grades] + ([{"grader_id": "run_error", "detail": result.error}] if result.error else []),
             trace_path=str(trace_path),
+            output=result.output if isinstance(result.output, str) else None,
+            messages=result.messages,
         )
     if f.store:
         f.store.add(rec)

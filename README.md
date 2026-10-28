@@ -63,6 +63,21 @@ needs no network inside containers. Any base image that provides Python works; s
 Graders read the host-side directories, so a run grades identically in either sandbox. The sandbox kind and
 image tag are recorded in each run's snapshot.
 
+## Inspect AI (optional)
+
+The factory can run as an [Inspect AI](https://inspect.aisi.org.uk/) eval. Inspect provides the dataset, epochs
+(mapped to seeds), concurrency and its log viewer. The factory still provisions, runs and grades every sample,
+and still writes the results store. Decision and evidence: `docs/adr/0001-inspect-ai.md`.
+
+```bash
+uv sync --extra inspect
+inspect eval src/harness_factory/integrations/inspect_task.py --model mockllm/model \
+    -T recipe=v3-staged -T model=scripted/replay --epochs 3
+inspect view
+```
+
+Inspect's `--model` is unused (`mockllm/model` makes no calls). The factory model is set with `-T model=… -T provider=…`.
+
 ## Observability and MLOps stack
 
 ```bash
@@ -207,4 +222,4 @@ These prove the factory measures differences before any API budget is spent.
 - **P3:** elicitation and sampling.
 - **P3:** memory stores.
 - **P4:** profiler and selector.
-- **P0 leftover:** the Inspect AI spike.
+- **P2:** parallel workers (Inspect AI can be used for concurrency until then).

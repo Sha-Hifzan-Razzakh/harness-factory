@@ -117,7 +117,13 @@ def ensure_image(base: str | None = None, python: str | None = None) -> str:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(PACKAGE_ROOT / f, dest)
             (ctx / "Dockerfile").write_text(DOCKERFILE)
-            docker("build", "--quiet", "--build-arg", f"BASE={base}", "-t", tag, str(ctx), timeout=900)
+            try:
+                docker("build", "--quiet", "--build-arg", f"BASE={base}", "-t", tag, str(ctx), timeout=900)
+            except HarnessError as e:
+                raise HarnessError(ErrorKind.SANDBOX, f"{e.message}\nHint: the base image {base!r} must be "
+                                   f"pullable or already present locally. Point HF_SANDBOX_BASE_IMAGE at an image "
+                                   f"you can reach (and HF_SANDBOX_PYTHON at its Python version), or use "
+                                   f"HF_SANDBOX=local.") from e
         probe = docker("run", "--rm", "--network", "none", tag, "python", "-c",
                        "import mcp, harness_factory.env.mcp.impl.fs_server, harness_factory.env.mcp.impl.sql_server",
                        check=False, timeout=120)

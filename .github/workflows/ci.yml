@@ -34,7 +34,7 @@ jobs:
           enable-cache: true
 
       - name: Install (locked)
-        run: uv sync --locked --extra dev --python ${{ matrix.python }}
+        run: uv sync --locked --extra dev --extra inspect --python ${{ matrix.python }}
 
       - name: Lint
         run: uv run --no-sync ruff check src tests
@@ -53,6 +53,11 @@ jobs:
 
       - name: V3 workflow gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict
+
+      - name: Inspect AI adapter (factory runs as an Inspect eval)
+        run: |
+          uv run --no-sync inspect eval src/harness_factory/integrations/inspect_task.py \
+            --model mockllm/model -T recipe=v2-base --epochs 2 --log-dir var/inspect-logs --display plain
 
       - name: Docker sandbox gate (references + smoke inside containers)
         env:
