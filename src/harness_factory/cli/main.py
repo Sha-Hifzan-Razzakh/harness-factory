@@ -8,8 +8,6 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from harness_factory import settings
-
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Harness Factory")
 console = Console()
 
@@ -20,13 +18,26 @@ def _factory(store: bool = True):
 
 
 def _records_table(recs) -> Table:
-    t = Table("task", "class", "model", "status", "O", "Q", "E", "tools", "tokens", "trace")
+    t = Table("task", "class", "recipe", "model", "status", "O", "Q", "E", "calls", "tools", "tokens")
     for r in recs:
         colour = {"SUCCESS": "green", "PARTIAL": "yellow"}.get(r.status.value, "red")
-        t.add_row(r.run_key.task_version, r.task_class, r.run_key.canonical_model, f"[{colour}]{r.status.value}",
-                  f"{r.scores.outcome:.2f}", f"{r.scores.trajectory:.2f}", f"{r.composite:.3f}",
-                  str(r.cost.tool_calls), str(r.cost.tokens_in + r.cost.tokens_out),
-                  (r.trace_path or "").replace(str(settings.ROOT) + "/", ""))
+        t.add_row(r.run_key.task_version, r.task_class, r.recipe_id, r.run_key.canonical_model,
+                  f"[{colour}]{r.status.value}", f"{r.scores.outcome:.2f}", f"{r.scores.trajectory:.2f}",
+                  f"{r.composite:.3f}", str(r.cost.model_calls), str(r.cost.tool_calls),
+                  str(r.cost.tokens_in + r.cost.tokens_out))
+    return t
+
+
+def _summary_table(recs) -> Table:
+    """One row per recipe x model: the comparison the factory exists to make."""
+    groups: dict[tuple[str, str], list] = {}
+    for r in recs:
+        groups.setdefault((r.recipe_id, r.run_key.canonical_model), []).append(r)
+    t = Table("recipe", "model", "success", "mean E", "model calls", "tokens")
+    for (rid, m), rs in groups.items():
+        ok = sum(r.status.value == "SUCCESS" for r in rs)
+        t.add_row(rid, m, f"{ok}/{len(rs)}", f"{sum(r.composite for r in rs) / len(rs):.3f}",
+                  str(sum(r.cost.model_calls for r in rs)), str(sum(r.cost.tokens_in + r.cost.tokens_out for r in rs)))
     return t
 
 
@@ -86,23 +97,26 @@ def run(task: str = typer.Option(..., "--task"), recipe: str = typer.Option("v2-
 
 
 @app.command()
-def smoke(recipe: str = typer.Option("v2-base", "--recipe"), provider: str = typer.Option("scripted", "--provider"),
+def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or comma-separated ids to compare"), provider: str = typer.Option("scripted", "--provider"),
           models: str | None = typer.Option(None, "--models", help="comma-separated canonical models"),
           seeds: int = typer.Option(1, "--seeds"),
           strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
-    """Every task x every model on one recipe and provider: the P0 gate."""
+    """Every task x recipe x model on one provider. One recipe is the P0 gate; several compare shapes."""
     from harness_factory.runner.runner import smoke as run_smoke
     f = _factory()
+    recipe_ids = recipe.split(",")
     # Budget preflight (MOD-06): worst case = every run uses every step. Refuse if it cannot fit today's quota.
     n_models = len(models.split(",")) if models else len(f.providers.get(provider).models)
-    worst = len(f.tasks.all()) * n_models * seeds * f.recipes[recipe].config.max_steps
+    worst = len(f.tasks.all()) * n_models * seeds * sum(f.recipes[r].config.max_steps for r in recipe_ids)
     left = f.ledger.remaining(provider)["rpd"]
     if left is not None and worst > left:
         console.print(f"[yellow]preflight: worst case {worst} requests > {left} left today on {provider}; "
                       f"lower --seeds, pass fewer --models, or lower max_steps")
         raise typer.Exit(code=2)
-    recs = asyncio.run(run_smoke(f, recipe, provider, models.split(",") if models else None, seeds))
+    recs = asyncio.run(run_smoke(f, recipe_ids, provider, models.split(",") if models else None, seeds))
     console.print(_records_table(recs))
+    if len(recipe_ids) > 1 or not models or "," in models:
+        console.print(_summary_table(recs))
     ok = sum(r.status.value == "SUCCESS" for r in recs)
     console.print(f"{ok}/{len(recs)} SUCCESS")
     if strict and ok != len(recs):

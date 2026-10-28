@@ -27,6 +27,7 @@ class HarnessInstance:
     tracer: Tracer
     messages: list[dict[str, Any]]
     snapshot: dict[str, Any] = field(default_factory=dict)
+    stage_prompts: dict[str, str] = field(default_factory=dict)   # V3: rendered instruction per stage id
 
 
 class Harness(Protocol):

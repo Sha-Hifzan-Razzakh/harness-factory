@@ -7,6 +7,7 @@ MCP call with timeout (through the session pool) -> result shrunk if large. Ever
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import anyio
@@ -46,10 +47,14 @@ class ToolExecutor:
         self.violations: list[Violation] = []
         self._counter = 0
 
-    def tools_for_model(self) -> list[dict[str, Any]]:
+    def narrowed(self, restrict: Callable[[str], bool] | None) -> set[str]:
+        """Allowed tools, optionally narrowed (e.g. to one workflow stage). Never widens."""
+        return {r for r in self.allowed if restrict is None or restrict(r)}
+
+    def tools_for_model(self, restrict: Callable[[str], bool] | None = None) -> list[dict[str, Any]]:
         assert self.pool.catalog is not None
         out = []
-        for ref in sorted(self.allowed):
+        for ref in sorted(self.narrowed(restrict)):
             t = self.pool.catalog.tools.get(ref)
             if t is None:
                 continue
@@ -61,10 +66,17 @@ class ToolExecutor:
         self._counter += 1
         return content_hash([self.run_key, ref, args, self._counter])
 
-    async def execute(self, name: str, raw_args: str | dict) -> ToolResult:
+    async def execute(self, name: str, raw_args: str | dict, restrict: Callable[[str], bool] | None = None,
+                      scope: str | None = None) -> ToolResult:
+        """restrict/scope narrow the allowance for this call (a V3 stage passes its own tool filter and id)."""
         ref = tool_ref(name)
-        with self.tracer.span(SpanKind.tool_call, ref) as span:
-            result = await self._execute(ref, raw_args, span)
+        with self.tracer.span(SpanKind.tool_call, ref, **({"scope": scope} if scope else {})) as span:
+            if ref in self.allowed and restrict is not None and not restrict(ref):
+                span.error = ErrorKind.TOOL_NOT_ALLOWED.value
+                self.violations.append(Violation(kind="tool_not_allowed", detail=f"{ref} (outside {scope})"))
+                result = ToolResult(text=f"Tool {ref} is not available in this stage.", is_error=True)
+            else:
+                result = await self._execute(ref, raw_args, span)
             if result.is_error:
                 span.status = "error"
                 span.error = span.error or ErrorKind.TOOL_ERROR.value

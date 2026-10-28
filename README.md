@@ -4,8 +4,8 @@ Builds agent harnesses from declarative recipes, runs them against versioned tas
 environment, and records an effectiveness score per (task class × recipe × model). Requirements: *Harness Factory —
 Requirements v1*. Design: *Harness Factory UML*.
 
-This is **P0: contracts and substrate**. One recipe shape (V2 tool loop) runs end to end over real MCP servers, and
-every run is graded, traced and stored.
+Status: **P0 done, P1 in progress.** Three harness shapes (V1 single call, V2 tool loop, V3 workflow graph) run
+end to end over real MCP servers, and every run is graded, traced and stored.
 
 ## Quickstart
 
@@ -17,8 +17,9 @@ hfx tasks                 # 5 seed tasks and their class keys
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: 5 tasks x 3 scripted models
+hfx smoke --recipe v1-base,v2-base,v3-staged --models scripted/replay   # compare shapes
 hfx results --cells       # per-cell mean E, bootstrap CI, pass rate
-pytest -q                # 32 tests
+pytest -q                 # 49 tests
 ```
 
 ## Real models
@@ -84,7 +85,7 @@ src/harness_factory/
   env/                    LocalSandbox, StateInspector, MCP servers (impl/)         (B1, B11)
   recipes/                HarnessRecipe, validator                                  (B2)
   substrate/              ModelGateway, ToolExecutor, BudgetGuard, prompts          (B3)
-  shapes/                 Harness protocol, ShapeRegistry, V2 tool loop (LangGraph) (B4)
+  shapes/                 Harness protocol, ShapeRegistry, V1 / V2 / V3 shapes      (B4)
   provision/              Provisioner, task class key                               (B5)
   providers/              ProviderCatalog, QuotaLedger                              (B6)
   runner/                 RunKey, CostLedger, run_one / run_reference / smoke       (B7)
@@ -95,14 +96,43 @@ src/harness_factory/
   cli/                    hfx
 ```
 
+## Shapes
+
+A shape is the control flow around the model. It is the main thing a recipe varies, besides tools, prompts and
+config. All three shapes share one model-turn and one tool-batch implementation (`shapes/common.py`), so they
+differ only in control flow.
+
+| Shape | Recipe | Control flow | Good at | Expected to fail at |
+|---|---|---|---|---|
+| V1 single call | `v1-base` | One model response; its tool calls run; nothing follows | single-step writes, cheaply | anything that must read before acting or answering |
+| V2 tool loop | `v2-base` | Model calls tools until it answers (LangGraph `call_model ⇄ run_tools`) | general tasks | over-spending on easy tasks |
+| V3 workflow graph | `v3-staged` | Stages from the recipe, each a bounded tool loop with its own tools: inspect (read-only), act, verify (read-only); verify can reply `RETRY:` to go back to act once | tasks where acting before inspecting is costly | cost: more model calls per task |
+
+V3 stage tools are enforced: a write attempted in a read-only stage is refused and recorded as a
+`tool_not_allowed` violation. Stage transitions are `handoff` spans, so the trace shows the path through the
+graph. A V3 recipe declares its graph under `workflow:` (see `catalog/recipes/base/v3_staged.yaml`).
+
+Offline comparison (`scripted/replay`, 5 tasks):
+
+| Recipe | Success | Model calls | Tokens |
+|---|---|---|---|
+| `v1-base` | 1/5 (fs-01 only) | 5 | ~1,000 |
+| `v2-base` | 5/5 | 13 | ~3,500 |
+| `v3-staged` | 5/5 | 23 | ~8,700 |
+
+V2 and V3 tie on E for now, because efficiency C is not yet normalised (P2). Once it is, the cost difference
+will show up in E, and the selector can prefer the cheaper shape per task class.
+
 ## How a run works
 
 1. **Provision.** The recipe gets the cell's model and is validated (shape registered, prompts exist, tools resolve, tier ≥
    the risk of reachable tools, model supports tool calling). A fresh sandbox is seeded. One MCP stdio session is
    opened per server, and discovered tools are checked against `tools.yaml`.
 2. **Allowed tools** are the recipe slice ∩ the task allowance. The model sees only those, named `server__tool`.
-3. **Run.** LangGraph `call_model ⇄ run_tools`. The budget is checked before every model and tool call. Every tool
-   call goes through ToolExecutor: allowance, argument check, permission by side effect, timeout, then MCP.
+3. **Run** the recipe's shape. The budget is checked before every model and tool call; `max_steps` counts model
+   calls, so it gates only the next model call, and the tool calls of the last allowed step still run. Every
+   tool call goes through ToolExecutor: allowance (narrowed per V3 stage), argument check, permission by side
+   effect, timeout, then MCP.
 4. **Grade** the environment, not the model's claims:
    - `state_diff` scores the oracle's weighted checks against the after-state;
    - `trajectory` scores Q = 1 − (invalid + repeated calls) / calls.
@@ -126,7 +156,10 @@ Every task ships a `reference.py`. `hfx reference` must pass before the task is 
 
 ## Offline models
 
-The `scripted` provider replays each task's reference plan through the real loop, MCP servers and graders:
+The `scripted` provider follows each task's reference plan through the real shape, MCP servers and graders. It
+only calls a tool it is offered at that moment, and otherwise ends the turn. So the same script drives every
+shape: V2 offers all tools, a V3 stage offers its subset, and V1 gets a single response. It makes one call per
+response and never batches dependent steps, so on V1 only the first plan step runs.
 
 | Model | Behaviour | Expected result |
 |---|---|---|
@@ -139,7 +172,7 @@ These prove the factory measures differences before any API budget is spent.
 ## Not in P0
 
 - **P1:** DockerSandbox with network isolation (LocalSandbox is a temp directory).
-- **P1:** V1, V3, V4 and V5 shapes.
+- **P1:** V4 planner and V5 orchestrator shapes.
 - **P2:** fault injection and robustness R.
 - **P2:** efficiency C normalised against the class median.
 - **P2:** shared Redis quota ledger and the allocation planner.

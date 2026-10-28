@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from harness_factory.hashing import content_hash
 
@@ -91,6 +91,41 @@ class RetrievalConfig(BaseModel):
     rerank: bool = False
 
 
+class WorkflowStage(BaseModel):
+    """One node of a V3 workflow: a bounded tool loop with its own instruction and tool subset."""
+    id: str
+    prompt: str                                       # prompts/<ref>.j2, appended as a user message at stage start
+    tools: list[str] = Field(default_factory=list)    # fnmatch patterns, narrowed further by the run's allowed tools
+    max_steps: int = Field(5, gt=0)                   # model calls in this stage before it is ended
+
+    def allows(self, tool_ref: str) -> bool:
+        return any(fnmatch.fnmatch(tool_ref, pat) for pat in self.tools)
+
+
+class WorkflowSpec(BaseModel):
+    """V3 workflow graph: stages run in order; the last stage may send the run back once ("RETRY: ...")."""
+    stages: list[WorkflowStage] = Field(min_length=1)
+    retry_from: str | None = None                     # stage id to return to when the last stage asks to retry
+    max_retries: int = Field(1, ge=0)
+
+    @model_validator(mode="after")
+    def _check(self) -> WorkflowSpec:
+        ids = [s.id for s in self.stages]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"duplicate stage ids: {ids}")
+        if self.retry_from is not None and self.retry_from not in ids:
+            raise ValueError(f"retry_from {self.retry_from!r} is not a stage id")
+        return self
+
+    def index(self, stage_id: str) -> int:
+        return [s.id for s in self.stages].index(stage_id)
+
+
+# Optional recipe fields added after results were first recorded. When unset they are dropped before hashing,
+# so adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity").
+_HASH_OMIT_WHEN_NONE = ("workflow",)
+
+
 class HarnessRecipe(BaseModel):
     id: str
     version: int = 1
@@ -107,11 +142,15 @@ class HarnessRecipe(BaseModel):
     memory: MemoryProfile = Field(default_factory=MemoryProfile)
     retrieval: RetrievalConfig | None = None
     grader_hooks: list[str] = Field(default_factory=list)
+    workflow: WorkflowSpec | None = None              # required by V3_WORKFLOW_GRAPH, rejected elsewhere
 
     def content_hash(self) -> str:
         data = self.model_dump(mode="json")
         for slot in data["model_slots"].values():
             slot["canonical_model"] = None
+        for key in _HASH_OMIT_WHEN_NONE:
+            if data.get(key) is None:
+                data.pop(key, None)
         return content_hash(data)
 
     def with_model(self, canonical_model: str, role: str = "executor") -> HarnessRecipe:
