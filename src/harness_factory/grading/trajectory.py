@@ -23,7 +23,7 @@ class TrajectoryGrader:
 
     def grade(self, ctx: GradeContext) -> Grade:
         calls = [s for s in ctx.spans if s.kind == SpanKind.tool_call]
-        steps = sum(1 for s in ctx.spans if s.kind == SpanKind.model_call)
+        steps = sum(1 for s in ctx.spans if s.kind == SpanKind.model_call and s.status != "error")
         violations: list[Violation] = []
         if not calls:
             return Grade(grader_id=self.id, score=1.0, passed=True, detail=f"steps={steps}, no tool calls")

@@ -31,39 +31,49 @@ def _records_table(recs) -> Table:
 
 
 def _cells_table(baseline, cells, by_class: bool = True) -> Table:
-    cols = (["task class"] if by_class else []) + ["recipe", "model", "n", "success", "E0", "C", "E", "ci95 (E)",
-                                                     "tokens"]
+    cols = (["task class"] if by_class else []) + ["recipe", "model", "n", "excl.", "success", "E0", "C", "E",
+                                                     "ci95 (E)", "tokens"]
     t = Table(*cols, title=f"cost baseline {baseline.id} ({baseline.basis}, {baseline.note or 'saved'})")
     for c in cells:
         row = ([c.task_class] if by_class else []) + [
-            c.recipe_id, c.canonical_model, str(c.e.n), f"{c.e.pass_rate:.0%}", f"{c.mean_e0:.3f}",
-            f"{c.mean_c:.2f}", f"{c.e.mean:.3f}", f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]", str(c.tokens)]
+            c.recipe_id, c.canonical_model, str(c.e.n), str(c.excluded) if c.excluded else "",
+            f"{c.e.pass_rate:.0%}" if c.e.n else "-", f"{c.mean_e0:.3f}" if c.e.n else "-",
+            f"{c.mean_c:.2f}" if c.e.n else "-", f"{c.e.mean:.3f}" if c.e.n else "-",
+            f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]" if c.e.n > 1 else "-", str(c.tokens)]
         t.add_row(*row)
     return t
+
+
+def _mean(values: list[float]) -> str:
+    return f"{sum(values) / len(values):.3f}" if values else "-"
 
 
 def _summary_table(recs) -> Table:
     """One row per recipe x model, cost-adjusted against these runs: the comparison the factory exists to make.
 
     Each run is scored against its own task's median (and its own class's weights), then pooled across tasks.
+    INCOMPLETE / ERROR runs (infrastructure, setup) are counted in `excl.` and never averaged in.
     """
     from harness_factory.results.cost import CostBaseline
-    from harness_factory.results.store import record_row
+    from harness_factory.results.store import UNSCORED, record_row
 
     rows = [record_row(r) for r in recs]
     baseline = CostBaseline.from_rows(rows, note="these runs")
     groups: dict[tuple[str, str], list[dict]] = {}
     for r in rows:
         groups.setdefault((r["recipe_id"], r["canonical_model"]), []).append(r)
-    t = Table("recipe", "model", "success", "E0", "C", "E", "model calls", "tokens",
-              title=f"cost-adjusted against these runs ({baseline.basis})")
-    for (rid, m), rs in groups.items():
-        n = len(rs)
-        t.add_row(rid, m, f"{sum(r['status'] == 'SUCCESS' for r in rs)}/{n}",
-                  f"{sum(r['composite'] for r in rs) / n:.3f}",
-                  f"{sum(baseline.c(r) or 0.0 for r in rs) / n:.2f}",
-                  f"{sum(baseline.adjusted(r) for r in rs) / n:.3f}",
-                  str(sum(r["model_calls"] for r in rs)), str(sum(r["tokens_in"] + r["tokens_out"] for r in rs)))
+    t = Table("recipe", "model", "success", "excl.", "E0", "C", "E", "model calls", "tokens",
+              title=f"cost-adjusted against these runs ({baseline.basis}); excl. = INCOMPLETE/ERROR, not scored")
+    for (rid, m), all_rs in groups.items():
+        scored = [r for r in all_rs if r["status"] not in UNSCORED]
+        n = len(scored)
+        t.add_row(rid, m, f"{sum(r['status'] == 'SUCCESS' for r in scored)}/{n}",
+                  str(len(all_rs) - n) if len(all_rs) != n else "",
+                  _mean([r["composite"] for r in scored]),
+                  _mean([baseline.c(r) or 0.0 for r in scored]),
+                  _mean([baseline.adjusted(r) for r in scored]),
+                  str(sum(r["model_calls"] for r in all_rs)),
+                  str(sum(r["tokens_in"] + r["tokens_out"] for r in all_rs)))
     return t
 
 

@@ -49,6 +49,13 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
     if recipe.variant != Variant.V3_WORKFLOW_GRAPH and wf is not None:
         issues.append(ValidationIssue(rule="workflow_unused", detail=f"{recipe.variant.value} ignores workflow"))
     if wf is not None:
+        worst = sum(st.max_steps for st in wf.stages)
+        if wf.retry_from is not None:
+            worst += wf.max_retries * sum(st.max_steps for st in wf.stages[wf.index(wf.retry_from):])
+        if worst > recipe.config.max_steps:
+            issues.append(ValidationIssue(rule="workflow_fits_budget",
+                                          detail=f"stages can take {worst} model calls (retries included) but "
+                                                 f"max_steps is {recipe.config.max_steps}"))
         reach = reachable_tools(recipe, declared)
         for st in wf.stages:
             if not prompts.exists(st.prompt):

@@ -11,6 +11,7 @@ class CostLedger(BaseModel):
     tokens_in: int = 0
     tokens_out: int = 0
     model_calls: int = 0
+    failed_calls: int = 0
     tool_calls: int = 0
     wall_s: float = 0.0
     usd: float = 0.0
@@ -18,6 +19,9 @@ class CostLedger(BaseModel):
 
     def add(self, span: Span, usd: float = 0.0) -> None:
         if span.kind == SpanKind.model_call:
+            if span.status == "error":
+                self.failed_calls += 1           # retried or fatal provider failure: not a step of the harness
+                return
             self.model_calls += 1
             self.tokens_in += span.tokens_in
             self.tokens_out += span.tokens_out

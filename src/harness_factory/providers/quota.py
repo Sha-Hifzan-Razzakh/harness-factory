@@ -40,6 +40,7 @@ class QuotaLedger:
     _day: dict[str, _Window] = field(default_factory=dict)
     _totals: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     waits: dict[str, float] = field(default_factory=lambda: defaultdict(float))   # seconds spent pacing
+    _spent_until: dict[str, float] = field(default_factory=dict)                   # provider said: out for today
 
     def _roll(self, store: dict[str, _Window], provider: str, length: float) -> _Window:
         now = self.clock()
@@ -62,12 +63,16 @@ class QuotaLedger:
 
     def exhausted(self, provider: str) -> bool:
         """True when a per-day limit is spent (per-minute limits only make callers wait)."""
+        if self.clock() < self._spent_until.get(provider, 0.0):
+            return True
         left = self.remaining(provider)
         return any(left[k] is not None and left[k] <= 0 for k in ("rpd", "tpd"))
 
-    async def acquire(self, provider: str) -> None:
+    async def acquire(self, provider: str) -> float:
         """Reserve one request slot, waiting for the minute window if needed. No await between check and charge,
-        so concurrent workers on one event loop can never over-book a window."""
+        so concurrent workers on one event loop can never over-book a window. Returns the seconds this caller
+        waited (the shared `waits` total mixes all workers, so it cannot be attributed to one run)."""
+        waited = 0.0
         while True:
             if self.exhausted(provider):
                 raise HarnessError(ErrorKind.QUOTA_EXHAUSTED, f"{provider}: daily quota spent")
@@ -77,10 +82,18 @@ class QuotaLedger:
                 self._minute[provider].requests += 1
                 self._day[provider].requests += 1
                 self._totals[provider] += 1
-                return
+                return waited
             wait = max(0.05, self._minute[provider].start + MINUTE - self.clock())
             self.waits[provider] += wait
+            waited += wait
             await self.sleep(wait)
+
+    def mark_exhausted(self, provider: str) -> None:
+        """The provider itself said today's quota is spent: stop every worker calling it until the day rolls."""
+        lim = self.catalog.get(provider).limits
+        d = self._roll(self._day, provider, DAY)
+        d.requests = max(d.requests, lim.rpd if lim.rpd is not None else d.requests)
+        self._spent_until[provider] = d.start + DAY
 
     def record_tokens(self, provider: str, tokens: int) -> None:
         for store, length in ((self._minute, MINUTE), (self._day, DAY)):

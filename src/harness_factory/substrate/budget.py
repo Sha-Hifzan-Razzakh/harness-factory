@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 from harness_factory.observability.span import Span, SpanKind
 from harness_factory.recipes.model import RuntimeConfig
 
 
 class BudgetGuard:
-    def __init__(self, limits: RuntimeConfig) -> None:
+    def __init__(self, limits: RuntimeConfig, excluded_s: Callable[[], float] = lambda: 0.0) -> None:
+        """excluded_s: seconds not charged to the wall-time budget (quota waits, retry backoff)."""
         self.limits = limits
+        self.excluded_s = excluded_s
         self.used_tokens = 0
         self.used_tool_calls = 0
         self.used_steps = 0
@@ -35,9 +38,16 @@ class BudgetGuard:
             return f"max_tool_calls {self.limits.max_tool_calls}"
         if self.used_tokens >= self.limits.max_tokens:
             return f"max_tokens {self.limits.max_tokens}"
-        if time.monotonic() - self.started_at >= self.limits.wall_time_s:
+        if self.elapsed_s() >= self.limits.wall_time_s:
             return f"wall_time_s {self.limits.wall_time_s}"
         return None
+
+    def start(self) -> None:
+        """Start the wall clock when the shape starts: provisioning (sandbox, MCP, Docker) is not the harness."""
+        self.started_at = time.monotonic()
+
+    def elapsed_s(self) -> float:
+        return max(0.0, time.monotonic() - self.started_at - self.excluded_s())
 
     def remaining(self) -> dict[str, int]:
         return {

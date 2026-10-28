@@ -12,7 +12,7 @@ from typing import Any
 from harness_factory.recipes.model import ModelSlot
 from harness_factory.shapes.base import HarnessInstance
 from harness_factory.shapes.result import RunResult, RunStatus
-from harness_factory.substrate.errors import ErrorKind, HarnessError
+from harness_factory.substrate.errors import INFRA_KINDS, ErrorKind, HarnessError
 
 DONE = "done"
 
@@ -55,10 +55,10 @@ def finish(inst: HarnessInstance, messages: list[dict[str, Any]], stop: str | No
     if stop == DONE:
         result.finished = True
         result.status = RunStatus.FAIL
-    elif stop.startswith("budget:"):
-        result.status, result.error = RunStatus.BUDGET_EXCEEDED, stop
-    elif stop == f"error:{ErrorKind.QUOTA_EXHAUSTED.value}":
-        result.status, result.error = RunStatus.INCOMPLETE, stop
+    elif stop.startswith("budget:") or stop == f"error:{ErrorKind.BUDGET.value}":
+        result.status, result.error = RunStatus.BUDGET_EXCEEDED, f"{stop}: {error_text}" if error_text else stop
+    elif stop.removeprefix("error:") in {k.value for k in INFRA_KINDS}:
+        result.status, result.error = RunStatus.INCOMPLETE, f"{stop}: {error_text}"     # infrastructure
     else:
         result.status, result.error = RunStatus.ERROR, f"{stop}: {error_text}"
     result.violations = list(inst.tools.violations)

@@ -92,11 +92,16 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                               model=k.canonical_model, provider=k.provider, seed=k.seed,
                               variant=recipe.variant.value, task_class=p.task_class,
                               prompt_hash=inst.snapshot["prompt_hash"]) as root:
+            inst.budget.start()
             try:
                 result = await shape.run(inst)
             except HarnessError as e:
                 result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
                                    error=f"{e.kind.value}: {e.message}", violations=list(inst.tools.violations))
+            except Exception as e:  # noqa: BLE001  (a crash still gets graded, traced and recorded)
+                result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
+                                   error=f"crash: {type(e).__name__}: {str(e)[:500]}",
+                                   violations=list(inst.tools.violations))
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
             with inst.tracer.span(SpanKind.grade, "pipeline"):

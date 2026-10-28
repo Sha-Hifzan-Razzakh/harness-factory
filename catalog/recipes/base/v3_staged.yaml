@@ -10,7 +10,7 @@ tools:
   tool_ids: ["fs.*", "sql.*"]
   mcp_servers: [fs, sql]
 prompts: {system: system/default, task: task/default}
-config: {max_steps: 20, max_tool_calls: 25, max_tokens: 160000, wall_time_s: 400}
+config: {max_steps: 22, max_tool_calls: 30, max_tokens: 160000, wall_time_s: 400}   # 4+6+3 + retry (6+3)
 policies:
   permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}
 workflow:

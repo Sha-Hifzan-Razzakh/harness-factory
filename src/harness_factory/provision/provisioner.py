@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
+from harness_factory import settings
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
@@ -96,7 +97,9 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     provider = providers.get(provider_id)
     gateway = ModelGateway(providers, ledger, tracer, provider_id,
                            backend=backend or backend_for(provider.kind, canonical_model, task),
-                           retries=recipe.config.retries, backoff_s=recipe.config.backoff_s)
+                           retries=recipe.config.retries, backoff_s=recipe.config.backoff_s,
+                           timeout_s=recipe.config.call_timeout_s or settings.CALL_TIMEOUT_S)
+    budget.excluded_s = lambda: gateway.infra_wait_s
 
     sandbox = make_sandbox(label=task.id)
     try:

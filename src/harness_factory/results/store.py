@@ -89,11 +89,17 @@ class CellResult(BaseModel):
     recipe_id: str
     recipe_hash: str
     canonical_model: str
-    e: CellAggregate                  # cost-adjusted E: mean, spread, ci95, pass rate
+    e: CellAggregate                  # cost-adjusted E over scored runs: mean, spread, ci95, pass rate
     mean_e0: float                    # before cost
     mean_c: float                     # efficiency penalty input, 0..1
+    excluded: int = 0                 # INCOMPLETE / ERROR runs: infrastructure or setup, not the harness
     tokens: int
     usd: float
+
+
+# Runs that say nothing about the harness: provider down or out of quota (INCOMPLETE), or a setup problem / crash
+# (ERROR). They are reported per cell, never averaged in as zeros.
+UNSCORED = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
 
 
 def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
@@ -101,15 +107,17 @@ def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]
     for r in rows:
         groups[(r["task_class"], r["recipe_hash"], r["canonical_model"])].append(r)
     out = []
-    for (tc, rh, m), rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2])):
-        adjusted = [baseline.adjusted(r) for r in rs]
+    for (tc, rh, m), all_rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2])):
+        rs = [r for r in all_rs if r["status"] not in UNSCORED]
+        n = len(rs) or 1
         out.append(CellResult(
-            task_class=tc, recipe_id=rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m,
-            e=CellAggregate.from_values(f"{tc}|{rh}|{m}", adjusted, [r["status"] == RunStatus.SUCCESS.value
-                                                                      for r in rs]),
-            mean_e0=sum(r["composite"] for r in rs) / len(rs),
-            mean_c=sum(baseline.c(r) or 0.0 for r in rs) / len(rs),
-            tokens=sum(r["tokens_in"] + r["tokens_out"] for r in rs), usd=sum(r["usd"] for r in rs)))
+            task_class=tc, recipe_id=all_rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m,
+            e=CellAggregate.from_values(f"{tc}|{rh}|{m}", [baseline.adjusted(r) for r in rs],
+                                        [r["status"] == RunStatus.SUCCESS.value for r in rs]),
+            mean_e0=sum(r["composite"] for r in rs) / n,
+            mean_c=sum(baseline.c(r) or 0.0 for r in rs) / n,
+            excluded=len(all_rs) - len(rs),
+            tokens=sum(r["tokens_in"] + r["tokens_out"] for r in all_rs), usd=sum(r["usd"] for r in all_rs)))
     return out
 
 
