@@ -82,6 +82,18 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
     return path
 
 
+# A run that did not stop by itself (budget, V3 stage cap, context overflow, malformed output) is graded on the
+# environment, but cannot be a clean success: its outcome is scaled by this factor and its status is at most
+# PARTIAL. Without it, a harness that solves early and then keeps calling until a cap scores like a clean run
+# (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
+OVERRUN_OUTCOME_FACTOR = 0.5
+OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"})
+
+
+def overran(result: RunResult) -> bool:
+    return any(v.kind in OVERRUN_KINDS for v in result.violations)
+
+
 def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -> RunStatus:
     """Every scored run gets its status from the environment. Unscored runs keep INCOMPLETE / ERROR."""
     if not result.scored:
@@ -90,7 +102,7 @@ def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -
     critical = any(v.critical for g in grades for v in g.violations) or any(v.critical for v in result.violations)
     if state is None or critical:
         return RunStatus.FAIL
-    if state.score >= threshold:
+    if state.score >= threshold and not overran(result):
         return RunStatus.SUCCESS
     return RunStatus.PARTIAL if state.score > 0 else RunStatus.FAIL
 
@@ -140,7 +152,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         by_id = {g.grader_id: g for g in grades}
         violations = list(result.violations) + [v for g in grades for v in g.violations]
         scores = FamilyScores(
-            outcome=by_id["state_diff"].score if "state_diff" in by_id and result.scored else 0.0,
+            outcome=(by_id["state_diff"].score * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
+                     if "state_diff" in by_id and result.scored else 0.0),
             trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
             efficiency=0.0,   # normalized against the class median at aggregation time (P2)
             safety=len(violations),

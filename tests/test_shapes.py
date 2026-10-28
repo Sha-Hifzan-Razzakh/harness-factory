@@ -50,8 +50,8 @@ async def test_step_cap_does_not_block_the_last_steps_tools(factory):
     capped = base.model_copy(update={"config": base.config.model_copy(update={"max_steps": 1})})
     rec = await run_one(factory, factory.tasks.get("fs-01"), capped, "scripted/replay", "scripted")
     assert rec.cost.tool_calls == 1                       # the write happened
-    assert rec.status.value == "SUCCESS"                  # graded on the environment...
-    assert any(v.kind == "budget_exceeded" for v in rec.violations)   # ...with the overrun on record
+    assert rec.status.value == "PARTIAL"                  # graded on the environment, but did not stop by itself
+    assert rec.scores.outcome == 0.5 and any(v.kind == "budget_exceeded" for v in rec.violations)
 
 
 # ---------------------------------------------------------------- V3
@@ -114,8 +114,8 @@ async def test_v3_stage_step_cap_moves_the_run_on(factory):
         {"content": "done"}, {"content": "Created notes/todo.txt."}])
     rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
                         "scripted", backend=backend)
-    assert rec.status.value == "SUCCESS"
-    assert any(v.kind == "loop" for v in rec.violations)                  # trajectory grader saw the repeats
+    assert rec.status.value == "PARTIAL"                                  # a capped stage is an overrun
+    assert {"loop", "stage_cap"} <= {v.kind for v in rec.violations}
 
 
 # ---------------------------------------------------------------- recipe contract
@@ -211,9 +211,34 @@ async def test_overrunning_after_solving_is_treated_the_same_in_v2_and_v3(factor
                        backend=ScriptedBackend([write] + [look] * 20))
     r3 = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
                        "scripted", backend=ScriptedBackend([{"content": "ok"}, write] + [look] * 30))
-    assert r2.status.value == r3.status.value == "SUCCESS"
+    assert r2.status.value == r3.status.value == "PARTIAL"
+    assert r2.scores.outcome == r3.scores.outcome == 0.5
     assert any(v.kind == "budget_exceeded" for v in r2.violations)
     assert any(v.kind == "stage_cap" for v in r3.violations)
+
+
+async def test_overrunning_with_varied_calls_cannot_match_a_clean_run(factory):
+    """The farming case: solve, then keep calling with slightly different arguments until the cap (no exact
+    repeats, so Q stays 1). It must score below the clean run and stay out of the pass rate."""
+    content = "[server]\nhost = 0.0.0.0\nport = 9090\n\n[logging]\nlevel = info\n"
+    write = {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "config/app.ini", "content": content}}]}
+    variants = [{"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "./" * i + "config/app.ini"}}]}
+                for i in range(20)]
+    farm = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "scripted/replay",
+                         "scripted", backend=ScriptedBackend([write] + variants))
+    clean = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "scripted/replay",
+                          "scripted", backend=ScriptedBackend([write, {"content": "done"}]))
+    assert farm.scores.trajectory == 1.0                                  # nothing repeated exactly...
+    assert farm.status.value == "PARTIAL" and clean.status.value == "SUCCESS"
+    assert farm.composite < clean.composite                               # ...but it cannot tie the clean run
+
+
+async def test_a_perfect_v3_run_has_no_loop_violation(factory):
+    q = {"tool_calls": [{"name": "sql__query", "arguments": {"sql": "SELECT COUNT(*) FROM customers WHERE city='Dubai'"}}]}
+    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([q, {"content": "3"}, q, {"content": "3"}, q,
+                                                             {"content": "3"}]))
+    assert not [v for v in rec.violations if v.kind == "loop"]
 
 
 async def test_identical_writes_are_wasted(factory):

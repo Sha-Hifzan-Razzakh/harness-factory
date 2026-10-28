@@ -174,13 +174,27 @@ async def test_malformed_tool_call_is_the_models_failure_not_setup(factory, monk
     assert rec.status.value == "FAIL" and any(v.kind == "malformed_output" for v in rec.violations)
 
 
-async def test_a_400_after_the_run_started_is_the_models_doing(factory, monkeypatch, no_backoff):
+async def test_a_mid_run_400_without_the_providers_marker_surfaces_as_error(factory, monkeypatch, no_backoff):
+    """Could be a factory message-format bug from turn 2 on: must not be blamed on the model."""
     _script(monkeypatch,
             _resp(tool_calls=[_call("c1", "fs__write_file", '{"path": "notes/todo.txt", "content": "buy milk"}')]),
             _status(litellm.BadRequestError, 400, "messages: invalid content"))
     rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
-    assert rec.status.value == "SUCCESS"                        # the write landed before the broken turn
-    assert any(v.kind == "malformed_output" for v in rec.violations)
+    assert rec.status.value == "ERROR" and "mid-run" in rec.grades[-1]["detail"]
+
+
+async def test_a_mid_run_malformed_call_after_solving_is_partial(factory, monkeypatch, no_backoff):
+    _script(monkeypatch,
+            _resp(tool_calls=[_call("c1", "fs__write_file", '{"path": "notes/todo.txt", "content": "buy milk"}')]),
+            _status(litellm.BadRequestError, 400, "tool_use_failed"))
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    assert rec.status.value == "PARTIAL" and rec.scores.outcome == 0.5    # solved, but did not finish cleanly
+
+
+async def test_request_too_large_is_a_context_limit(factory, monkeypatch, no_backoff):
+    _script(monkeypatch, _status(litellm.BadRequestError, 400, "Request too large for model: Limit 6000"))
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    assert any(v.kind == "context_overflow" for v in rec.violations) and rec.status.value == "FAIL"
 
 
 async def test_a_400_on_the_first_call_is_setup(factory, monkeypatch, no_backoff):

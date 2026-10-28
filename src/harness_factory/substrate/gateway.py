@@ -59,13 +59,17 @@ def retry_after_s(e: BaseException) -> float | None:
 
 _MALFORMED = re.compile(r"tool_use_failed|failed to call a function|tool call validation|invalid tool call",
                         re.IGNORECASE)
+_TOO_LARGE = re.compile(r"request too large|request_too_large|maximum context|context length|too many tokens",
+                        re.IGNORECASE)
 
 
 def classify_provider_error(e: BaseException, mid_run: bool = False) -> HarnessError:
     """Map any provider/LiteLLM exception to a typed HarnessError. Order matters: subclasses first.
 
-    mid_run: the run already had a successful model call. A request the provider accepted before and rejects
-    now (400/422) was broken by what the model produced, so it is the model's failure (MODEL_PARSE), not setup.
+    A 400/422 is the model's failure (MODEL_PARSE, scored) only when the provider says the model's output was
+    malformed (e.g. Groq's tool_use_failed). Any other 400 stays CONFIG (ERROR, unscored), even mid-run, so a
+    factory message-format bug surfaces instead of being blamed on the model; `mid_run` is recorded in the
+    message to help tell the two apart. Oversized requests (413, "request too large") are context limits (BUDGET).
     """
     import litellm
 
@@ -81,10 +85,13 @@ def classify_provider_error(e: BaseException, mid_run: bool = False) -> HarnessE
         return err
     if isinstance(e, (litellm.AuthenticationError, litellm.PermissionDeniedError, litellm.NotFoundError)):
         return HarnessError(ErrorKind.CONFIG, msg)
+    if getattr(e, "status_code", None) == 413 or (
+            isinstance(e, (litellm.BadRequestError, litellm.UnprocessableEntityError)) and _TOO_LARGE.search(msg)):
+        return HarnessError(ErrorKind.BUDGET, f"request too large: {msg}")    # context/plan limit, the run's size
     if isinstance(e, (litellm.BadRequestError, litellm.UnprocessableEntityError)):
-        if _MALFORMED.search(msg) or mid_run:
+        if _MALFORMED.search(msg):
             return HarnessError(ErrorKind.MODEL_PARSE, msg)                  # the model broke the request
-        return HarnessError(ErrorKind.CONFIG, msg)
+        return HarnessError(ErrorKind.CONFIG, f"{'mid-run ' if mid_run else ''}{msg}")
     if isinstance(e, (litellm.Timeout, TimeoutError)):
         err = HarnessError(ErrorKind.PROVIDER_ERROR, f"timeout: {msg}")
         err.timeout = True                                                   # type: ignore[attr-defined]

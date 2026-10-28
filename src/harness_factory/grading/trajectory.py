@@ -36,14 +36,14 @@ class TrajectoryGrader:
         last_key, scope = None, None
         for s in calls:
             key = (s.name, s.attributes.get("args_hash"))
+            if s.attributes.get("scope") != scope:         # new V3 stage: reads and repeat streaks start over
+                scope, reads, last_key = s.attributes.get("scope"), set(), None
             streak[key] = streak[key] + 1 if key == last_key else 1
             last_key = key
             if streak[key] == LOOP_REPEATS:
                 violations.append(Violation(kind="loop", detail=f"{s.name} x{LOOP_REPEATS}"))
             if s.status == "error":
                 continue
-            if s.attributes.get("scope") != scope:         # new V3 stage
-                scope, reads = s.attributes.get("scope"), set()
             if s.attributes.get("side_effect") in ("REVERSIBLE", "IRREVERSIBLE"):
                 if key in writes:
                     wasted += 1                            # same write again: no new effect
