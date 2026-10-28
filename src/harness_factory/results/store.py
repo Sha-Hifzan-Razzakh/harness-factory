@@ -16,9 +16,12 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     insert,
+    inspect,
     select,
+    text,
 )
 
 from harness_factory import settings
@@ -54,13 +57,16 @@ runs = Table(
     Column("grades", JSON, nullable=False),
     Column("trace_path", String),
     Column("created_at", DateTime, nullable=False),
+    Column("output", Text),                                  # added after v1: nullable, see _migrate()
+    Column("transcript_path", String),
 )
 
 cost_baselines = Table(
     "cost_baselines", metadata,
     Column("id", String(12), primary_key=True),          # content hash of basis + medians
-    Column("basis", String, nullable=False),
+    Column("basis", String, nullable=False),            # display summary; per-provider bases below
     Column("medians", JSON, nullable=False),
+    Column("bases", JSON),                              # added after v1: nullable, see _migrate()
     Column("counts", JSON, nullable=False),
     Column("note", String, nullable=False),
     Column("created_at", DateTime, nullable=False),
@@ -79,7 +85,7 @@ def record_row(rec: EffectivenessRecord) -> dict:
         wall_s=rec.cost.wall_s, usd=rec.cost.usd,
         violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
-        created_at=datetime.now(UTC),
+        created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path,
     )
 
 
@@ -121,11 +127,30 @@ def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]
     return out
 
 
+def _baseline_from_row(r) -> CostBaseline:
+    # Baselines saved before per-provider medians have no `bases`; they cannot be read as per-provider medians.
+    if not r["bases"]:
+        raise ValueError(f"baseline {r['id']} predates per-provider medians; save a new one")
+    return CostBaseline(bases=r["bases"], medians=r["medians"], counts=r["counts"], note=r["note"],
+                        created_at=r["created_at"])
+
+
 class ResultsStore:
     def __init__(self, url: str | None = None) -> None:
         settings.ensure_dirs()
         self.engine = create_engine(url or settings.RESULTS_URL)
         metadata.create_all(self.engine)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive only: add nullable columns that newer code defines and an older store lacks."""
+        for table in (runs, cost_baselines):
+            existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
+            with self.engine.begin() as c:
+                for col in table.columns:
+                    if col.name not in existing and col.nullable:
+                        c.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" '
+                                       f'{col.type.compile(dialect=self.engine.dialect)}'))
 
     def add(self, rec: EffectivenessRecord) -> int:
         with self.engine.begin() as c:
@@ -148,8 +173,8 @@ class ResultsStore:
         if self.get_baseline(baseline.id) is None:
             with self.engine.begin() as c:
                 c.execute(insert(cost_baselines).values(
-                    id=baseline.id, basis=baseline.basis, medians=baseline.medians, counts=baseline.counts,
-                    note=baseline.note, created_at=baseline.created_at))
+                    id=baseline.id, basis=baseline.basis, bases=baseline.bases, medians=baseline.medians,
+                    counts=baseline.counts, note=baseline.note, created_at=baseline.created_at))
         return baseline.id
 
     def get_baseline(self, baseline_id: str) -> CostBaseline | None:
@@ -157,14 +182,12 @@ class ResultsStore:
             r = c.execute(select(cost_baselines).where(cost_baselines.c.id == baseline_id)).mappings().first()
         if r is None:
             return None
-        return CostBaseline(basis=r["basis"], medians=r["medians"], counts=r["counts"], note=r["note"],
-                            created_at=r["created_at"])
+        return _baseline_from_row(r)
 
     def list_baselines(self) -> list[CostBaseline]:
         with self.engine.connect() as c:
             rs = c.execute(select(cost_baselines).order_by(cost_baselines.c.created_at)).mappings().all()
-        return [CostBaseline(basis=r["basis"], medians=r["medians"], counts=r["counts"], note=r["note"],
-                             created_at=r["created_at"]) for r in rs]
+        return [_baseline_from_row(r) for r in rs]
 
     def aggregate(self, baseline: CostBaseline | None = None) -> tuple[CostBaseline, list[CellResult]]:
         """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used."""

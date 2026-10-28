@@ -8,8 +8,10 @@ smoke          every task x every model on one recipe: the P0 gate
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -68,6 +70,17 @@ def _cost(spans, providers: ProviderCatalog, provider_id: str, wall_s: float) ->
     return led
 
 
+def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
+    """Everything a person needs to debug a run, next to its trace: the full conversation (prompts, stage
+    instructions, model replies, tool calls with arguments, tool results), the final answer and how it ended."""
+    path = trace_path.with_suffix(".transcript.json")
+    path.write_text(json.dumps({
+        "run_key": inst.run_key.as_str(), "status": result.status.value, "error": result.error,
+        "output": result.output, "snapshot": inst.snapshot, "messages": result.messages,
+    }, indent=1, default=str))
+    return path
+
+
 def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -> RunStatus:
     if not result.finished:
         return result.status
@@ -114,6 +127,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         result.trajectory = list(inst.tracer.spans)
         result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0)
         trace_path = inst.tracer.write_jsonl()
+        transcript_path = write_transcript(trace_path, inst, result)
 
         by_id = {g.grader_id: g for g in grades}
         violations = list(result.violations) + [v for g in grades for v in g.violations]
@@ -134,6 +148,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             trace_path=str(trace_path),
             output=result.output if isinstance(result.output, str) else None,
             messages=result.messages,
+            transcript_path=str(transcript_path),
         )
     if f.store:
         f.store.add(rec)

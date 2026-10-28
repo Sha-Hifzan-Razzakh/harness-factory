@@ -209,6 +209,8 @@ class ModelGateway:
                     span.tokens_in, span.tokens_out = comp.tokens_in, comp.tokens_out
                     span.attributes["usd"] = comp.usd
                     span.attributes["tool_calls"] = len(comp.message.get("tool_calls") or [])
+                    if comp.message.get("content"):
+                        span.attributes["content_preview"] = str(comp.message["content"])[:500]
                     self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out)
                     return comp
             attempt += 1

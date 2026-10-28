@@ -37,3 +37,5 @@ class ExperimentTracker:
             mlflow.set_tags({"status": rec.status.value, "run_key": rec.run_key.as_str()})
             if rec.trace_path:
                 mlflow.log_artifact(rec.trace_path, artifact_path="trace")
+            if rec.transcript_path:
+                mlflow.log_artifact(rec.transcript_path, artifact_path="trace")

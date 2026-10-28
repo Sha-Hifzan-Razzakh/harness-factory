@@ -189,7 +189,8 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
                 raise typer.Exit(code=1)
         used, result = store.aggregate(chosen)
         console.print(_cells_table(used, result))
-        missing = sorted({r["task_version"] for r in store.rows()} - set(used.medians))
+        from harness_factory.results.cost import baseline_key
+        missing = sorted({baseline_key(r) for r in store.rows()} - set(used.medians))
         if missing:
             console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
         return
