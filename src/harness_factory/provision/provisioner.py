@@ -83,11 +83,14 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     issues = validate_recipe(recipe, declared, providers=providers, provider_id=provider_id)
     if issues:
         raise HarnessError(ErrorKind.PROVISION, "; ".join(f"{i.rule}: {i.detail}" for i in issues))
+    recipe_hash = recipe.content_hash()                  # before the seed is applied: seed is a RunKey axis
     for slot in recipe.model_slots.values():
         slot.seed = seed if slot.seed is None else slot.seed
 
-    run_key = RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe.content_hash(),
-                     canonical_model=canonical_model, provider=provider_id, seed=seed)
+    served = providers.served(provider_id, canonical_model)
+    run_key = RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe_hash,
+                     canonical_model=canonical_model, provider=provider_id, seed=seed,
+                     env_hash=declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id))
     tracer = Tracer(run_key.as_str())
     budget = BudgetGuard(recipe.config)
     provider = providers.get(provider_id)
@@ -105,7 +108,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str())
             assembler = assembler or PromptAssembler()
             messages = assembler.assemble(recipe, task, sorted(model_name(r) for r in allowed))
-            stage_prompts = assembler.stage_prompts(recipe, task)
+            stage_prompts = assembler.stage_prompts(recipe, task, sorted(model_name(r) for r in allowed))
             instance = HarnessInstance(
                 run_key=run_key, recipe=recipe, task=task, gateway=gateway, tools=tools, budget=budget,
                 tracer=tracer, messages=messages, stage_prompts=stage_prompts,

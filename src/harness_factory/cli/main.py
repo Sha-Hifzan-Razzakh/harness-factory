@@ -8,6 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from harness_factory import settings
+
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Harness Factory")
 console = Console()
 
@@ -186,6 +188,51 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
         t.add_row(str(r["id"]), r["task_version"], r["recipe_id"], r["canonical_model"], r["status"],
                   f"{r['composite']:.3f}", str(r["tool_calls"]), r["created_at"].strftime("%H:%M:%S"))
     console.print(t)
+
+
+tools_app = typer.Typer(no_args_is_help=True, help="Declared tool catalog (catalog/tools.yaml).")
+app.add_typer(tools_app, name="tools")
+
+
+@tools_app.command("freeze")
+def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if tools.yaml is out of date")) -> None:
+    """Discover every server's tools and write their schema hashes into tools.yaml, so a later schema change
+    fails provisioning (drift) instead of silently changing what the model sees."""
+    import yaml
+
+    from harness_factory.env.sandbox import make_sandbox
+    from harness_factory.mcp.pool import MCPSessionPool
+
+    f = _factory(store=False)
+
+    async def discover() -> dict[str, str]:
+        with make_sandbox("freeze") as sb:
+            sb.reset(f.tasks.all()[0])
+            declared = f.declared.model_copy(deep=True)
+            for s in declared.servers:                      # discovery only: ignore declared hashes
+                for t in s.tools:
+                    t.schema_hash = None
+            async with MCPSessionPool(declared, [s.id for s in declared.servers], sb.env(), sb.launch) as pool:
+                return {ref: pool.catalog.schema_hash(ref) for ref in pool.catalog.tools}
+
+    hashes = asyncio.run(discover())
+    text = settings.TOOLS_FILE.read_text()
+    data = yaml.safe_load(text)
+    changed = []
+    for server in data["servers"]:
+        for tool in server["tools"]:
+            ref = f"{server['id']}.{tool['name']}"
+            if tool.get("schema_hash") != hashes[ref]:
+                changed.append(ref)
+                tool["schema_hash"] = hashes[ref]
+    if check:
+        for ref in changed:
+            console.print(f"[red]stale[/] {ref}")
+        console.print("tools.yaml is up to date" if not changed else f"{len(changed)} tool(s) changed")
+        raise typer.Exit(code=1 if changed else 0)
+    header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
+    settings.TOOLS_FILE.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
+    console.print(f"wrote {len(hashes)} schema hashes ({len(changed)} changed) to {settings.TOOLS_FILE.name}")
 
 
 baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")

@@ -1,18 +1,50 @@
 # Declared tools (B11). Discovery is checked against this file; any drift fails provisioning.
 servers:
-  - id: fs
-    transport: stdio
-    module: harness_factory.env.mcp.impl.fs_server
-    tools:
-      - {name: list_dir,    side_effect: READ,         risk: R0, timeout_s: 10}
-      - {name: read_file,   side_effect: READ,         risk: R0, timeout_s: 10}
-      - {name: write_file,  side_effect: REVERSIBLE,   risk: R1, timeout_s: 10}
-      - {name: delete_file, side_effect: IRREVERSIBLE, risk: R3, timeout_s: 10}
-  - id: sql
-    transport: stdio
-    module: harness_factory.env.mcp.impl.sql_server
-    tools:
-      - {name: list_tables,    side_effect: READ,       risk: R0, timeout_s: 10}
-      - {name: describe_table, side_effect: READ,       risk: R0, timeout_s: 10}
-      - {name: query,          side_effect: READ,       risk: R0, timeout_s: 20}
-      - {name: execute,        side_effect: REVERSIBLE, risk: R2, timeout_s: 20}
+- id: fs
+  transport: stdio
+  module: harness_factory.env.mcp.impl.fs_server
+  tools:
+  - name: list_dir
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: a170ba71ba6b7616
+  - name: read_file
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b73ad10303703476
+  - name: write_file
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 7bdc3c044057bdec
+  - name: delete_file
+    side_effect: IRREVERSIBLE
+    risk: R3
+    timeout_s: 10
+    schema_hash: 2c850ff602bebf4f
+- id: sql
+  transport: stdio
+  module: harness_factory.env.mcp.impl.sql_server
+  tools:
+  - name: list_tables
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b1f3a94e73f9630d
+  - name: describe_table
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: c7aab6d19f86a4be
+  - name: query
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: a7f55c0befa55fe9
+  - name: execute
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 20
+    schema_hash: 24404e954c790312

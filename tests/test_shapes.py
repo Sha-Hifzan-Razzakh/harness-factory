@@ -119,8 +119,13 @@ async def test_v3_stage_step_cap_moves_the_run_on(factory):
 
 # ---------------------------------------------------------------- recipe contract
 
-def test_adding_workflow_field_kept_existing_recipe_identity(factory):
-    assert factory.recipes["v2-base"].content_hash() == "8c49e2941642e0ca"
+def test_unset_optional_fields_keep_recipe_identity(factory):
+    """Optional fields (workflow, config.call_timeout_s) are omitted from the hash when unset. Pinned so an
+    accidental identity change fails here; re-pin only with a PR note (CLAUDE.md, Run identity)."""
+    r = factory.recipes["v2-base"]
+    assert r.content_hash() == "79abd03818943f65"
+    timed = r.model_copy(update={"config": r.config.model_copy(update={"call_timeout_s": 30})})
+    assert timed.content_hash() != r.content_hash()
 
 
 def test_workflow_changes_recipe_identity(factory):
@@ -146,3 +151,35 @@ def test_validator_workflow_rules(factory):
     bad.stages[0].tools = ["web.fetch"]
     bad.stages[1].prompt = "stage/missing"
     assert {"stage_tool_resolves", "prompt_exists"} <= rules(v3.model_copy(update={"workflow": bad}))
+
+async def test_v3_verification_reread_is_not_wasted(factory):
+    """inspect reads, act writes, verify re-reads: the re-read follows a write, so it is verification (Q = 1)."""
+    content = "[server]\nhost = 0.0.0.0\nport = 9090\n\n[logging]\nlevel = info\n"
+    read = {"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "config/app.ini"}}]}
+    backend = ScriptedBackend([
+        read, {"content": "port is 8080"},
+        {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "config/app.ini", "content": content}}]},
+        {"content": "Changed the port to 9090."},
+        read, {"content": "Changed the port to 9090."},
+    ])
+    rec = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=backend)
+    assert rec.status.value == "SUCCESS" and rec.scores.trajectory == 1.0
+
+
+async def test_rereading_without_a_change_in_between_is_wasted(factory):
+    read = {"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "config/app.ini"}}]}
+    content = "[server]\nhost = 0.0.0.0\nport = 9090\n\n[logging]\nlevel = info\n"
+    backend = ScriptedBackend([read, read, {"tool_calls": [{"name": "fs__write_file", "arguments": {
+        "path": "config/app.ini", "content": content}}]}, {"content": "done"}])
+    rec = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "scripted/replay",
+                        "scripted", backend=backend)
+    assert rec.scores.trajectory == pytest.approx(1 - 1 / 3)
+
+
+async def test_stage_prompts_list_only_that_stages_tools(factory):
+    from harness_factory.substrate.prompts import PromptAssembler
+    task, recipe = factory.tasks.get("fs-02"), factory.recipes["v3-staged"]
+    prompts = PromptAssembler().stage_prompts(recipe, task, ["fs__list_dir", "fs__read_file", "fs__write_file"])
+    assert "fs__write_file" not in prompts["inspect"] and "fs__write_file" not in prompts["verify"]
+    assert "fs__write_file" in prompts["act"]

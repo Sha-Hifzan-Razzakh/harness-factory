@@ -1,3 +1,4 @@
 Stage: verify. Use the read-only tools to check that the task is done correctly.
 If it is, reply with the final answer to the task.
 If it is not, reply starting with "RETRY:" followed by what is wrong.
+{% if tools %}Tools in this stage: {{ tools | join(", ") }}.{% else %}No tools in this stage.{% endif %}

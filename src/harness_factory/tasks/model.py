@@ -100,7 +100,7 @@ class Task(BaseModel):
         return f"{self.id}@{self.version}"
 
     def content_hash(self) -> str:
-        data = self.model_dump(mode="json", exclude={"status"})
+        data = self.model_dump(mode="json", exclude={"status", "split", "tags"})   # labels, not identity
         if self.source_dir is not None:
             data["seed_hash"] = self.env_seed.data_hash(self.source_dir)
         return content_hash(data)

@@ -62,6 +62,12 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
         if ref and not prompts.exists(ref):
             issues.append(ValidationIssue(rule="prompt_exists", detail=f"prompt {ref!r} not found"))
 
+    unhashed = [r for r in declared.unhashed_tools() if r.split(".")[0] in recipe.tools.mcp_servers]
+    if unhashed:
+        issues.append(ValidationIssue(rule="tool_schema_hashed",
+                                      detail=f"no schema_hash in tools.yaml for {', '.join(unhashed)}; "
+                                             f"run `hfx tools freeze`"))
+
     known = {s.id for s in declared.servers}
     for sid in recipe.tools.mcp_servers:
         if sid not in known:
