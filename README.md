@@ -13,11 +13,11 @@ every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hf tasks                 # 5 seed tasks and their class keys
-hf validate              # every recipe against tools, prompts, tiers
-hf reference             # every task's reference solution passes its own oracle (TSK-04)
-hf smoke                 # P0 gate offline: 5 tasks x 3 scripted models
-hf results --cells       # per-cell mean E, bootstrap CI, pass rate
+hfx tasks                 # 5 seed tasks and their class keys
+hfx validate              # every recipe against tools, prompts, tiers
+hfx reference             # every task's reference solution passes its own oracle (TSK-04)
+hfx smoke                 # P0 gate offline: 5 tasks x 3 scripted models
+hfx results --cells       # per-cell mean E, bootstrap CI, pass rate
 pytest -q                # 32 tests
 ```
 
@@ -27,8 +27,8 @@ Put keys in `.env` (copy `.env.example`), then check the model ids and limits in
 each provider's current model list. The ids shipped are examples.
 
 ```bash
-hf run   --task fs-02 --model llama-3.3-70b --provider groq
-hf smoke --provider groq --models llama-3.3-70b,gpt-oss-120b,qwen3-32b
+hfx run   --task fs-02 --model llama-3.3-70b --provider groq
+hfx smoke --provider groq --models llama-3.3-70b,gpt-oss-120b,qwen3-32b
 ```
 
 `smoke` runs a quota preflight first. If the worst case (tasks × models × seeds × max_steps) exceeds the
@@ -92,7 +92,7 @@ src/harness_factory/
   mlops/                  MLflow tracker                                            (B9)
   mcp/                    MCPClient, MCPSessionPool, ToolCatalog                    (B11)
   observability/          Span, Tracer (JSONL + OTLP)
-  cli/                    hf
+  cli/                    hfx
 ```
 
 ## How a run works
@@ -122,7 +122,7 @@ Oracle checks, with weights summing to 1:
 A check with `weight: 0, critical: true` is a **guard**: it earns nothing, but failing it zeroes the run. Use
 guards for "don't touch anything else", so a run that does nothing can't collect preservation credit.
 
-Every task ships a `reference.py`. `hf reference` must pass before the task is marked `verified`.
+Every task ships a `reference.py`. `hfx reference` must pass before the task is marked `verified`.
 
 ## Offline models
 

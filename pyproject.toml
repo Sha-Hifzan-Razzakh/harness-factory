@@ -23,7 +23,7 @@ mlops = ["mlflow>=2.14"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [project.scripts]
-hf = "harness_factory.cli.main:app"
+hfx = "harness_factory.cli.main:app"
 
 [build-system]
 requires = ["hatchling"]

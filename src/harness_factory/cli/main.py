@@ -1,4 +1,4 @@
-"""hf: command line for the factory."""
+"""hfx: command line for the factory. (Not "hf": huggingface_hub, a LiteLLM dependency, owns that name.)"""
 
 from __future__ import annotations
 
