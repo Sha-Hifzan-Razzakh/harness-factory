@@ -80,16 +80,20 @@ def run_harness(recipe: str, model: str, provider: str, factory: Factory):
     return solve
 
 
-@scorer(metrics={"composite": [mean(), bootstrap_stderr()], "outcome": [mean()], "trajectory": [mean()],
+@scorer(metrics={"e0": [mean(), bootstrap_stderr()], "outcome": [mean()], "trajectory": [mean()],
                  "success": [mean()]})
 def effectiveness():
-    """The factory's own grades, reported to Inspect. Nothing is re-graded here."""
+    """The factory's own grades, reported to Inspect. Nothing is re-graded here.
+
+    e0 is the score before cost. The cost-adjusted E needs a baseline across runs (results.cost), so it is
+    computed by `hfx results --cells`, not per sample.
+    """
     async def score(state: TaskState, target: Target) -> Score:
         rec = state.metadata[RECORD_KEY]
         s = rec["scores"]
         failed = [c["id"] for g in rec["grades"] for c in g.get("checks", []) if not c["passed"]]
         return Score(
-            value={"composite": rec["composite"], "outcome": s["outcome"], "trajectory": s["trajectory"],
+            value={"e0": rec["composite"], "outcome": s["outcome"], "trajectory": s["trajectory"],
                    "success": 1.0 if rec["status"] == "SUCCESS" else 0.0},
             answer=rec["status"],
             explanation=(f"failed checks: {', '.join(failed)}" if failed else "all checks passed")

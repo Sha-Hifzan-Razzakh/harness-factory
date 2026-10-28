@@ -18,7 +18,7 @@ hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: 5 tasks x 3 scripted models
 hfx smoke --recipe v1-base,v2-base,v3-staged --models scripted/replay   # compare shapes
-hfx results --cells       # per-cell mean E, bootstrap CI, pass rate
+hfx results --cells       # per-cell E0, C, cost-adjusted E, bootstrap CI, pass rate
 pytest -q                 # 58 tests (9 Docker tests skip without a daemon)
 ```
 
@@ -162,8 +162,7 @@ Offline comparison (`scripted/replay`, 5 tasks):
 | `v2-base` | 5/5 | 13 | ~3,500 |
 | `v3-staged` | 5/5 | 23 | ~8,700 |
 
-V2 and V3 tie on E for now, because efficiency C is not yet normalised (P2). Once it is, the cost difference
-will show up in E, and the selector can prefer the cheaper shape per task class.
+V2 and V3 tie on E₀; efficiency C separates them (see *Cost and efficiency*).
 
 ## How a run works
 
@@ -178,11 +177,51 @@ will show up in E, and the selector can prefer the cheaper shape per task class.
 4. **Grade** the environment, not the model's claims:
    - `state_diff` scores the oracle's weighted checks against the after-state;
    - `trajectory` scores Q = 1 − (invalid + repeated calls) / calls.
-5. **Score.** E = weighted mean over measured families − w_c·C, set to 0 on any critical violation. Two rules stop
-   a run from scoring for doing nothing:
+5. **Score.** Each run stores **E₀**, the weighted mean over measured families, set to 0 on any critical
+   violation. Two rules stop a run from scoring for doing nothing:
    - trajectory counts as Q·O, so a clean path to a wrong end earns nothing;
    - robustness is left out until faults are injected (P2), instead of defaulting to 1.
+
+   The final **E = max(0, E₀ − w_c·C)** is computed when results are aggregated, because cost is relative (see
+   *Cost and efficiency*).
 6. **Record.** The trace goes to JSONL/OTLP, the row to the results store, and the run to MLflow when enabled.
+
+## Cost and efficiency
+
+C asks: what did this run cost compared with what the task usually costs?
+
+```
+C = min(cost / median, 2) / 2         0 = free, 0.5 = at the task's median, 1 = twice the median or more
+E = max(0, E₀ − w_c · C)              w_c from the task's weight profile (0.25 read, 0.15 reversible, 0.10 irreversible)
+```
+
+C is linear below the median too, so a harness that solves a task for half the usual cost ranks above one that
+solves it at the usual cost.
+
+- **Median per task, over successful runs only.** Tasks in one class differ in size, and counting failures would
+  make the median the price of giving up early. A task nobody solved falls back to all its runs.
+- **Cost basis** is reference USD when every successful run is priced, otherwise total tokens (as with the
+  scripted provider).
+- **Baselines.** Medians depend on which runs are in the pool, so freeze them:
+
+```bash
+hfx baseline save --note "reference campaign"   # freeze current per-task medians (content-addressed id)
+hfx results --cells --baseline latest           # score every cell against the frozen medians
+hfx baseline list
+```
+
+Without `--baseline`, `results --cells` uses the live medians and prints their id. Tasks missing from a frozen
+baseline are listed and scored with C = 0.
+
+Offline, V2 and V3 tie on E₀ (both 5/5), but V3 makes about 2.5× the model calls (live baseline over all
+three shapes and all three scripted models):
+
+| Recipe | Success | E₀ | C | E |
+|---|---|---|---|---|
+| `v2-base` (replay) | 5/5 | 1.000 | 0.26 | 0.957 |
+| `v3-staged` (replay) | 5/5 | 1.000 | 0.68 | 0.885 |
+| `v2-base` (noisy) | 5/5 | 0.908 | 0.40 | 0.841 |
+| `v3-staged` (noisy) | 5/5 | 0.908 | 0.85 | 0.763 |
 
 ## Writing a task
 
@@ -215,7 +254,6 @@ These prove the factory measures differences before any API budget is spent.
 
 - **P1:** V4 planner and V5 orchestrator shapes.
 - **P2:** fault injection and robustness R.
-- **P2:** efficiency C normalised against the class median.
 - **P2:** shared Redis quota ledger and the allocation planner.
 - **P2:** equivalence calibration across providers.
 - **P3:** approval gate (ASK is treated as DENY for now).

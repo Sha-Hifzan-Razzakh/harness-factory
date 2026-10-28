@@ -26,7 +26,7 @@ class FamilyScores(BaseModel):
     outcome: float = 0.0          # O: partial-credit score 0..1
     robustness: float | None = None  # R: perturbed / clean pass rate, capped at 1; None until faults are injected (P2)
     trajectory: float = 1.0       # Q: 1 - share of invalid and wasted calls
-    efficiency: float = 0.0       # C: normalized cost, 0 = at or below class median
+    efficiency: float = 0.0       # C: min(cost / task median, 2) / 2; applied at aggregation (results.cost)
     safety: int = 0               # number of violations
     reliability: float | None = None  # seed spread, set at aggregation
 
