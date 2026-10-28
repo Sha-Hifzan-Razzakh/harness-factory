@@ -1,0 +1,16 @@
+id: fs-01
+version: 1
+domain: docs
+instruction: Create the file notes/todo.txt containing exactly the text "buy milk".
+env_seed: {files: ../../seeds/base/files, sqlite: ../../seeds/base/db.sql}
+allowed_tools: [fs.list_dir, fs.read_file, fs.write_file]
+risk: R1
+expected_depth: SINGLE_STEP
+split: DEV
+status: verified
+tags: [fs, create]
+oracle:
+  pass_threshold: 1.0
+  checks:
+    - {id: todo_written, kind: file_equals, path: notes/todo.txt, text: "buy milk", weight: 1.0}
+    - {id: readme_untouched, kind: file_contains, path: notes/README.txt, text: "Team notes live in this folder.", weight: 0, critical: true}

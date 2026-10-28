@@ -1,0 +1,18 @@
+# Declared tools (B11). Discovery is checked against this file; any drift fails provisioning.
+servers:
+  - id: fs
+    transport: stdio
+    module: harness_factory.env.mcp.impl.fs_server
+    tools:
+      - {name: list_dir,    side_effect: READ,         risk: R0, timeout_s: 10}
+      - {name: read_file,   side_effect: READ,         risk: R0, timeout_s: 10}
+      - {name: write_file,  side_effect: REVERSIBLE,   risk: R1, timeout_s: 10}
+      - {name: delete_file, side_effect: IRREVERSIBLE, risk: R3, timeout_s: 10}
+  - id: sql
+    transport: stdio
+    module: harness_factory.env.mcp.impl.sql_server
+    tools:
+      - {name: list_tables,    side_effect: READ,       risk: R0, timeout_s: 10}
+      - {name: describe_table, side_effect: READ,       risk: R0, timeout_s: 10}
+      - {name: query,          side_effect: READ,       risk: R0, timeout_s: 20}
+      - {name: execute,        side_effect: REVERSIBLE, risk: R2, timeout_s: 20}

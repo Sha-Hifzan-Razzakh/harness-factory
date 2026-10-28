@@ -1,0 +1,33 @@
+# Provider catalog (B6). The canonical model is the experiment variable; the provider is infrastructure.
+# Model ids and limits for real providers are examples: verify against each provider's model list and
+# rate-limit page before a campaign. Prices are $ per million tokens (reference price when free).
+providers:
+  - id: scripted
+    kind: scripted
+    data_terms: local
+    models:
+      - {canonical: scripted/replay, provider_model_id: replay}   # follows the reference plan
+      - {canonical: scripted/noisy,  provider_model_id: noisy}    # one bad call first, then recovers
+      - {canonical: scripted/lazy,   provider_model_id: lazy}     # stops one step early
+
+  - id: groq
+    kind: litellm
+    litellm_prefix: groq
+    auth_env: GROQ_API_KEY
+    data_terms: "no training on API data (verify)"
+    limits: {rpm: 30, rpd: 1000, tpm: 6000, scope: account}
+    models:
+      - {canonical: llama-3.3-70b, provider_model_id: llama-3.3-70b-versatile, price_in: 0.59, price_out: 0.79, free: true}
+      - {canonical: gpt-oss-120b,  provider_model_id: openai/gpt-oss-120b,     price_in: 0.15, price_out: 0.75, free: true}
+      - {canonical: qwen3-32b,     provider_model_id: qwen/qwen3-32b,          price_in: 0.29, price_out: 0.59, free: true}
+
+  - id: openrouter
+    kind: litellm
+    litellm_prefix: openrouter
+    auth_env: OPENROUTER_API_KEY
+    data_terms: "depends on upstream; set provider data policy in account (verify)"
+    limits: {rpm: 20, rpd: 50, scope: account}
+    models:
+      - {canonical: llama-3.3-70b, provider_model_id: meta-llama/llama-3.3-70b-instruct, price_in: 0.13, price_out: 0.40}
+      - {canonical: gpt-oss-120b,  provider_model_id: openai/gpt-oss-120b,               price_in: 0.10, price_out: 0.50}
+      - {canonical: qwen3-32b,     provider_model_id: qwen/qwen3-32b,                    price_in: 0.10, price_out: 0.30}

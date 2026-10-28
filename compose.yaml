@@ -1,0 +1,36 @@
+# Local stack for P0. Image tags are set in .env; pin them to versions you have checked.
+# Langfuse needs ClickHouse, Redis and object storage: run its official docker-compose alongside this file
+# and put the stack on the same network (see README), or point LANGFUSE_OTLP_ENDPOINT at Langfuse Cloud.
+services:
+  postgres:
+    image: postgres:${POSTGRES_TAG:-16}
+    environment: {POSTGRES_USER: hf, POSTGRES_PASSWORD: hf, POSTGRES_DB: hf}
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:${MLFLOW_TAG:-latest}
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+    ports: ["5000:5000"]
+    volumes: [mlflow:/mlflow]
+
+  phoenix:
+    image: arizephoenix/phoenix:${PHOENIX_TAG:-latest}
+    ports: ["6006:6006"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTELCOL_TAG:-latest}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes: ["./observability/collector.yaml:/etc/otelcol/config.yaml:ro"]
+    environment:
+      LANGFUSE_OTLP_ENDPOINT: ${LANGFUSE_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel}
+      LANGFUSE_AUTH: ${LANGFUSE_AUTH:-}
+    ports: ["4317:4317", "4318:4318"]
+    depends_on: [phoenix]
+
+volumes:
+  pgdata: {}
+  mlflow: {}

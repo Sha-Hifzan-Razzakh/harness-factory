@@ -1,0 +1,18 @@
+id: mix-01
+version: 1
+domain: data
+instruction: >-
+  Export the customers based in Dubai to reports/dubai.csv. Use the header line "id,name",
+  then one line per customer ordered by id, with no extra columns or quoting.
+env_seed: {files: ../../seeds/base/files, sqlite: ../../seeds/base/db.sql}
+allowed_tools: [sql.list_tables, sql.describe_table, sql.query, fs.list_dir, fs.write_file]
+risk: R1
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags: [sql, fs, export]
+oracle:
+  pass_threshold: 1.0
+  checks:
+    - {id: header, kind: file_contains, path: reports/dubai.csv, text: "id,name\n", weight: 0.2}
+    - {id: exact_export, kind: file_equals, path: reports/dubai.csv, text: "id,name\n1,Al Noor Trading\n3,Falcon Systems\n5,Creek Analytics", weight: 0.8}
