@@ -81,6 +81,9 @@ class RuntimeConfig(BaseModel):
     compaction_at: float = 0.8
     parallel_tool_calls: bool = False
     call_timeout_s: int | None = Field(None, gt=0)    # per model call; None = settings.CALL_TIMEOUT_S
+    # After the provider rejects a reply as malformed (e.g. a call to a tool that doesn't exist), re-ask the model
+    # with the error and the real tool list, at most this many times per run. None/0 = the run ends there.
+    recover_malformed: int | None = Field(None, ge=0)
 
 
 class PolicySet(BaseModel):
@@ -136,7 +139,7 @@ class WorkflowSpec(BaseModel):
 
 # Optional fields added after results were first recorded. When unset they are dropped before hashing, so
 # adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
-_HASH_OMIT_WHEN_NONE = ("workflow", "config.call_timeout_s")
+_HASH_OMIT_WHEN_NONE = ("workflow", "config.call_timeout_s", "config.recover_malformed")
 
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
@@ -208,12 +211,47 @@ class HarnessRecipe(BaseModel):
 
 
 def load_recipe(path: Path) -> HarnessRecipe:
-    return HarnessRecipe.model_validate(yaml.safe_load(path.read_text()))
+    """One recipe file on its own. A recipe with `base:` needs its base: use load_recipes()."""
+    data = yaml.safe_load(path.read_text())
+    if data.get("base"):
+        raise ValueError(f"{path.name} extends {data['base']!r}: load it with load_recipes()")
+    return HarnessRecipe.model_validate(data)
+
+
+def _merge(base: dict, child: dict) -> dict:
+    """Child over base: mappings merge key by key, anything else (lists included) is replaced."""
+    out = dict(base)
+    for k, v in child.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
 
 
 def load_recipes(root: Path) -> dict[str, HarnessRecipe]:
-    out: dict[str, HarnessRecipe] = {}
+    """Every recipe under root. `base: <id>` makes a recipe its base plus only what it changes (a matrix recipe
+    names the one dimension it varies). The hash is taken of the resolved recipe, base id included, so editing a
+    base changes every recipe built on it."""
+    raw: dict[str, dict] = {}
     for p in sorted(root.rglob("*.yaml")):
-        r = load_recipe(p)
-        out[r.id] = r
-    return out
+        data = yaml.safe_load(p.read_text())
+        rid = data.get("id")
+        if rid in raw:
+            raise ValueError(f"duplicate recipe id {rid!r} ({p.name})")
+        raw[rid] = data
+
+    resolved: dict[str, dict] = {}
+
+    def resolve(rid: str, seen: tuple[str, ...] = ()) -> dict:
+        if rid in resolved:
+            return resolved[rid]
+        if rid in seen:
+            raise ValueError(f"recipe base cycle: {' -> '.join((*seen, rid))}")
+        data = raw.get(rid)
+        if data is None:
+            raise ValueError(f"recipe {seen[-1]!r} extends unknown recipe {rid!r}")
+        if data.get("base"):
+            parent = {k: v for k, v in resolve(data["base"], (*seen, rid)).items() if k not in ("id", "version", "base")}
+            data = _merge(parent, data)
+        resolved[rid] = data
+        return data
+
+    return {rid: HarnessRecipe.model_validate(resolve(rid)) for rid in raw}

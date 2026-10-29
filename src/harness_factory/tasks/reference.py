@@ -49,14 +49,18 @@ class PlanBackend:
     lazy    drops the last plan step                       (stops early)
     retry   follows the plan, and repeats a step whose tool reported an error or returned nothing,
             up to 3 times                                  (robust to flaky tools; the others are not)
+    invent  its first call names a tool that doesn't exist, which the provider rejects (like Groq's
+            tool_use_failed in Phase 1's code-01); then follows the plan if it is asked again
     """
+
+    INVENTED_TOOL = "fs__search_file"
 
     MAX_RETRIES = 3
 
     STAGE_DONE = "Stage complete."
 
     def __init__(self, ref: Reference, style: str = "replay") -> None:
-        if style not in ("replay", "noisy", "lazy", "retry"):
+        if style not in ("replay", "noisy", "lazy", "retry", "invent"):
             raise ValueError(f"unknown scripted style {style!r}")
         self.style = style
         self.last_step: dict | None = None
@@ -64,6 +68,7 @@ class PlanBackend:
         self.plan = list(ref.plan[:-1] if style == "lazy" and ref.plan else ref.plan)
         self.final = ref.final
         self.noisy_pending = style == "noisy"
+        self.invent_pending = style == "invent"
         self.i = 0
         self.calls = 0
 
@@ -84,9 +89,15 @@ class PlanBackend:
         return {"role": "assistant", "content": None, "tool_calls": [call]}
 
     async def complete(self, messages, tools, slot, provider, served):
+        from harness_factory.substrate.errors import ErrorKind, HarnessError
         from harness_factory.substrate.gateway import Completion, approx_tokens
 
         offered = {t["function"]["name"] for t in tools}
+        if self.invent_pending and offered:
+            self.invent_pending = False
+            self.calls += 1
+            raise HarnessError(ErrorKind.MODEL_PARSE, f"tool call validation failed: attempted to call tool "
+                                                      f"'{self.INVENTED_TOOL}' which was not in request.tools")
         if self.style == "retry" and self._last_tool_failed(messages) and self.last_step \
                 and self.retries < self.MAX_RETRIES and model_name(self.last_step["tool"]) in offered:
             self.retries += 1

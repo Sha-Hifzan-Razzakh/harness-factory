@@ -1,0 +1,6 @@
+# Matrix (config): v2-base with one change. When the provider rejects a reply as malformed (a call to a tool that
+# doesn't exist, as in Phase 1's code-01), re-ask with the error and the real tool list, at most twice per run.
+id: v2-recover
+version: 1
+base: v2-base
+config: {recover_malformed: 2}

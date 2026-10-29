@@ -1,6 +1,8 @@
 """TrajectoryGrader (B8): quality of the path, Q = 1 - share of invalid and wasted tool calls.
 
-invalid  a tool call that returned an error (bad arguments, refused, tool failure); injected faults excluded
+invalid  a tool call that returned an error (bad arguments, refused, tool failure); injected faults excluded;
+         and a reply the provider rejected as malformed (MODEL_PARSE), e.g. a call to a tool that doesn't exist:
+         it is an attempted call that never ran, whether or not the harness then recovered
 wasted   - a read repeated (same tool, same arguments) since the world last changed, within the same scope;
          - a write repeated identically: it has no new effect, so it never counts as a change.
          The world changes on a write the run has not made before. A new V3 stage is a new scope: its built-in
@@ -15,6 +17,7 @@ from collections import Counter
 from harness_factory.grading.base import Grade, GradeContext
 from harness_factory.observability.span import SpanKind
 from harness_factory.shapes.result import Violation
+from harness_factory.substrate.errors import ErrorKind
 
 LOOP_REPEATS = 3
 
@@ -25,11 +28,12 @@ class TrajectoryGrader:
     def grade(self, ctx: GradeContext) -> Grade:
         calls = [s for s in ctx.spans if s.kind == SpanKind.tool_call]
         steps = sum(1 for s in ctx.spans if s.kind == SpanKind.model_call and s.status != "error")
+        rejected = sum(1 for s in ctx.spans if s.kind == SpanKind.model_call and s.error == ErrorKind.MODEL_PARSE.value)
         violations: list[Violation] = []
-        if not calls:
+        if not calls and not rejected:
             return Grade(grader_id=self.id, score=1.0, passed=True, detail=f"steps={steps}, no tool calls")
         # An injected fault is the environment failing, not the model: never counted as invalid.
-        invalid = sum(1 for s in calls if s.status == "error" and "fault" not in s.attributes)
+        invalid = rejected + sum(1 for s in calls if s.status == "error" and "fault" not in s.attributes)
         wasted = 0
         reads: set[tuple[str, str | None]] = set()         # reads since the world last changed, this scope
         writes: set[tuple[str, str | None]] = set()        # every distinct write made so far
@@ -57,6 +61,6 @@ class TrajectoryGrader:
             reads.add(key)
         if steps > ctx.max_steps:
             violations.append(Violation(kind="step_cap", detail=f"{steps} > {ctx.max_steps}"))
-        q = max(0.0, 1.0 - (invalid + wasted) / len(calls))
+        q = max(0.0, 1.0 - (invalid + wasted) / (len(calls) + rejected))
         return Grade(grader_id=self.id, score=round(q, 6), passed=not violations, violations=violations,
-                     detail=f"calls={len(calls)} invalid={invalid} wasted={wasted} steps={steps}")
+                     detail=f"calls={len(calls)} rejected={rejected} invalid={invalid} wasted={wasted} steps={steps}")

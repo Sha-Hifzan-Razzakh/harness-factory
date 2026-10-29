@@ -259,6 +259,37 @@ Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks):
 
 V2 and V3 tie on E₀; efficiency C separates them (see *Cost and efficiency*).
 
+## Recipe matrix
+
+The factory exists to find which harness wins for which task class, across tools, skills, prompts, config and
+memory, not only shape. A **matrix recipe** is a base recipe plus one change, so a difference in its results
+can be put down to that change:
+
+```yaml
+# catalog/recipes/matrix/v2_recover.yaml
+id: v2-recover
+base: v2-base                    # everything from v2-base ...
+config: {recover_malformed: 2}   # ... except this
+```
+
+Mappings merge key by key and anything else is replaced. The hash is taken of the resolved recipe, base id
+included, so editing a base changes every recipe built on it. Existing recipe hashes are unchanged.
+
+| Dimension | Recipe | The one change |
+|---|---|---|
+| prompt | `v2-plan-check` | System prompt asks for a numbered plan with the first tool call and a check before the final answer (`prompts/system/plan_check.j2`) |
+| config | `v2-recover` | When the provider rejects a reply as malformed (a call to a tool that doesn't exist, Phase 1's `code-01`), re-ask with the error and the real tool list, at most twice per run (`config.recover_malformed`) |
+
+Rules for a dimension:
+
+- **It lives in `shapes/common.py`,** so every shape gets it the same way. Retry-after-rejection works in V2 and
+  V3 alike. A rejected reply counts against a V3 stage cap, and V1's single step leaves no room to re-ask.
+- **It is never free.** A rejected reply uses a step, and the trajectory grader counts it as an invalid call
+  (with or without retry). So recovering beats stopping, but never matches a clean run.
+- **It has an offline test,** with a scripted model that triggers it. `scripted/invent` makes its first call to
+  a tool that doesn't exist. On the 20 visible tasks, `v2-base` passes 0/20 with it and `v2-recover` passes
+  20/20, at E₀ 0.930 rather than 1.0.
+
 ## How a run works
 
 1. **Provision.** The recipe gets the cell's model and is validated (shape registered, prompts exist, tools resolve, tier ≥

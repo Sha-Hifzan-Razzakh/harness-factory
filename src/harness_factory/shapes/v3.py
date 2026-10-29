@@ -62,10 +62,12 @@ class WorkflowGraphShape:
                 inst.tools.violations.append(Violation(kind="stage_cap", detail=f"{st.id}: {st.max_steps} calls"))
                 return {"reply": ""}
             tools = inst.tools.tools_for_model(restrict=st.allows) if st.tools else []
-            msg, stop, err = await model_turn(inst, slot, state["messages"], tools)
-            if stop:
-                return {"stop": stop, "error": err}
-            update: dict[str, Any] = {"messages": state["messages"] + [msg], "stage_steps": state["stage_steps"] + 1}
+            turn = await model_turn(inst, slot, state["messages"], tools)
+            if turn.stop:
+                return {"messages": state["messages"] + turn.added, "stop": turn.stop, "error": turn.error}
+            msg = turn.message
+            update: dict[str, Any] = {"messages": state["messages"] + turn.added,
+                                      "stage_steps": state["stage_steps"] + turn.calls}   # rejected replies count
             if not msg.get("tool_calls"):
                 update["reply"] = msg.get("content") or ""
             return update

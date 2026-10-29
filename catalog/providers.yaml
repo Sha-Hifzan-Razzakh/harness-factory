@@ -10,6 +10,7 @@ providers:
       - {canonical: scripted/noisy,  provider_model_id: noisy}    # one bad call first, then recovers
       - {canonical: scripted/lazy,   provider_model_id: lazy}     # stops one step early
       - {canonical: scripted/retry,  provider_model_id: retry}    # retries a step after a tool error
+      - {canonical: scripted/invent, provider_model_id: invent}   # first call names a tool that doesn't exist
 
   - id: groq
     kind: litellm
