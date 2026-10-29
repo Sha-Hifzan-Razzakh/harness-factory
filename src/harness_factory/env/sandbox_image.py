@@ -34,16 +34,9 @@ SERVER_FILES = [
     *sorted(str(p.relative_to(PACKAGE_ROOT)) for p in (PACKAGE_ROOT / "env/mcp/impl").glob("*.py")),
 ]
 
-DOCKERFILE = """\
-ARG BASE
-FROM ${BASE}
-COPY vendor /opt/hf/vendor
-COPY harness_factory /opt/hf/src/harness_factory
-ENV PYTHONPATH=/opt/hf/src:/opt/hf/vendor \\
-    PYTHONDONTWRITEBYTECODE=1 \\
-    PYTHONUNBUFFERED=1
-WORKDIR /work
-"""
+# The sandbox image: the base image plus the vendored MCP closure and the server modules. No RUN step, so the
+# build needs no network. Its text is part of the image tag.
+DOCKERFILE = (PACKAGE_ROOT / "env" / "sandbox.Dockerfile").read_text()
 
 _ARCH = {"amd64": "x86_64", "x86_64": "x86_64", "arm64": "aarch64", "aarch64": "aarch64"}
 _ensured: dict[str, str] = {}

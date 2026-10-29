@@ -1,7 +1,52 @@
-# Local stack for P0. Image tags are set in .env; pin them to versions you have checked.
+# Local stack. `docker compose up -d` starts the supporting services (results DB, MLflow, tracing).
+# The factory itself is on demand, in the `factory` profile:
+#
+#   docker compose run --rm factory smoke --models scripted/replay --strict      # sandboxes: local
+#   docker compose run --rm factory-docker smoke --models <model>                 # sandboxes: Docker (real models)
+#
+# Image tags are set in .env; pin them to versions you have checked.
 # Langfuse needs ClickHouse, Redis and object storage: run its official docker-compose alongside this file
 # and put the stack on the same network (see README), or point LANGFUSE_OTLP_ENDPOINT at Langfuse Cloud.
+
+x-factory: &factory
+  build: .
+  image: harness-factory:local
+  profiles: [factory]
+  env_file:                      # provider keys and HF_* settings; never baked into the image
+    - path: .env
+      required: false
+  # Your user, so results, traces and sandbox files under ./var stay yours (set HF_UID/HF_GID in .env).
+  user: "${HF_UID:-1000}:${HF_GID:-1000}"
+  # Each service sets HOME (the user may not exist in the image; uv needs a writable cache) and HF_VAR.
+  # ./var is mounted at its own absolute path: with Docker sandboxes the host daemon bind-mounts sandbox
+  # directories by path, so the path must mean the same thing inside and outside this container.
+  volumes:
+    - ${PWD}/var:${PWD}/var
+    - ./catalog:/app/catalog:ro  # edit tasks and recipes without rebuilding
+    - ./prompts:/app/prompts:ro
+
 services:
+  factory:
+    <<: *factory
+    environment:
+      HOME: /tmp
+      HF_VAR: ${PWD}/var
+      HF_SANDBOX: local          # MCP servers run as subprocesses inside this container
+
+  factory-docker:
+    <<: *factory
+    environment:
+      HOME: /tmp
+      HF_VAR: ${PWD}/var
+      HF_SANDBOX: docker         # one container per run: no network, read-only root, no capabilities
+    # The Docker socket gives this container control of the host's Docker; it is only here, not in `factory`.
+    group_add: ["${DOCKER_GID:-0}"]
+    volumes:
+      - ${PWD}/var:${PWD}/var
+      - ./catalog:/app/catalog:ro
+      - ./prompts:/app/prompts:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+
   postgres:
     image: postgres:${POSTGRES_TAG:-16}
     environment: {POSTGRES_USER: hf, POSTGRES_PASSWORD: hf, POSTGRES_DB: hf}

@@ -79,3 +79,33 @@ jobs:
           name: traces-py${{ matrix.python }}
           path: var/traces
           if-no-files-found: ignore
+
+  container:
+    name: container (Dockerfile + compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COLUMNS: "160"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the factory image
+        run: docker build -t harness-factory:local .
+
+      - name: Gates inside the image (non-root, no network, no secrets)
+        run: |
+          docker run --rm --network none harness-factory:local validate
+          docker run --rm --network none harness-factory:local reference
+          docker run --rm --network none harness-factory:local smoke --models scripted/replay --strict
+          docker run --rm --entrypoint sh harness-factory:local -c 'test "$(id -u)" != 0 && test ! -e /app/.env'
+
+      - name: Compose (Docker sandboxes from inside the factory container)
+        run: |
+          docker compose config -q
+          mkdir -p var
+          export HF_UID=$(id -u) HF_GID=$(id -g) DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+          docker compose run --rm --pull never factory smoke --recipe v2-base --models scripted/replay --strict
+          docker compose run --rm --pull never factory-docker \
+            smoke --recipe v2-base,v3-staged --models scripted/replay --strict
+          test -z "$(docker ps -aq --filter label=hf.sandbox=1)"      # every sandbox container removed
+          test -z "$(ls -A var/sandboxes)"                             # and every sandbox directory

@@ -13,6 +13,7 @@ uv run hfx validate                 # recipes vs tools.yaml, prompts, tiers
 uv run hfx reference                # every task's reference.py passes its own oracle
 uv run hfx smoke --models scripted/replay --strict   # offline P0 gate, same as CI
 HF_SANDBOX=docker uv run hfx smoke --models scripted/replay --strict   # same, inside containers
+docker build -t harness-factory:local . && docker compose run --rm factory smoke --models scripted/replay --strict
 ```
 
 The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its own `hf`.
@@ -26,6 +27,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New shape (V1, V3...) | `src/harness_factory/shapes/<v>.py` with `@ShapeRegistry.register(Variant.X)` | import it in `shapes/builtin.py`; never in `shapes/__init__.py` (import cycle) |
 | New recipe | `catalog/recipes/**.yaml`, model slot left empty | `hfx validate` passes; V3 recipes declare `workflow:` stages with prompts under `prompts/stage/` |
 | New provider/model | `catalog/providers.yaml` | verify model ids and limits against the provider's live docs |
+| Container / compose | `Dockerfile` (factory), `compose.yaml` (services `factory`, `factory-docker`), sandbox image `src/harness_factory/env/sandbox.Dockerfile` | the factory image never contains `.env` (`.dockerignore`); the socket is mounted only in `factory-docker`; `./var` keeps its absolute path in the container; editing `sandbox.Dockerfile` changes every sandbox image tag |
 | Inspect AI | `src/harness_factory/integrations/inspect_task.py` (optional extra `inspect`) | outer shell only; never move tasks or grading into Inspect (`docs/adr/0001-inspect-ai.md`) |
 | New fault profile | `catalog/faults/<id>.yaml` (rules: tools, kind, rate, nth, max_per_run) | faults fire only in `ToolExecutor`; never tell the model a failure was injected; `none` is reserved for clean runs |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
