@@ -1,4 +1,8 @@
-"""QuotaLedger (B6): live request and token use per provider, per minute and per day, shared by every worker.
+"""QuotaLedger (B6): live request and token use per bucket, per minute and per day, shared by every worker.
+
+A bucket is what a provider's limits apply to: the whole provider (scope account/key), or one model on it
+(scope model, e.g. Groq's free tier), named "provider|model". `ProviderCatalog.bucket()` picks it; every method
+here that says `provider` takes a bucket.
 
 Before a model call, a worker `acquire()`s a request slot: if the provider's per-minute request or token
 window is full it waits for the window to roll; if a per-day limit is spent it fails fast with
@@ -96,7 +100,7 @@ class QuotaLedger:
         os.replace(tmp, path)                                         # atomic: a crash never leaves half a file
 
     def remaining(self, provider: str) -> dict[str, int | None]:
-        lim = self.catalog.get(provider).limits
+        lim = self.catalog.limits(provider)
         m = self._roll(self._minute, provider, MINUTE)
         d = self._roll(self._day, provider, DAY)
         return {
@@ -142,7 +146,7 @@ class QuotaLedger:
 
     def mark_exhausted(self, provider: str) -> None:
         """The provider itself said today's quota is spent: stop every worker calling it until the day rolls."""
-        lim = self.catalog.get(provider).limits
+        lim = self.catalog.limits(provider)
         d = self._roll(self._day, provider, DAY)
         d.requests = max(d.requests, lim.rpd if lim.rpd is not None else d.requests)
         self._spent_until[provider] = d.start + DAY                   # next UTC midnight
@@ -156,7 +160,7 @@ class QuotaLedger:
         self.save()
 
     def _tpm(self, provider: str) -> int:
-        lim = self.catalog.get(provider).limits.tpm
+        lim = self.catalog.limits(provider).tpm
         return lim if lim is not None else 1 << 62
 
     def charge(self, provider: str, requests: int = 1, tokens: int = 0) -> None:

@@ -14,7 +14,9 @@ class RateLimits(BaseModel):
     rpd: int | None = None
     tpm: int | None = None
     tpd: int | None = None
-    scope: Literal["account", "key"] = "account"
+    # account / key: one bucket for the whole provider. model: each model gets these limits on its own (Groq's
+    # free tier works this way), so one model running out never stops another.
+    scope: Literal["account", "key", "model"] = "account"
 
 
 class ModelCaps(BaseModel):
@@ -30,6 +32,7 @@ class ServedModel(BaseModel):
     price_out: float = 0.0
     free: bool = False
     caps: ModelCaps = Field(default_factory=ModelCaps)
+    limits: RateLimits | None = None   # this model's own limits, when they differ from the provider's
 
     def cost(self, tokens_in: int, tokens_out: int) -> float:
         return (tokens_in * self.price_in + tokens_out * self.price_out) / 1e6
@@ -61,6 +64,19 @@ class ProviderCatalog(BaseModel):
             if m.canonical == canonical:
                 return m
         raise KeyError(f"provider {provider_id!r} does not serve {canonical!r}")
+
+    def bucket(self, provider_id: str, canonical: str | None = None) -> str:
+        """The quota bucket a call is counted in: the provider, or provider|model when limits are per model."""
+        p = self.get(provider_id)
+        if canonical is not None and (p.limits.scope == "model" or self.served(provider_id, canonical).limits):
+            return f"{provider_id}|{canonical}"
+        return provider_id
+
+    def limits(self, bucket: str) -> RateLimits:
+        provider_id, _, canonical = bucket.partition("|")
+        if canonical:
+            return self.served(provider_id, canonical).limits or self.get(provider_id).limits
+        return self.get(provider_id).limits
 
     def providers_for(self, canonical: str) -> list[str]:
         return [p.id for p in self.providers if p.status == "active" and any(m.canonical == canonical for m in p.models)]

@@ -11,14 +11,21 @@ from harness_factory.results.model import EffectivenessRecord
 class ExperimentTracker:
     def __init__(self, experiment: str = "harness-factory") -> None:
         self.enabled = False
+        self.experiment = experiment
+        self.disabled_reason: str | None = None      # set when MLflow was asked for but can't be used
         if not settings.MLFLOW_TRACKING_URI:
             return
         try:
             import mlflow
         except ImportError:
+            self.disabled_reason = "MLFLOW_TRACKING_URI is set but mlflow is not installed (uv sync --extra mlops)"
             return
-        mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
-        mlflow.set_experiment(experiment)
+        try:
+            mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
+            mlflow.set_experiment(experiment)
+        except Exception as e:  # noqa: BLE001  unreachable server, bad URI: runs still go to the results store
+            self.disabled_reason = f"cannot use MLflow at {settings.MLFLOW_TRACKING_URI}: {str(e)[:200]}"
+            return
         self._mlflow = mlflow
         self.enabled = True
 

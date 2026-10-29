@@ -19,6 +19,35 @@ def _factory(store: bool = True):
     return Factory.load(store=store)
 
 
+def _reachable(url: str) -> bool:
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    try:
+        with socket.create_connection((u.hostname or "localhost", u.port or (443 if u.scheme == "https" else 80)), 1.0):
+            return True
+    except OSError:
+        return False
+
+
+def _print_sinks(f) -> None:
+    """Where this command's results go. Printed up front, so a stale .env (wrong port, someone else's MLflow, a
+    missing extra) is visible before a campaign spends quota."""
+    console.print(f"[dim]results  {settings.RESULTS_URL if f.store else '(not stored)'}[/]")
+    otlp = settings.OTLP_ENDPOINT
+    if not otlp:
+        console.print(f"[dim]traces   {settings.TRACES_DIR} (JSONL); OTLP off[/]")
+    elif _reachable(otlp):
+        console.print(f"[dim]traces   {settings.TRACES_DIR} (JSONL) + OTLP {otlp}[/]")
+    else:
+        console.print(f"[yellow]traces   OTLP {otlp} is not reachable: spans will be dropped (JSONL still written)")
+    t = f.tracker
+    if t.enabled:
+        console.print(f"[dim]mlflow   {settings.MLFLOW_TRACKING_URI} (experiment {t.experiment})[/]")
+    elif t.disabled_reason:
+        console.print(f"[yellow]mlflow   off: {t.disabled_reason}")
+
+
 def _records_table(recs) -> Table:
     t = Table("task", "class", "recipe", "model", "faults", "status", "O", "Q", "E", "calls", "tools", "tokens")
     for r in recs:
@@ -135,6 +164,7 @@ def run(task: str = typer.Option(..., "--task"), recipe: str = typer.Option("v2-
     """Run one task with one recipe on one model."""
     from harness_factory.runner.runner import run_one
     f = _factory()
+    _print_sinks(f)
     rec = asyncio.run(run_one(f, f.tasks.get(task), f.recipes[recipe], model, provider, seed))
     console.print(_records_table([rec]))
 
@@ -157,6 +187,7 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
     from harness_factory.provision.provisioner import run_key_for
     from harness_factory.runner.runner import plan, plan_status, run_campaign
     f = _factory()
+    _print_sinks(f)
     specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds,
                  faults=[None if x == "none" else x for x in faults.split(",")] if faults else None)
     status = plan_status(f, specs)
@@ -165,18 +196,28 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
         console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
                       f"{len(status.retry)}   new {len(status.new)}"
                       + ("" if resume else "   (without --resume every run executes again)"))
+    # Budget preflight (MOD-06): worst case = every remaining run uses every step, per quota bucket (the provider,
+    # or provider|model when its limits are per model). Refuse if any bucket cannot fit today.
+    worst: dict[str, int] = {}
+    for s in todo:
+        b = f.providers.bucket(s.provider, s.canonical_model)
+        worst[b] = worst.get(b, 0) + f.recipes[s.recipe_id].config.max_steps
+    problems = []
+    for b, need in sorted(worst.items()):
+        left = f.ledger.remaining(b)["rpd"]
+        if dry_run:
+            console.print(f"preflight {b}: worst case {need} requests, {'no daily limit' if left is None else f'{left} left today'}")
+        if f.ledger.exhausted(b):
+            problems.append(f"{b}: today's quota is already spent (ledger: {settings.QUOTA_STATE.name})")
+        elif left is not None and need > left:
+            problems.append(f"{b}: worst case {need} requests > {left} left today")
     if dry_run:
         return
-    # Budget preflight (MOD-06): worst case = every remaining run uses every step. Refuse if it cannot fit today.
-    worst = sum(f.recipes[s.recipe_id].config.max_steps for s in todo)
-    left = f.ledger.remaining(provider)["rpd"]
-    if f.ledger.exhausted(provider):
-        console.print(f"[yellow]{provider}: today's quota is already spent (ledger: {settings.QUOTA_STATE.name}); "
-                      f"run again with --resume after the daily reset")
-        raise typer.Exit(code=2)
-    if left is not None and worst > left:
-        console.print(f"[yellow]preflight: worst case {worst} requests > {left} left today on {provider}; "
-                      f"lower --seeds, pass fewer --models, or lower max_steps (or run, then --resume tomorrow)")
+    if problems:
+        for p in problems:
+            console.print(f"[yellow]preflight: {p}")
+        console.print("[yellow]lower --seeds, pass fewer --models, or lower max_steps; or run what fits and --resume "
+                      "after the daily reset")
         raise typer.Exit(code=2)
     result = asyncio.run(run_campaign(f, specs, concurrency, resume=resume))
     recs = result.records
