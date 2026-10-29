@@ -37,6 +37,12 @@ class PromptAssembler:
         user = self.registry.render(recipe.prompts.task, task=task)
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
+    def stage_prompts(self, recipe: HarnessRecipe, task: Task) -> dict[str, str]:
+        """V3: the instruction appended when each workflow stage starts."""
+        if recipe.workflow is None:
+            return {}
+        return {st.id: self.registry.render(st.prompt, task=task, stage=st) for st in recipe.workflow.stages}
+
     @staticmethod
     def prompt_hash(messages: list[dict[str, Any]]) -> str:
         return content_hash(messages)

@@ -50,6 +50,9 @@ jobs:
       - name: P0 gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --models scripted/replay --strict
 
+      - name: V3 workflow gate (offline, scripted model)
+        run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict
+
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4

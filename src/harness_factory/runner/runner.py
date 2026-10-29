@@ -156,13 +156,15 @@ async def run_reference(f: Factory, task: Task) -> Grade:
         return f.graders.graders["state_diff"].grade(ctx)
 
 
-async def smoke(f: Factory, recipe_id: str, provider_id: str, models: list[str] | None = None,
+async def smoke(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
                 seeds: int = 1) -> list[EffectivenessRecord]:
-    recipe = f.recipes[recipe_id]
+    """Every task x recipe x model x seed. Several recipes make this a like-for-like shape comparison."""
+    recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     out = []
     for task in f.tasks.all():
-        for m in models:
-            for seed in range(seeds):
-                out.append(await run_one(f, task, recipe, m, provider_id, seed=seed))
+        for rid in recipe_ids:
+            for m in models:
+                for seed in range(seeds):
+                    out.append(await run_one(f, task, f.recipes[rid], m, provider_id, seed=seed))
     return out
