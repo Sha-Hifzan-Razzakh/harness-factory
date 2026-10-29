@@ -57,9 +57,10 @@ VALUE = "(SELECT SUM(i.quantity * i.unit_price) FROM order_items i WHERE i.order
 TASKS = []
 
 
-def task(id, domain, depth, risk, split, tools, instruction, checks, plan, final, seed=SHOP, tags=()):
+def task(id, domain, depth, risk, split, tools, instruction, checks, plan, final, seed=SHOP, tags=(), version=1):
     TASKS.append(dict(id=id, domain=domain, expected_depth=depth, risk=risk, split=split, allowed_tools=tools,
-                      instruction=instruction, checks=checks, plan=plan, final=final, seed=seed, tags=list(tags)))
+                      instruction=instruction, checks=checks, plan=plan, final=final, seed=seed, tags=list(tags),
+                      version=version))
 
 
 def q(sql):
@@ -229,16 +230,18 @@ values = ", ".join(f"('{n}', '{e}', '{c}', '2026-10-28')" for n, e, c in fresh)
 task("mix-04", "data", "KNOWN_PATH", "R2", "TEST", FS_READ + ["sql.*"],
      "Import data/new_customers.csv into the customers table, with created_on set to 2026-10-28. Skip any row "
      "whose email is already in the table; emails are case-insensitive.",
-     [chk("new_rows", "sql_rows", 0.7,
+     [chk("new_rows", "sql_rows", 1.0,
           query="SELECT name, email, city, created_on FROM customers WHERE created_on = '2026-10-28' ORDER BY email",
           rows=sorted([[n, e, c, "2026-10-28"] for n, e, c in fresh], key=lambda r: r[1])),
-      chk("no_duplicates", "sql_rows", 0.3,
-          query="SELECT lower(email), COUNT(*) FROM customers GROUP BY lower(email) HAVING COUNT(*) > 1", rows=[]),
+      # v2: a guard, not 0.3 of the score. An untouched table has no duplicates either (no free credit).
+      guard("no_duplicates", "sql_rows",
+            query="SELECT lower(email), COUNT(*) FROM customers GROUP BY lower(email) HAVING COUNT(*) > 1", rows=[]),
       sql_guard("existing_untouched", "SELECT id, name, email, city, created_on FROM customers ORDER BY id")
       | {"query": "SELECT id, name, email, city, created_on FROM customers WHERE id <= 13 ORDER BY id"}],
      [rd("data/new_customers.csv"), q("SELECT lower(email) FROM customers"),
       ex(f"INSERT INTO customers (name, email, city, created_on) VALUES {values}")],
-     f"Imported {len(fresh)} customers; skipped 2 whose emails already exist.", tags=["sql", "fs", "import", "dedupe"])
+     f"Imported {len(fresh)} customers; skipped 2 whose emails already exist.", tags=["sql", "fs", "import", "dedupe"],
+     version=2)
 
 stmt = shop("data/bank_statement.csv")
 refs = [int(l.split(",")[1].removeprefix("ORD-")) for l in stmt.splitlines()[1:]]
@@ -293,14 +296,15 @@ def block(env, flag, val):
 
 task("ops-02", "ops", "KNOWN_PATH", "R1", "DEV", FS_RW,
      "In service/feature_flags.json, turn on new_checkout for staging only. Keep every other flag as it is.",
-     [chk("json_valid", "json_valid", 0.2, critical=True, path="service/feature_flags.json"),
-      chk("staging_on", "file_regex", 0.8, path="service/feature_flags.json", pattern=block("staging", "new_checkout", "true"))]
+     # v2: valid JSON is a guard, not 0.2 of the score: the untouched file is valid too (no free credit).
+     [guard("json_valid", "json_valid", path="service/feature_flags.json"),
+      chk("staging_on", "file_regex", 1.0, path="service/feature_flags.json", pattern=block("staging", "new_checkout", "true"))]
      + [guard(f"{e}_{f}_kept", "file_regex", path="service/feature_flags.json", pattern=block(e, f, v))
         for e, f, v in [("prod", "new_checkout", "false"), ("dev", "new_checkout", "true"),
                         ("staging", "bulk_export", "false"), ("staging", "dark_mode", "true"),
                         ("prod", "dark_mode", "false")]],
      [rd("service/feature_flags.json"), wr("service/feature_flags.json", on)],
-     "new_checkout is now on in staging.", seed=SERVICE, tags=["fs", "json", "config"])
+     "new_checkout is now on in staging.", seed=SERVICE, tags=["fs", "json", "config"], version=2)
 
 day = svc("logs/app-2026-10-26.log")
 task("ops-03", "ops", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
@@ -345,11 +349,15 @@ task("docs-01", "docs", "KNOWN_PATH", "R1", "DEV", FS_RW,
       chk("fixed_vat", "file_regex", 0.15, path="CHANGELOG.md", pattern=SEC + r"### Fixed(?:(?!## \[2\.3\.1\]).)*VAT"),
       chk("fixed_search", "file_regex", 0.15, path="CHANGELOG.md",
           pattern=SEC + r"### Fixed(?:(?!## \[2\.3\.1\]).)*search"),
-      chk("no_chores", "file_regex", 0.1, path="CHANGELOG.md", pattern=r"(?i)pytest", negate=True),
+      # v2: the 2.4.0 entry exists, sits above 2.3.1 and has no chore in it. A negated "no pytest anywhere" passed
+      # on the untouched file (no free credit).
+      chk("no_chores", "file_regex", 0.1, path="CHANGELOG.md",
+          pattern=r"(?is)## \[2\.4\.0\](?:(?!## \[2\.3\.1\]|pytest).)*## \[2\.3\.1\]"),
       guard("history_kept", "file_contains", path="CHANGELOG.md",
             text=changelog[changelog.index("## [2.3.1]"):].rstrip("\n"))],
      [rd("docs/merged_prs.txt"), rd("CHANGELOG.md"), wr("CHANGELOG.md", new_log)],
-     "Added 2.4.0 to CHANGELOG.md: 2 Added, 2 Fixed, chore left out.", seed=SERVICE, tags=["fs", "docs", "format"])
+     "Added 2.4.0 to CHANGELOG.md: 2 Added, 2 Fixed, chore left out.", seed=SERVICE, tags=["fs", "docs", "format"],
+     version=2)
 
 runbook = svc("docs/runbook.md")
 task("docs-02", "docs", "UNKNOWN_PATH", "R1", "HELD_OUT", FS_RW,
@@ -404,7 +412,7 @@ for t in TASKS:
     d.mkdir(parents=True, exist_ok=True)
     weights = round(sum(c["weight"] for c in t["checks"]), 6)
     assert weights == 1.0, (t["id"], weights)
-    doc = {"id": t["id"], "version": 1, "domain": t["domain"], "instruction": t["instruction"],
+    doc = {"id": t["id"], "version": t["version"], "domain": t["domain"], "instruction": t["instruction"],
            "env_seed": t["seed"], "allowed_tools": t["tools"] if "tools" in t else t["allowed_tools"],
            "risk": t["risk"], "expected_depth": t["expected_depth"], "split": t["split"], "status": "verified",
            "tags": t["tags"], "oracle": {"pass_threshold": 1.0, "checks": t["checks"]}}

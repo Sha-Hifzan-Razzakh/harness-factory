@@ -127,3 +127,20 @@ def test_new_check_kinds_validate_their_fields():
         WeightedCheck(id="x", kind="json_valid", weight=1)
     with pytest.raises(ValueError):
         WeightedCheck(id="x", kind="file_regex", weight=1, path="a.txt", pattern="(unclosed")
+
+
+# ------------------------------------------------------------------ no free credit, catalog-wide
+
+ALL_TASKS = [t.id for t in __import__("harness_factory.tasks.registry", fromlist=["TaskRegistry"])
+             .TaskRegistry().all(include_held_out=True)]
+
+
+@pytest.mark.parametrize("task_id", ALL_TASKS)
+async def test_a_run_that_does_nothing_scores_zero(factory, task_id):
+    """CLAUDE.md, "No free credit": checks that pass on the untouched seed (a negated check, "no duplicates",
+    "valid JSON") must be guards or be tied to the change the task asks for."""
+    rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v2-base"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([say("I could not complete the task.")]))
+    passed = [c["id"] for g in rec.grades if g["grader_id"] == "state_diff" for c in g["checks"]
+              if c["passed"] and c["weight"] > 0]
+    assert rec.scores.outcome == 0 and rec.composite == 0, f"{task_id} credits a do-nothing run: {passed}"

@@ -1,5 +1,5 @@
 id: mix-04
-version: 1
+version: 2
 domain: data
 instruction: Import data/new_customers.csv into the customers table, with created_on set to 2026-10-28. Skip any
   row whose email is already in the table; emails are case-insensitive.
@@ -24,7 +24,7 @@ oracle:
   checks:
   - id: new_rows
     kind: sql_rows
-    weight: 0.7
+    weight: 1.0
     query: SELECT name, email, city, created_on FROM customers WHERE created_on = '2026-10-28' ORDER BY email
     rows:
     - - Zenith Legal
@@ -41,7 +41,8 @@ oracle:
       - '2026-10-28'
   - id: no_duplicates
     kind: sql_rows
-    weight: 0.3
+    weight: 0
+    critical: true
     query: SELECT lower(email), COUNT(*) FROM customers GROUP BY lower(email) HAVING COUNT(*) > 1
     rows: []
   - id: existing_untouched

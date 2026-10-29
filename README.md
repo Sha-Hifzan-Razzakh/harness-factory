@@ -478,6 +478,9 @@ Every task ships a `reference.py`. `hfx reference` must pass before the task is 
   most 5 calls after that (act's cap is 6).
 - **Add a trap test for every trap.** One script per wrong approach in `tests/test_task_traps.py`, naming the
   check that must fail.
+- **A run that does nothing scores 0,** on every task. The same file runs a do-nothing script against the whole
+  catalog. A check that passes on the untouched seed ("no duplicates", "valid JSON", a negated "never mentions
+  X") is a guard (`weight: 0, critical: true`) or is tied to the change, never weighted on its own.
 
 ## Offline models
 
