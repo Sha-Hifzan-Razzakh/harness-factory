@@ -88,7 +88,8 @@ def run(task: str = typer.Option(..., "--task"), recipe: str = typer.Option("v2-
 @app.command()
 def smoke(recipe: str = typer.Option("v2-base", "--recipe"), provider: str = typer.Option("scripted", "--provider"),
           models: str | None = typer.Option(None, "--models", help="comma-separated canonical models"),
-          seeds: int = typer.Option(1, "--seeds")) -> None:
+          seeds: int = typer.Option(1, "--seeds"),
+          strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
     """Every task x every model on one recipe and provider: the P0 gate."""
     from harness_factory.runner.runner import smoke as run_smoke
     f = _factory()
@@ -104,6 +105,8 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe"), provider: str = typ
     console.print(_records_table(recs))
     ok = sum(r.status.value == "SUCCESS" for r in recs)
     console.print(f"{ok}/{len(recs)} SUCCESS")
+    if strict and ok != len(recs):
+        raise typer.Exit(code=1)
 
 
 @app.command()
