@@ -156,3 +156,51 @@ async def test_v3_offers_the_tool_only_in_stages_whose_tools_allow_it(factory, t
     (d,) = delegate_spans(rec)
     assert d["attributes"]["scope"] == "stage:act"                         # inspect and verify list read tools only
     assert rec.status.value == "SUCCESS"
+
+
+# ------------------------------------------------------------------ a helper's outage is the run's outage (R-02)
+
+OUTAGE = [{"fail": "PROVIDER_ERROR"}] * 3                     # one call, retried twice by the gateway, still failing
+
+
+@pytest.fixture
+def no_backoff(monkeypatch):
+    from harness_factory.substrate.gateway import ModelGateway
+
+    async def instant(_s):
+        return None
+    monkeypatch.setattr(ModelGateway, "_sleep", staticmethod(instant))
+
+
+async def test_a_helpers_infrastructure_failure_ends_the_parent_run_incomplete(factory, no_backoff):
+    """The parent must not carry on and be graded on work an outage cut short: the same outage in plain V2 is
+    INCOMPLETE, so through a helper it is too."""
+    script = [DELEGATE, *OUTAGE, WRITE, {"content": "done"}]          # without the fix the parent writes and passes
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-delegate"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend(script))
+    assert rec.status.value == "INCOMPLETE"
+    assert "delegate 1" in transcript(rec)["error"] and "PROVIDER_ERROR" in transcript(rec)["error"]
+    (d,) = delegate_spans(rec)
+    assert d["status"] == "error" and d["attributes"]["child_status"] == "INCOMPLETE"
+    assert transcript(rec)["snapshot"]["delegations"][0]["status"] == "INCOMPLETE"      # the child's record is kept
+
+
+async def test_a_helpers_setup_failure_ends_the_parent_run_as_an_error(factory):
+    script = [DELEGATE, {"fail": "CONFIG"}, WRITE, {"content": "done"}]                   # CONFIG is never retried
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-delegate"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend(script))
+    assert rec.status.value == "ERROR"
+    assert "CONFIG" in transcript(rec)["error"]
+
+
+@pytest.mark.parametrize(("recipe", "file", "lead"), [
+    ("v3-staged", "v3_staged", {"content": "seen"}),                         # inspect stage, then act delegates
+    ("v4-planner", "v4_planner", {"content": "1. Hand the write to a helper"}),
+])
+async def test_every_shape_ends_on_a_helpers_outage(factory, tmp_path, no_backoff, recipe, file, lead):
+    shutil.copy(f"catalog/recipes/base/{file}.yaml", tmp_path / "shape.yaml")
+    rs = recipes(tmp_path, d=f"id: d\nbase: {recipe}\ndelegation: {{recipe: v2-base}}\n")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), rs["d"], "scripted/replay", "scripted",
+                        backend=ScriptedBackend([lead, DELEGATE, *OUTAGE, WRITE, {"content": "done"}]))
+    assert rec.status.value == "INCOMPLETE"
+    assert len(delegate_spans(rec)) == 1

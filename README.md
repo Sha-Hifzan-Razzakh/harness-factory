@@ -443,7 +443,9 @@ charged back to the parent, so delegating never buys extra steps. A V3 recipe of
 whose tool patterns allow `delegate.run` (`v3-staged`'s act stage, `"*"`). The helper's conversation is kept in
 the run's transcript (`snapshot.delegations`), and its tool calls are traced under scope `delegate:<n>`. The
 helper's own hash is part of the delegating recipe's hash, and `load_recipes` refuses delegation cycles. A
-helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. Offline, with
+helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. A helper that ends on
+infrastructure (INCOMPLETE) or a setup failure (ERROR) ends the parent run the same way, so the parent is never
+graded on work an outage cut short. Offline, with
 `scripted/delegate` (hands the whole task over when it can), `v2-delegate` passes 20/20 like `v2-base` at about
 37% more tokens, so its E is lower: delegation has to earn its cost on real models.
 
@@ -581,7 +583,7 @@ Every run ends in one of three ways, and only the first is scored:
 | How it stopped | Examples | Status | In cell means? |
 |---|---|---|---|
 | **By itself** | the model answered | SUCCESS / PARTIAL / FAIL from the oracle | yes |
-| **Harness overran** | step/tool/token/wall budget, V3 stage cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
+| **Harness overran** | step/tool/token/wall budget, V3 stage cap, V4 step cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
 | **Infrastructure** | provider 5xx, timeout, connection, 429 after retries, daily quota | INCOMPLETE | no (`excl.`) |
 | **Setup or crash** | auth, unknown model id, a rejected request, a bug in factory code | ERROR (recorded with trace and transcript) | no (`excl.`) |
 

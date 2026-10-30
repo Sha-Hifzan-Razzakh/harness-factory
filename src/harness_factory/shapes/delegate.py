@@ -14,6 +14,8 @@ Limits, all from the root recipe and shared by the whole tree:
     parent, so delegating never buys extra steps, tool calls or tokens.
 
 A child stopping early is not a parent overrun: it is recorded as `delegate_stopped` and the parent carries on.
+A child that ends on infrastructure (INCOMPLETE) or a setup failure (ERROR) ends the parent run the same way: the
+tool batch stops with the child's stop reason, so the run is never graded on work the outage cut short.
 The child's conversation is kept in the parent's snapshot (and so in the run's transcript file).
 """
 
@@ -27,7 +29,7 @@ from typing import Any
 from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import HarnessRecipe, PolicySet, RuntimeConfig
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
-from harness_factory.shapes.result import RunStatus, Violation
+from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind
 from harness_factory.substrate.prompts import PromptAssembler
@@ -42,7 +44,7 @@ SCHEMA = {"type": "object", "required": ["task"],
           "properties": {"task": {"type": "string", "description": "The sub-task, with everything the helper needs"}}}
 
 # A child's harness stop is not the parent's overrun (runner.OVERRUN_KINDS): renamed so it never halves the outcome.
-CHILD_STOPS = {"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"}
+CHILD_STOPS = {"budget_exceeded", "stage_cap", "step_cap", "context_overflow", "malformed_output"}
 _STRICTNESS = ["AUTO", "ASK", "DENY"]
 
 
@@ -104,51 +106,75 @@ def stricter(parent: PolicySet, child: PolicySet) -> PolicySet:
     return child.model_copy(update={"permission_mode": modes})
 
 
+def _caps(child: RuntimeConfig, parent: BudgetGuard) -> dict[str, float]:
+    left = parent.remaining()
+    return {"max_steps": min(child.max_steps, left["steps"]),
+            "max_tool_calls": min(child.max_tool_calls, left["tool_calls"] - 1),
+            "max_tokens": min(child.max_tokens, left["tokens"]),
+            "wall_time_s": min(child.wall_time_s, parent.limits.wall_time_s - parent.elapsed_s())}
+
+
+def shortfall(child: RuntimeConfig, parent: BudgetGuard) -> str | None:
+    """The parent limit that leaves no room for a helper ("max_steps 15"), or None if one fits."""
+    for name, value in _caps(child, parent).items():
+        if value <= 0:
+            return f"{name} {getattr(parent.limits, name)}"
+    return None
+
+
 def capped(child: RuntimeConfig, parent: BudgetGuard) -> RuntimeConfig | None:
     """The child's limits, capped by what the parent has left (one tool call is the delegate call itself)."""
-    left = parent.remaining()
-    steps, tool_calls, tokens = (min(child.max_steps, left["steps"]), min(child.max_tool_calls, left["tool_calls"] - 1),
-                                 min(child.max_tokens, left["tokens"]))
-    wall = min(child.wall_time_s, parent.limits.wall_time_s - parent.elapsed_s())
-    if min(steps, tool_calls, tokens) <= 0 or wall <= 0:
+    if shortfall(child, parent):
         return None
-    return child.model_copy(update={"max_steps": steps, "max_tool_calls": tool_calls, "max_tokens": tokens,
-                                    "wall_time_s": int(max(1, wall))})
+    caps = _caps(child, parent)
+    return child.model_copy(update={"max_steps": caps["max_steps"], "max_tool_calls": caps["max_tool_calls"],
+                                    "max_tokens": caps["max_tokens"], "wall_time_s": int(max(1, caps["wall_time_s"]))})
+
+
+def child_stop(result: RunResult) -> str:
+    """The stop reason a child that ended INCOMPLETE or ERROR hands to its parent ("error:PROVIDER_ERROR")."""
+    head = (result.error or "").split(": ", 1)[0]
+    if head.startswith("error:"):
+        return head
+    kind = ErrorKind.PROVIDER_ERROR if result.status == RunStatus.INCOMPLETE else ErrorKind.CONFIG
+    return f"error:{kind.value}"
 
 
 async def run_delegate(inst: HarnessInstance, raw_args: str | dict, restrict: Callable[[str], bool] | None = None,
-                       scope: str | None = None) -> str:
-    """Run one delegate call; returns the text the parent model sees. Traced as a tool call, charged as one."""
+                       scope: str | None = None) -> tuple[str, str | None]:
+    """Run one delegate call. Returns (the text the parent model sees, a stop reason for the parent run or None).
+    The stop is set only when the child ended INCOMPLETE or ERROR; its detail is in `inst.stop_error`.
+    Traced as a tool call, charged as one."""
     with inst.tracer.span(SpanKind.tool_call, DELEGATE_REF, **({"scope": scope} if scope else {})) as span:
-        text, error = await _delegate(inst, raw_args, restrict, span)
+        text, error, stop = await _delegate(inst, raw_args, restrict, span)
         if error:
             span.status, span.error = "error", error
         span.attributes["result_chars"] = len(text)
         span.attributes["result_preview"] = text[:PREVIEW_CHARS]
     inst.budget.charge(span)
-    return text
+    return text, stop
 
 
-async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[str, str | None]:
+async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[str, str | None, str | None]:
     d = inst.delegate
     if not available(inst, restrict):
         inst.tools.violations.append(Violation(kind="tool_not_allowed", detail=f"{DELEGATE_REF} ({scope_of(span)})"))
-        return f"Tool {DELEGATE_REF} is not available here.", ErrorKind.TOOL_NOT_ALLOWED.value
+        return f"Tool {DELEGATE_REF} is not available here.", ErrorKind.TOOL_NOT_ALLOWED.value, None
     try:
         args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
         sub = str(args["task"]).strip()
         if not sub:
             raise ValueError("empty task")
     except (ValueError, TypeError, KeyError) as e:
-        return f"Invalid arguments for {DELEGATE_REF}: give a non-empty 'task' ({e})", ErrorKind.TOOL_ARGS.value
+        return f"Invalid arguments for {DELEGATE_REF}: give a non-empty 'task' ({e})", ErrorKind.TOOL_ARGS.value, None
     span.attributes["args"] = json.dumps({"task": sub})[:2000]
     if d.limits.calls >= d.limits.max_calls:
-        return f"Delegate limit reached: at most {d.limits.max_calls} calls per run.", ErrorKind.TOOL_ERROR.value
+        return f"Delegate limit reached: at most {d.limits.max_calls} calls per run.", ErrorKind.TOOL_ERROR.value, None
     if d.child.id in d.chain:
-        return f"Refused: {d.child.id} is already on the delegation chain.", ErrorKind.POLICY.value
+        return f"Refused: {d.child.id} is already on the delegation chain.", ErrorKind.POLICY.value, None
     config = capped(d.child.config, inst.budget)
     if config is None:
-        return "Refused: not enough budget left for a helper.", ErrorKind.BUDGET.value
+        return "Refused: not enough budget left for a helper.", ErrorKind.BUDGET.value, None
     d.limits.calls += 1
     child = d.child.model_copy(update={"config": config})
     span.attributes.update(delegate_recipe=child.id, depth=d.depth + 1, call=d.limits.calls)
@@ -185,10 +211,13 @@ async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[st
                            child_tool_calls=budget.used_tool_calls, child_tokens=budget.used_tokens)
     answer = result.output if isinstance(result.output, str) else ""
     if result.finished:
-        return f"Helper finished. Its answer: {answer}", None
+        return f"Helper finished. Its answer: {answer}", None, None
     if result.status == RunStatus.BUDGET_EXCEEDED:
-        return f"Helper stopped early ({result.error}). Check its work before relying on it.", None
-    return f"Helper failed: {result.error}", ErrorKind.TOOL_ERROR.value
+        return f"Helper stopped early ({result.error}). Check its work before relying on it.", None, None
+    # INCOMPLETE (infrastructure) or ERROR (setup, crash): the parent run ends the same way (never graded).
+    inst.stop_error = f"delegate {d.limits.calls}: {result.error}"[:500]
+    stop = child_stop(result)
+    return f"Helper failed: {result.error}", stop.removeprefix("error:"), stop
 
 
 def scope_of(span) -> str:

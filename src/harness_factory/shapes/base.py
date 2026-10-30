@@ -33,6 +33,8 @@ class HarnessInstance:
     delegate: Any = None                                          # shapes.delegate.DelegateContext, or None
     prompts: Any = None                                           # substrate.prompts.PromptRegistry (V4 renders
                                                                   # its step and replan prompts during the run)
+    stop_error: str | None = None                                 # why a tool batch ended the run (a delegate's
+                                                                  # INCOMPLETE / ERROR); finish() reports it
 
 
 class Harness(Protocol):
