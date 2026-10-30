@@ -34,6 +34,9 @@ from harness_factory.shapes.result import RunStatus
 CostBasis = Literal["usd", "tokens"]
 Row = Mapping[str, Any]          # a results-store row (see results.store.record_row)
 
+# Runs that say nothing about the harness (infrastructure, setup): never averaged in. results.store.UNSCORED.
+UNSCORED_STATUSES = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
+
 
 def row_cost(row: Row, basis: CostBasis) -> float:
     return float(row["usd"]) if basis == "usd" else float(row["tokens_in"] + row["tokens_out"])
@@ -94,8 +97,11 @@ class CostBaseline(BaseModel):
         for r in rows:
             if r["status"] == RunStatus.SUCCESS.value:
                 by_key[baseline_key(r)].append(row_cost(r, bases[r["provider"]]))
-        unsolved = {baseline_key(r) for r in rows} - set(by_key)      # nobody solved it: use all its runs
-        for r in rows:
+        # Nobody solved it: use all its scored runs. INCOMPLETE / ERROR runs stopped for reasons outside the
+        # harness (often before any token was spent), so they would drag the median towards 0.
+        scored = [r for r in rows if r["status"] not in UNSCORED_STATUSES]
+        unsolved = {baseline_key(r) for r in scored} - set(by_key)
+        for r in scored:
             if baseline_key(r) in unsolved:
                 by_key[baseline_key(r)].append(row_cost(r, bases[r["provider"]]))
         return CostBaseline(bases=bases, medians={k: statistics.median(v) for k, v in sorted(by_key.items())},

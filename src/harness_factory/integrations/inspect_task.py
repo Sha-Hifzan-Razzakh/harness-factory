@@ -16,6 +16,7 @@ Epochs map to seeds (epoch 1 -> seed 0), so --epochs N gives the N-seed reliabil
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from inspect_ai import Task, task
@@ -33,6 +34,7 @@ from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.tool import ToolCall
 
 from harness_factory.provision.provisioner import task_class
+from harness_factory.results.store import UNSCORED
 from harness_factory.runner.runner import Factory, run_one
 from harness_factory.substrate.tools import tool_ref
 
@@ -80,6 +82,17 @@ def run_harness(recipe: str, model: str, provider: str, factory: Factory):
     return solve
 
 
+def score_values(rec: dict) -> dict[str, float]:
+    """The per-sample values Inspect averages. An INCOMPLETE / ERROR run (provider down, setup failure) says
+    nothing about the harness, so every value is NaN, which Inspect counts as unscored and leaves out of its
+    metrics, the way the factory leaves such runs out of cell means."""
+    if rec["status"] in UNSCORED:
+        return {k: math.nan for k in ("e0", "outcome", "trajectory", "success")}
+    s = rec["scores"]
+    return {"e0": rec["composite"], "outcome": s["outcome"], "trajectory": s["trajectory"],
+            "success": 1.0 if rec["status"] == "SUCCESS" else 0.0}
+
+
 @scorer(metrics={"e0": [mean(), bootstrap_stderr()], "outcome": [mean()], "trajectory": [mean()],
                  "success": [mean()]})
 def effectiveness():
@@ -90,11 +103,9 @@ def effectiveness():
     """
     async def score(state: TaskState, target: Target) -> Score:
         rec = state.metadata[RECORD_KEY]
-        s = rec["scores"]
         failed = [c["id"] for g in rec["grades"] for c in g.get("checks", []) if not c["passed"]]
         return Score(
-            value={"e0": rec["composite"], "outcome": s["outcome"], "trajectory": s["trajectory"],
-                   "success": 1.0 if rec["status"] == "SUCCESS" else 0.0},
+            value=score_values(rec),
             answer=rec["status"],
             explanation=(f"failed checks: {', '.join(failed)}" if failed else "all checks passed")
                         + (f"; violations: {', '.join(v['kind'] for v in rec['violations'])}" if rec["violations"] else ""),

@@ -118,8 +118,9 @@ hfx smoke ... --resume     # skip runs that already have a scored result; rerun 
 - **Which runs to skip.** Each planned run's RunKey is computed before it runs, by the same function the
   provisioner uses. The plan is compared with the store by key, so editing a task, recipe, prompt or tool
   re-runs exactly the affected runs.
-- **Newest result wins.** The store reads the newest row per RunKey, so a rerun replaces an earlier INCOMPLETE
-  row instead of being counted twice. Older rows are kept as history.
+- **Newest result wins.** The store reads the newest scored row per RunKey, so a rerun replaces an earlier
+  result instead of being counted twice, and an INCOMPLETE or ERROR rerun (quota, provider down) never hides a
+  scored one. Older rows are kept as history.
 - **Quota across restarts.** Provider usage is saved to `var/quota_ledger.json` (`HF_QUOTA_STATE`) after every
   call, so a restarted campaign knows what today has already spent. Day windows reset at UTC midnight. A
   provider whose own 429 said "spent for today" stays blocked until then.
@@ -530,7 +531,9 @@ How a decision is made, for one task class, model and provider:
    with a bootstrap 95% interval. Only cells with at least `min_runs` scored runs (default 3) are ranked; the
    rest are reported as "below min".
 3. **Only current evidence counts.** A cell is used only if its recipe hash and environment hash are the
-   recipe's current ones. Results from an older version of a recipe never choose for the new one.
+   recipe's current ones. Results from an older version of a recipe never choose for the new one. Rows of a task
+   whose definition changed since (same id and version, different task hash) are left out too, here and in
+   `results --cells` and `report`.
 4. **Cold start (SEL-03).** With nothing ranked, the first matching rule-based default that survives the hard
    rules is used: `UNKNOWN_PATH` → `v3-staged`, otherwise `v2-base`. If a model can't call tools, that leaves V1.
 5. **Close call (SEL-04).** When the top two intervals overlap, both are chosen, `provision` runs both, and
@@ -599,7 +602,8 @@ hfx results --cells        # R column: faulted / clean mean outcome per cell, wi
 - **Not the model's fault.** Injected failures are not counted as invalid calls in Q, and a retry after one is
   not counted as waste.
 - **R per cell:** R = mean outcome of the cell's faulted runs ÷ mean outcome of its clean runs, capped at 1.
-  - Each clean run's composite is recomputed with R (w_r joins the weighted mean).
+  - Each clean run's composite is recomputed with R, which counts as R·O like Q·O (w_r joins the weighted
+    mean), so a run that achieved nothing stays at 0.
   - Faulted runs never enter the cell's E mean or the cost medians.
   - R stays undefined (`-`) until a cell has both kinds of run, or when its clean outcome is 0.
 
@@ -662,7 +666,8 @@ C is linear below the median too, so a harness that solves a task for half the u
 solves it at the usual cost.
 
 - **Median per task, over successful runs only.** Tasks in one class differ in size, and counting failures would
-  make the median the price of giving up early. A task nobody solved falls back to all its runs.
+  make the median the price of giving up early. A task nobody solved falls back to all its scored runs
+  (INCOMPLETE and ERROR runs never set a median).
 - **Cost basis** is reference USD when every successful run is priced, otherwise total tokens (as with the
   scripted provider).
 - **Baselines.** Medians depend on which runs are in the pool, so freeze them:
