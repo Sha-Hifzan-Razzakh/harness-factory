@@ -199,6 +199,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
             instance = HarnessInstance(
                 run_key=run_key, recipe=recipe, task=task, gateway=gateway, tools=tools, budget=budget,
                 tracer=tracer, messages=messages, stage_prompts=stage_prompts, delegate=delegate,
+                prompts=assembler.registry,
                 snapshot={"prompt_hash": PromptAssembler.prompt_hash(
                               messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,

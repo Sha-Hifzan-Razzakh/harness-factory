@@ -31,6 +31,8 @@ class HarnessInstance:
     recoveries: int = 0                                           # malformed replies re-asked so far this run
     scope: str | None = None                                      # tool-call scope for this level (a delegate's)
     delegate: Any = None                                          # shapes.delegate.DelegateContext, or None
+    prompts: Any = None                                           # substrate.prompts.PromptRegistry (V4 renders
+                                                                  # its step and replan prompts during the run)
 
 
 class Harness(Protocol):

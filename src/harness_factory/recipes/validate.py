@@ -132,6 +132,26 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
                     issues.append(ValidationIssue(rule="stage_tool_resolves",
                                                   detail=f"stage {st.id}: {pat!r} matches no reachable tool"))
 
+    pl = recipe.planning
+    if recipe.variant == Variant.V4_PLANNER and pl is None:
+        issues.append(ValidationIssue(rule="planning_required", detail="V4_PLANNER needs `planning`"))
+    if recipe.variant != Variant.V4_PLANNER and pl is not None:
+        issues.append(ValidationIssue(rule="planning_unused", detail=f"{recipe.variant.value} ignores planning"))
+    if pl is not None:
+        if pl.worst_case_calls() > recipe.config.max_steps:
+            issues.append(ValidationIssue(rule="planning_fits_budget",
+                                          detail=f"plans and steps can take {pl.worst_case_calls()} model calls "
+                                                 f"(replans included) but max_steps is {recipe.config.max_steps}"))
+        for ref in (pl.planner_prompt, pl.step_prompt, pl.replan_prompt):
+            if not prompts.exists(ref):
+                issues.append(ValidationIssue(rule="prompt_exists", detail=f"planning: prompt {ref!r}"))
+        planner = recipe.model_slots.get("planner")
+        if planner is not None and planner.canonical_model is not None:
+            # The model is a campaign axis and only the executor's is in the RunKey: a pinned planner model would
+            # be a different experiment under the same identity.
+            issues.append(ValidationIssue(rule="planner_model_unpinned",
+                                          detail="the planner slot uses the run's model; leave canonical_model empty"))
+
     for ref in (recipe.prompts.system, recipe.prompts.task, recipe.prompts.operator):
         if ref and not prompts.exists(ref):
             issues.append(ValidationIssue(rule="prompt_exists", detail=f"prompt {ref!r} not found"))

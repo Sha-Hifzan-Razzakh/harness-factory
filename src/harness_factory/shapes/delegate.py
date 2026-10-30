@@ -165,7 +165,7 @@ async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[st
         run_key=inst.run_key, recipe=child, task=task, gateway=inst.gateway, tools=tools, budget=budget,
         tracer=inst.tracer, messages=d.assembler.assemble(child, task, names),
         stage_prompts=d.assembler.stage_prompts(child, task, names), scope=f"delegate:{d.limits.calls}",
-        delegate=grand)
+        delegate=grand, prompts=d.assembler.registry)
     budget.start()
     with inst.tracer.span(SpanKind.handoff, f"delegate:{child.id}", depth=d.depth + 1):
         result = await ShapeRegistry.get(child.variant).run(child_inst)

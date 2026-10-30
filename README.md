@@ -4,7 +4,7 @@ Builds agent harnesses from declarative recipes, runs them against versioned tas
 environment, and records an effectiveness score per (task class × recipe × model). Requirements: *Harness Factory —
 Requirements v1*. Design: *Harness Factory UML*.
 
-Status: **P0 done, P1 in progress.** Three harness shapes (V1 single call, V2 tool loop, V3 workflow graph) run
+Status: **P0 done, P1 in progress.** Four harness shapes (V1 single call, V2 tool loop, V3 workflow graph, V4 planner) run
 end to end over real MCP servers, and every run is graded, traced and stored.
 
 ## Quickstart
@@ -334,7 +334,7 @@ src/harness_factory/
   env/                    LocalSandbox, StateInspector, MCP servers (impl/)         (B1, B11)
   recipes/                HarnessRecipe, validator                                  (B2)
   substrate/              ModelGateway, ToolExecutor, BudgetGuard, prompts          (B3)
-  shapes/                 Harness protocol, ShapeRegistry, V1 / V2 / V3 shapes      (B4)
+  shapes/                 Harness protocol, ShapeRegistry, V1 / V2 / V3 / V4 shapes (B4)
   provision/              Provisioner, task class key                               (B5)
   providers/              ProviderCatalog, QuotaLedger                              (B6)
   runner/                 RunKey, CostLedger, run_one / run_reference / smoke       (B7)
@@ -356,20 +356,30 @@ differ only in control flow.
 | V1 single call | `v1-base` | One model response; its tool calls run; nothing follows | single-step writes, cheaply | anything that must read before acting or answering |
 | V2 tool loop | `v2-base` | Model calls tools until it answers (LangGraph `call_model ⇄ run_tools`) | general tasks | over-spending on easy tasks |
 | V3 workflow graph | `v3-staged` | Stages from the recipe, each a bounded tool loop with its own tools: inspect (read-only), act, verify (read-only); verify can reply `RETRY:` to go back to act once | tasks where acting before inspecting is costly | cost: more model calls per task |
+| V4 planner | `v4-planner` | The planner slot writes a numbered plan from the task and the tool list (no tool calls); the executor runs it one step at a time, each step a bounded tool loop; a step that replies `BLOCKED:` sends the remaining work back to the planner once | long known-path tasks a model loses track of | tasks whose path only shows up while working; cost: the plan and step prompts |
 
 V3 stage tools are enforced: a write attempted in a read-only stage is refused and recorded as a
 `tool_not_allowed` violation. Stage transitions are `handoff` spans, so the trace shows the path through the
 graph. A V3 recipe declares its graph under `workflow:` (see `catalog/recipes/base/v3_staged.yaml`).
 
-Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks):
+A V4 recipe declares `planning:` (`max_plan_steps`, `step_max_steps`, `max_replans`, and the three prompts under
+`prompts/plan/`). The planner runs on the run's model (a pinned planner model is refused: only the executor's model
+is in the RunKey). Plans, replans and steps are `handoff` spans; tool calls carry scope `step:<n>`; the plans and
+each step's result are in `snapshot.plans` and `snapshot.plan_trail`. A plan longer than `max_plan_steps` has its
+tail merged into the last step, an unnumbered plan becomes one step (`plan_unparsed`), and a step past its cap is
+ended like a V3 stage (`step_cap`). See ADR 0007.
+
+Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks, cost baseline over these four recipes):
 
 | Recipe | Success | E₀ | C | E | Tokens |
 |---|---|---|---|---|---|
-| `v1-base` | 1/20 (fs-01 only) | 0.130 | 0.068 | 0.122 | ~4,500 |
-| `v2-base` | 20/20 | 1.000 | 0.311 | 0.945 | ~28,000 |
-| `v3-staged` | 20/20 | 1.000 | 0.714 | 0.871 | ~62,000 |
+| `v1-base` | 1/20 (fs-01 only) | 0.100 | 0.051 | 0.095 | ~4,500 |
+| `v2-base` | 20/20 | 1.000 | 0.236 | 0.958 | ~28,000 |
+| `v3-staged` | 20/20 | 1.000 | 0.568 | 0.896 | ~62,000 |
+| `v4-planner` | 20/20 | 1.000 | 0.644 | 0.888 | ~81,000 |
 
-V2 and V3 tie on E₀; efficiency C separates them (see *Cost and efficiency*).
+V2, V3 and V4 tie on E₀; efficiency C separates them (see *Cost and efficiency*). Offline, the scripted model never
+loses track, so planning can only cost; whether it pays with real models on longer tasks is a Phase 2 question.
 
 ## Recipe matrix
 
@@ -703,7 +713,7 @@ These prove the factory measures differences before any API budget is spent.
 
 ## Not in P0
 
-- **P1:** V4 planner and V5 orchestrator shapes (a delegate tool for any shape exists: `delegation`).
+- **P1:** V5 orchestrator shape (a delegate tool for any shape exists: `delegation`; V4 is built).
 - **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis);
   cross-provider equivalence calibration (then cells can pool providers).
 - **Known limits:**

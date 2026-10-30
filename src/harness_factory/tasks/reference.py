@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,6 +55,9 @@ class PlanBackend:
     delegate when offered the delegate tool, hands the whole task to the helper first; the helper (one shared
             script, so the same plan) does the work, then the parent gives the final answer. Without a delegate
             tool it is replay
+
+    Every style plans when called in the planner slot (V4): one numbered line per remaining plan step. In a V4 step
+    ("Step i of n: ..."), it makes the next plan call and then closes the step, so one plan step runs per V4 step.
     """
 
     INVENTED_TOOL = "fs__search_file"
@@ -62,6 +66,8 @@ class PlanBackend:
     MAX_RETRIES = 3
 
     STAGE_DONE = "Stage complete."
+    STEP_DONE = "Step complete."
+    _STEP = re.compile(r"(?:^|\n)Step \d+ of \d+:")
 
     def __init__(self, ref: Reference, style: str = "replay") -> None:
         if style not in ("replay", "noisy", "lazy", "retry", "invent", "delegate"):
@@ -76,6 +82,8 @@ class PlanBackend:
         self.delegate_pending = style == "delegate"
         self.i = 0
         self.calls = 0
+        self.steps_seen = 0          # V4 step prompts seen so far
+        self.step_start = 0          # plan index when the current V4 step started
 
     @staticmethod
     def _last_tool_failed(messages: list[dict]) -> bool:
@@ -98,6 +106,11 @@ class PlanBackend:
         from harness_factory.substrate.gateway import Completion, approx_tokens
 
         offered = {t["function"]["name"] for t in tools}
+        if getattr(slot, "role", None) == "planner":
+            lines = [f"{n}. Call {s['tool']} with {json.dumps(s['args'])}"
+                     for n, s in enumerate(self.plan[self.i:], 1)] or ["1. Give the final answer."]
+            msg = self._msg(content="\n".join(lines))
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if self.delegate_pending and self.DELEGATE in offered:
             self.delegate_pending = False
             ask = next((m.get("content") or "" for m in reversed(messages) if m.get("role") == "user"), "")
@@ -114,6 +127,12 @@ class PlanBackend:
             msg = self._msg(model_name(self.last_step["tool"]), self.last_step["args"])
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         self.retries = 0
+        steps = sum(1 for m in messages if m.get("role") == "user" and self._STEP.search(m.get("content") or ""))
+        if steps != self.steps_seen:
+            self.steps_seen, self.step_start = steps, self.i
+        if steps and self.i > self.step_start and messages[-1].get("role") == "tool":
+            msg = self._msg(content=self.final if self.i >= len(self.plan) else self.STEP_DONE)
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         nxt = model_name(self.plan[self.i]["tool"]) if self.i < len(self.plan) else None
         if nxt and nxt in offered and self.noisy_pending:
             self.noisy_pending = False
