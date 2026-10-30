@@ -252,3 +252,28 @@ def test_garbled_reads_cover_the_search_tools():
     profile = load_fault_profiles(settings.FAULTS_DIR)["garbled-reads"]
     for rule in profile.rules:
         assert {"search.find", "search.grep"} <= set(rule.tools)
+
+
+def test_authoring_snapshot_and_validate_agree_on_an_unknown_grader(tmp_path):
+    """The authoring snapshot (child process) flags the same unknown grader as `hfx validate`."""
+    import shutil
+
+    import yaml
+
+    from harness_factory.authoring.service import AuthoringService
+    root = tmp_path / "repo"
+    root.mkdir()
+    for name in ("catalog", "prompts"):
+        shutil.copytree(settings.ROOT / name, root / name)
+    shutil.copy(settings.ROOT / "pyproject.toml", root / "pyproject.toml")
+    task_yaml = root / "catalog/tasks/fs-01/task.yaml"
+    data = yaml.safe_load(task_yaml.read_text())
+    data["grader_ids"] = ["state_dif", "trajectory"]
+    task_yaml.write_text(yaml.safe_dump(data, sort_keys=False))
+    errors = AuthoringService(root).errors()
+    assert any("fs-01" in str(e) and "state_dif" in str(e) for e in errors), errors
+    env = {**os.environ, "HF_ROOT": str(root), "HF_VAR": str(root / "var"),
+           "HF_RESULTS_URL": f"sqlite:///{root / 'var/results.db'}", "HF_QUOTA_STATE": str(root / "var/quota.json")}
+    out = subprocess.run([sys.executable, "-c", "from harness_factory.cli.main import app; app()", "validate"],
+                         env=env, capture_output=True, text=True, timeout=300, check=False)
+    assert out.returncode == 1 and "state_dif" in out.stdout
