@@ -30,7 +30,8 @@ only inside the V5 orchestrator shape. EXT-09 asks for a delegate tool in any sh
    helper is a new experiment for every recipe that delegates to it.
 7. **The helper's stop is not the parent's overrun.** A helper that hits its budget or stage cap is recorded as
    `delegate_stopped` (not in `OVERRUN_KINDS`); the parent sees "stopped early" and may carry on. The helper's tool
-   violations are kept, prefixed `delegate <n>:`.
+   violations are kept, prefixed `delegate <n>:`. A helper that ends INCOMPLETE (infrastructure) or ERROR (setup,
+   crash) is different: the parent run ends with the same status, never graded (review finding R-02).
 8. **Observable.** A `delegate.run` tool span carries the helper's recipe, depth, status and usage; a `handoff` span
    wraps its work; its tool calls carry scope `delegate:<n>` (so the trajectory grader judges its reads in its own
    scope); its conversation is in the transcript under `snapshot.delegations`.

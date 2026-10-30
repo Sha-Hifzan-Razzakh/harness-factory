@@ -65,12 +65,17 @@ class OrchestratorShape:
             no, (current, *rest) = state["step_no"] + 1, state["steps"]
             with inst.tracer.span(SpanKind.handoff, f"step:{no}", step=no, replans=state["replans"]):
                 pass
-            limit = inst.budget.exceeded_by(before="tool_call")
+            # Out of budget for another worker: the run's own budget stop, whatever max_replans says (a refused
+            # worker is not a blocked step: replanning could not run it either).
+            limit = inst.budget.exceeded_by(before="tool_call") or delegate.shortfall(inst.delegate.child.config,
+                                                                                      inst.budget)
             if limit:
                 return {"stop": f"budget:{limit}", "step_no": no}
             sub = inst.prompts.render(pl.worker_prompt, goal=goal, done=state["done"], step=current,
                                       last=not rest)
-            text = await delegate.run_delegate(inst, json.dumps({"task": sub}), scope=f"step:{no}")
+            text, stop = await delegate.run_delegate(inst, json.dumps({"task": sub}), scope=f"step:{no}")
+            if stop:                # the worker ended on infrastructure or a setup failure: so does the run
+                return {"stop": stop, "step_no": no}
             answer = text.removeprefix(FINISHED) if text.startswith(FINISHED) else ""
             done = state["done"] + [{"step": current, "result": (answer or text)[:300]}]
             blocked = not text.startswith(FINISHED) or answer.lstrip().upper().startswith(BLOCKED_PREFIX)
