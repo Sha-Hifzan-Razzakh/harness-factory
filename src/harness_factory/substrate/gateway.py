@@ -11,8 +11,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import time
 from typing import Any, Protocol
 
+import anyio
 from pydantic import BaseModel
 
 from harness_factory.observability.span import SpanKind
@@ -20,7 +23,7 @@ from harness_factory.observability.tracer import Tracer
 from harness_factory.providers.catalog import ProviderCatalog, ProviderEntry, ServedModel
 from harness_factory.providers.quota import QuotaLedger
 from harness_factory.recipes.model import ModelSlot
-from harness_factory.substrate.errors import ErrorKind, HarnessError
+from harness_factory.substrate.errors import RETRYABLE_KINDS, ErrorKind, HarnessError
 
 
 class Completion(BaseModel):
@@ -33,6 +36,72 @@ class Completion(BaseModel):
 class Backend(Protocol):
     async def complete(self, messages: list[dict], tools: list[dict], slot: ModelSlot,
                        provider: ProviderEntry, served: ServedModel) -> Completion: ...
+
+
+_DAILY = re.compile(r"per[ -_]?day|\b[RT]PD\b|daily", re.IGNORECASE)
+DAILY_RETRY_AFTER_S = 120.0       # a provider asking us to wait longer than this is out of quota, not throttling
+
+
+def retry_after_s(e: BaseException) -> float | None:
+    """Seconds the provider asked us to wait (Retry-After header), when it said."""
+    headers = dict(getattr(e, "headers", None) or {})
+    response = getattr(e, "response", None)
+    if response is not None and getattr(response, "headers", None):
+        headers = {**dict(response.headers), **headers}
+    for k, v in headers.items():
+        if k.lower() == "retry-after":
+            try:
+                return max(0.0, float(v))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+_MALFORMED = re.compile(r"tool_use_failed|failed to call a function|tool call validation|invalid tool call",
+                        re.IGNORECASE)
+_TOO_LARGE = re.compile(r"request too large|request_too_large|maximum context|context length|too many tokens",
+                        re.IGNORECASE)
+
+
+def classify_provider_error(e: BaseException, mid_run: bool = False) -> HarnessError:
+    """Map any provider/LiteLLM exception to a typed HarnessError. Order matters: subclasses first.
+
+    A 400/422 is the model's failure (MODEL_PARSE, scored) only when the provider says the model's output was
+    malformed (e.g. Groq's tool_use_failed). Any other 400 stays CONFIG (ERROR, unscored), even mid-run, so a
+    factory message-format bug surfaces instead of being blamed on the model; `mid_run` is recorded in the
+    message to help tell the two apart. Oversized requests (413, "request too large") are context limits (BUDGET).
+    """
+    import litellm
+
+    msg = str(e)[:500] or f"{type(e).__name__} (no message)"
+    if isinstance(e, litellm.ContextWindowExceededError):
+        return HarnessError(ErrorKind.BUDGET, f"context window exceeded: {msg}")      # the harness overflowed it
+    if isinstance(e, litellm.RateLimitError):
+        wait = retry_after_s(e)
+        if _DAILY.search(msg) or (wait is not None and wait > DAILY_RETRY_AFTER_S):
+            return HarnessError(ErrorKind.QUOTA_EXHAUSTED, msg)
+        err = HarnessError(ErrorKind.RATE_LIMITED, msg)
+        err.retry_after = wait                                                         # type: ignore[attr-defined]
+        return err
+    if isinstance(e, (litellm.AuthenticationError, litellm.PermissionDeniedError, litellm.NotFoundError)):
+        return HarnessError(ErrorKind.CONFIG, msg)
+    if getattr(e, "status_code", None) == 413 or (
+            isinstance(e, (litellm.BadRequestError, litellm.UnprocessableEntityError)) and _TOO_LARGE.search(msg)):
+        return HarnessError(ErrorKind.BUDGET, f"request too large: {msg}")    # context/plan limit, the run's size
+    if isinstance(e, (litellm.BadRequestError, litellm.UnprocessableEntityError)):
+        if _MALFORMED.search(msg):
+            return HarnessError(ErrorKind.MODEL_PARSE, msg)                  # the model broke the request
+        return HarnessError(ErrorKind.CONFIG, f"{'mid-run ' if mid_run else ''}{msg}")
+    if isinstance(e, (litellm.Timeout, TimeoutError)):
+        err = HarnessError(ErrorKind.PROVIDER_ERROR, f"timeout: {msg}")
+        err.timeout = True                                                   # type: ignore[attr-defined]
+        return err
+    if isinstance(e, (litellm.APIConnectionError, litellm.InternalServerError, litellm.ServiceUnavailableError,
+                      litellm.BadGatewayError, litellm.APIError)):
+        return HarnessError(ErrorKind.PROVIDER_ERROR, msg)
+    if isinstance(e, HarnessError):
+        return e
+    return HarnessError(ErrorKind.PROVIDER_ERROR, f"{type(e).__name__}: {msg}")
 
 
 def approx_tokens(obj: Any) -> int:
@@ -60,8 +129,13 @@ class ScriptedBackend:
 
 
 class LiteLLMBackend:
+    def __init__(self, timeout_s: float | None = None) -> None:
+        self.timeout_s = timeout_s
+
     async def complete(self, messages, tools, slot, provider, served) -> Completion:
         import litellm
+
+        timeout_s = self.timeout_s
 
         kwargs: dict[str, Any] = dict(
             model=f"{provider.litellm_prefix}/{served.provider_model_id}" if provider.litellm_prefix
@@ -79,12 +153,12 @@ class LiteLLMBackend:
             kwargs["api_key"] = key
         if slot.seed is not None:
             kwargs["seed"] = slot.seed
-        try:
-            resp = await litellm.acompletion(**kwargs)
-        except litellm.RateLimitError as e:
-            raise HarnessError(ErrorKind.RATE_LIMITED, str(e)[:300]) from e
-        except (litellm.APIConnectionError, litellm.ServiceUnavailableError, litellm.Timeout) as e:
-            raise HarnessError(ErrorKind.MODEL_ERROR, str(e)[:300]) from e
+        kwargs["drop_params"] = True               # a provider that rejects `seed` etc. drops it rather than 400s
+        if timeout_s:
+            kwargs["timeout"] = timeout_s
+        # Provider exceptions propagate raw: ModelGateway classifies them, because only it knows whether the run
+        # already had a successful call (which decides whether a 400 is setup or the model's doing).
+        resp = await litellm.acompletion(**kwargs)
         choice = resp.choices[0].message
         msg: dict[str, Any] = {"role": "assistant", "content": choice.content}
         if getattr(choice, "tool_calls", None):
@@ -97,47 +171,77 @@ class LiteLLMBackend:
         return Completion(message=msg, tokens_in=tin, tokens_out=tout, usd=served.cost(tin, tout))
 
 
+MAX_BACKOFF_S = 60.0
+
+
 class ModelGateway:
+    _sleep = staticmethod(asyncio.sleep)        # retry backoff; replaced in tests
+
     def __init__(self, catalog: ProviderCatalog, ledger: QuotaLedger, tracer: Tracer,
                  provider_id: str, backend: Backend | None = None, retries: int = 2,
-                 backoff_s: float = 2.0) -> None:
+                 backoff_s: float = 2.0, timeout_s: float | None = None) -> None:
         self.catalog = catalog
         self.ledger = ledger
         self.tracer = tracer
         self.provider = catalog.get(provider_id)
-        self.backend = backend or (LiteLLMBackend() if self.provider.kind == "litellm" else None)
+        self.timeout_s = timeout_s
+        self.backend = backend or (LiteLLMBackend(timeout_s) if self.provider.kind == "litellm" else None)
         if self.backend is None:
             raise HarnessError(ErrorKind.PROVISION, f"provider {provider_id} needs an explicit backend")
         self.retries = retries
         self.backoff_s = backoff_s
+        self.infra_wait_s = 0.0          # quota waits, retry backoff, failed attempts: not the harness's time
+        self.successful_calls = 0
 
     async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict]) -> Completion:
+        """One model call: take a quota slot, call with a hard timeout, classify failures, retry the transient
+        ones (honouring Retry-After). Spans of failed attempts stay in the trace with status error."""
         if not slot.canonical_model:
             raise HarnessError(ErrorKind.PROVISION, f"model slot {slot.role} has no canonical model")
         served = self.catalog.served(self.provider.id, slot.canonical_model)
         attempt = 0
         while True:
-            waited_from = self.ledger.waits[self.provider.id]
-            await self.ledger.acquire(self.provider.id)          # paces to the provider's limits; may raise
+            reserve = approx_tokens(messages) + slot.max_output_tokens // 4   # rough: prompt + a typical reply
+            waited = await self.ledger.acquire(self.provider.id, reserve)  # paces to provider limits; may raise
+            self.infra_wait_s += waited
             with self.tracer.span(SpanKind.model_call, slot.canonical_model, provider=self.provider.id,
                                   provider_model_id=served.provider_model_id, attempt=attempt) as span:
-                if self.ledger.waits[self.provider.id] > waited_from:
-                    span.attributes["quota_wait_s"] = round(self.ledger.waits[self.provider.id] - waited_from, 3)
+                if waited:
+                    span.attributes["quota_wait_s"] = round(waited, 3)
+                t_call = time.monotonic()
                 try:
-                    comp = await self.backend.complete(messages, tools, slot, self.provider, served)
-                except HarnessError as e:
-                    span.status, span.error = "error", e.kind.value
-                    if e.kind == ErrorKind.RATE_LIMITED and attempt < self.retries:
-                        retry = True
+                    if self.timeout_s:
+                        # Backstop above the provider timeout: a hung backend can never hold a worker forever.
+                        with anyio.fail_after(self.timeout_s + min(5.0, self.timeout_s)):
+                            comp = await self.backend.complete(messages, tools, slot, self.provider, served)
                     else:
-                        raise
+                        comp = await self.backend.complete(messages, tools, slot, self.provider, served)
+                except Exception as raw:  # classified below; nothing escapes untyped
+                    e = raw if isinstance(raw, HarnessError) else classify_provider_error(
+                        raw, mid_run=self.successful_calls > 0)
+                    span.status, span.error = "error", e.kind.value
+                    self.infra_wait_s += time.monotonic() - t_call             # a failed attempt is not a step
+                    self.ledger.record_tokens(self.provider.id, 0, reserve)     # release the reservation
+                    span.attributes["error_detail"] = e.message[:300]
+                    if e.kind == ErrorKind.QUOTA_EXHAUSTED:
+                        self.ledger.mark_exhausted(self.provider.id)  # other workers stop calling this provider
+                    limit = min(self.retries, 1) if getattr(e, "timeout", False) else self.retries
+                    if e.kind not in RETRYABLE_KINDS or attempt >= limit:
+                        if e is raw:
+                            raise
+                        raise e from raw
+                    wait = getattr(e, "retry_after", None)
+                    wait = min(MAX_BACKOFF_S, max(wait or 0.0, self.backoff_s * (2 ** attempt)))
+                    span.attributes["retry_in_s"] = round(wait, 3)
                 else:
-                    retry = False
                     span.tokens_in, span.tokens_out = comp.tokens_in, comp.tokens_out
                     span.attributes["usd"] = comp.usd
                     span.attributes["tool_calls"] = len(comp.message.get("tool_calls") or [])
-                    self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out)
+                    if comp.message.get("content"):
+                        span.attributes["content_preview"] = str(comp.message["content"])[:500]
+                    self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out, reserve)
+                    self.successful_calls += 1
                     return comp
-            if retry:
-                attempt += 1
-                await asyncio.sleep(self.backoff_s * attempt)
+            attempt += 1
+            self.infra_wait_s += wait
+            await self._sleep(wait)

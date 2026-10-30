@@ -37,8 +37,12 @@ Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quo
 - **Pacing.** Before each model call, a worker reserves a request slot. If the provider's per-minute request or
   token window is full, it waits for the window to roll. Waits are recorded on the `model_call` span
   (`quota_wait_s`) and summed at the end of the campaign.
-- **Daily limits.** If a per-day limit is spent, the run ends **INCOMPLETE** instead of waiting a day. INCOMPLETE
-  is not a harness failure.
+- **Daily limits.** If a per-day limit is spent, in the ledger or because the provider's 429 says so, the run
+  ends **INCOMPLETE** instead of waiting a day, and every other worker stops calling that provider.
+- **Provider failures.** Each model call has a timeout (`config.call_timeout_s`, default `HF_CALL_TIMEOUT_S=120`).
+  5xx errors, timeouts, connection errors and 429s are retried with backoff (honouring `Retry-After`, at most
+  60 s; timeouts once). If they persist, the run ends INCOMPLETE. Time lost to quota waits, backoff and failed
+  attempts is not charged to the run's wall-time budget.
 - **Preflight.** `smoke` refuses to start when the worst case (every run using every step) exceeds today's
   remaining request limit.
 - **Order.** Results come back in plan order, whatever the concurrency. A run that errors is reported with its
@@ -200,7 +204,49 @@ V2 and V3 tie on E₀; efficiency C separates them (see *Cost and efficiency*).
 
    The final **E = max(0, E₀ − w_c·C)** is computed when results are aggregated, because cost is relative (see
    *Cost and efficiency*).
-6. **Record.** The trace goes to JSONL/OTLP, the row to the results store, and the run to MLflow when enabled.
+6. **Record.** Each run produces three things:
+   - the trace, as JSONL and over OTLP;
+   - `<trace>.transcript.json`, with the full conversation (prompts, model replies, tool calls with arguments,
+     tool results), the answer and how the run ended;
+   - a row in the results store, and in MLflow when that's enabled.
+
+## How a run ends
+
+Every run ends in one of three ways, and only the first is scored:
+
+| How it stopped | Examples | Status | In cell means? |
+|---|---|---|---|
+| **By itself** | the model answered | SUCCESS / PARTIAL / FAIL from the oracle | yes |
+| **Harness overran** | step/tool/token/wall budget, V3 stage cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
+| **Infrastructure** | provider 5xx, timeout, connection, 429 after retries, daily quota | INCOMPLETE | no (`excl.`) |
+| **Setup or crash** | auth, unknown model id, a rejected request, a bug in factory code | ERROR (recorded with trace and transcript) | no (`excl.`) |
+
+Why an overrun is graded at all, but penalised:
+
+- **Graded.** Zeroing it was unfair between shapes: a V3 stage cap ends one stage, while a V2 step cap ends the
+  whole run.
+- **Penalised.** Without the penalty, a harness that solves early and keeps calling until a cap would tie a
+  clean run. Q only catches exact repeats, and as a "success" the run would also inflate the cost median.
+
+Cells are keyed by **task class × recipe × model × provider × environment hash**. Provider and environment stay
+separate until cross-provider equivalence is calibrated (P2).
+
+## Run identity
+
+A RunKey changes whenever any of these changes:
+
+- the task (instruction, seed data, oracle; not its split or tags);
+- the recipe, including the source of every prompt template it references;
+- the model, the provider and the provider's model id;
+- the declared tool specs, including their schema hashes;
+- the seed.
+
+The seed is never part of the recipe hash. Tool schemas are frozen in `tools.yaml`:
+
+```bash
+hfx tools freeze           # rediscover every tool and write its schema hash
+hfx tools freeze --check   # exit 1 if a server's tool schemas changed (drift)
+```
 
 ## Cost and efficiency
 
@@ -270,7 +316,12 @@ These prove the factory measures differences before any API budget is spent.
 
 - **P1:** V4 planner and V5 orchestrator shapes.
 - **P2:** fault injection and robustness R.
-- **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis).
+- **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis);
+  cross-provider equivalence calibration (then cells can pool providers).
+- **Known limits:**
+  - A model that is always slower than the call timeout is excluded (INCOMPLETE) rather than penalised; watch
+    `excl.` per cell.
+  - A task edited between runs still pools into its task class; `results --cells` warns when that happens.
 - **P2:** equivalence calibration across providers.
 - **P3:** approval gate (ASK is treated as DENY for now).
 - **P3:** elicitation and sampling.

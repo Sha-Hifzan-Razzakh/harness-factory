@@ -8,10 +8,10 @@ from harness_factory.runner.runner import smoke
 
 
 def row(task="t@1", status="SUCCESS", tokens=100, usd=0.0, composite=1.0, cls="KNOWN_PATH|REVERSIBLE|R1",
-        recipe="r", model="m"):
+        recipe="r", model="m", provider="p"):
     return {"task_version": task, "status": status, "tokens_in": tokens, "tokens_out": 0, "usd": usd,
             "composite": composite, "task_class": cls, "recipe_id": recipe, "recipe_hash": recipe,
-            "canonical_model": model}
+            "canonical_model": model, "provider": provider}
 
 
 def test_efficiency_curve():
@@ -26,18 +26,27 @@ def test_efficiency_curve():
 
 def test_median_uses_successful_runs_only():
     b = CostBaseline.from_rows([row(tokens=100), row(tokens=300), row(tokens=10, status="FAIL")])
-    assert b.medians == {"t@1": 200.0}           # the cheap failure does not drag the median down
-    assert b.counts == {"t@1": 2}
+    assert b.medians == {"p|t@1": 200.0}         # the cheap failure does not drag the median down
+    assert b.counts == {"p|t@1": 2}
 
 
 def test_unsolved_task_falls_back_to_all_runs():
     b = CostBaseline.from_rows([row(task="u@1", status="FAIL", tokens=40), row(task="u@1", status="PARTIAL", tokens=60)])
-    assert b.medians == {"u@1": 50.0}
+    assert b.medians == {"p|u@1": 50.0}
 
 
 def test_basis_is_usd_only_when_every_success_is_priced():
     assert CostBaseline.from_rows([row(usd=0.01), row(usd=0.02)]).basis == "usd"
     assert CostBaseline.from_rows([row(usd=0.01), row(usd=0.0)]).basis == "tokens"
+
+
+def test_providers_never_share_a_median():
+    """Scripted replays (tokens, cheap) must not become the yardstick for real runs (USD)."""
+    b = CostBaseline.from_rows([row(provider="scripted", tokens=100), row(provider="groq", tokens=5000, usd=0.002),
+                                row(provider="groq", tokens=7000, usd=0.004)])
+    assert b.bases == {"groq": "usd", "scripted": "tokens"} and b.basis == "mixed"
+    assert b.medians == {"groq|t@1": 0.003, "scripted|t@1": 100.0}
+    assert b.c(row(provider="groq", tokens=6000, usd=0.003)) == 0.5          # at its own provider's median
 
 
 def test_baseline_identity_is_content_addressed():
@@ -86,3 +95,21 @@ async def test_frozen_baseline_keeps_scores_stable_as_runs_arrive(factory, tmp_p
     assert {k: after_frozen[k] for k in before} == before                             # old cells unchanged
     assert live_baseline.id != frozen_id                                               # the live medians moved
     assert [b.id for b in store.list_baselines()] == [frozen_id]
+
+
+def test_cells_do_not_pool_providers(factory):
+    rows = [row(provider="groq", model="m"), row(provider="openrouter", model="m")]
+    for r in rows:
+        r["run_key"] = "t@1|th|r|m|" + r["provider"] + "|0|none|env" + r["provider"]
+    cells = aggregate_rows(rows, CostBaseline.from_rows(rows))
+    assert sorted(c.provider for c in cells) == ["groq", "openrouter"] and all(c.e.n == 1 for c in cells)
+
+
+def test_legacy_baselines_are_skipped_not_fatal(tmp_path):
+    import sqlalchemy as sa
+    store = ResultsStore(f"sqlite:///{tmp_path / 'r.db'}")
+    with store.engine.begin() as c:
+        c.execute(sa.text("INSERT INTO cost_baselines (id, basis, medians, counts, note, created_at) "
+                          "VALUES ('old000000000', 'tokens', '{}', '{}', '', '2026-10-01 00:00:00')"))
+    assert store.list_baselines() == [] and store.legacy_baselines() == ["old000000000"]
+

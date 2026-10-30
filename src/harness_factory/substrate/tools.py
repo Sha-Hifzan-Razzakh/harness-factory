@@ -24,6 +24,8 @@ from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind
 
 MAX_INLINE_CHARS = 16_000
+PREVIEW_CHARS = 500          # span previews; the full text is in the run's transcript file
+ARGS_CHARS = 2_000
 
 
 def model_name(tool_ref: str) -> str:
@@ -81,6 +83,7 @@ class ToolExecutor:
                 span.status = "error"
                 span.error = span.error or ErrorKind.TOOL_ERROR.value
             span.attributes["result_chars"] = len(result.text)
+            span.attributes["result_preview"] = result.text[:PREVIEW_CHARS]
         self.budget.charge(span)
         return result
 
@@ -102,6 +105,7 @@ class ToolExecutor:
             span.error = ErrorKind.TOOL_ARGS.value
             return ToolResult(text=f"Missing required arguments for {ref}: {', '.join(missing)}", is_error=True)
         span.attributes["args_hash"] = content_hash(args, 12)
+        span.attributes["args"] = json.dumps(args, default=str)[:ARGS_CHARS]
         spec = self.declared.spec(ref)
         span.attributes["side_effect"] = spec.side_effect.value
         mode = self.policy.permission_mode.get(spec.side_effect.value, "DENY")

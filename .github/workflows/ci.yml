@@ -45,6 +45,9 @@ jobs:
       - name: Recipes validate
         run: uv run --no-sync hfx validate
 
+      - name: Tool schemas frozen (no drift)
+        run: uv run --no-sync hfx tools freeze --check
+
       - name: Reference solutions pass their oracles
         run: uv run --no-sync hfx reference
 

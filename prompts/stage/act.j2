@@ -1,2 +1,3 @@
 Stage: act. Make the changes the task asks for, and only those. If the task asks a question, work out the answer.
 When you are done, reply with the final answer to the task.
+{% if tools %}Tools in this stage: {{ tools | join(", ") }}.{% else %}No tools in this stage.{% endif %}

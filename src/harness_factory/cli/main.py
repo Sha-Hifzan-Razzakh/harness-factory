@@ -8,6 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from harness_factory import settings
+
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Harness Factory")
 console = Console()
 
@@ -29,39 +31,50 @@ def _records_table(recs) -> Table:
 
 
 def _cells_table(baseline, cells, by_class: bool = True) -> Table:
-    cols = (["task class"] if by_class else []) + ["recipe", "model", "n", "success", "E0", "C", "E", "ci95 (E)",
-                                                     "tokens"]
+    cols = (["task class"] if by_class else []) + ["recipe", "model", "provider", "env", "n", "excl.", "success",
+                                                     "E0", "C", "E", "ci95 (E)", "tokens"]
     t = Table(*cols, title=f"cost baseline {baseline.id} ({baseline.basis}, {baseline.note or 'saved'})")
     for c in cells:
         row = ([c.task_class] if by_class else []) + [
-            c.recipe_id, c.canonical_model, str(c.e.n), f"{c.e.pass_rate:.0%}", f"{c.mean_e0:.3f}",
-            f"{c.mean_c:.2f}", f"{c.e.mean:.3f}", f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]", str(c.tokens)]
+            c.recipe_id, c.canonical_model, c.provider, c.env_hash[:6], str(c.e.n),
+            str(c.excluded) if c.excluded else "",
+            f"{c.e.pass_rate:.0%}" if c.e.n else "-", f"{c.mean_e0:.3f}" if c.e.n else "-",
+            f"{c.mean_c:.2f}" if c.e.n else "-", f"{c.e.mean:.3f}" if c.e.n else "-",
+            f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]" if c.e.n > 1 else "-", str(c.tokens)]
         t.add_row(*row)
     return t
+
+
+def _mean(values: list[float]) -> str:
+    return f"{sum(values) / len(values):.3f}" if values else "-"
 
 
 def _summary_table(recs) -> Table:
     """One row per recipe x model, cost-adjusted against these runs: the comparison the factory exists to make.
 
     Each run is scored against its own task's median (and its own class's weights), then pooled across tasks.
+    INCOMPLETE / ERROR runs (infrastructure, setup) are counted in `excl.` and never averaged in.
     """
     from harness_factory.results.cost import CostBaseline
-    from harness_factory.results.store import record_row
+    from harness_factory.results.store import UNSCORED, record_row
 
     rows = [record_row(r) for r in recs]
     baseline = CostBaseline.from_rows(rows, note="these runs")
     groups: dict[tuple[str, str], list[dict]] = {}
     for r in rows:
         groups.setdefault((r["recipe_id"], r["canonical_model"]), []).append(r)
-    t = Table("recipe", "model", "success", "E0", "C", "E", "model calls", "tokens",
-              title=f"cost-adjusted against these runs ({baseline.basis})")
-    for (rid, m), rs in groups.items():
-        n = len(rs)
-        t.add_row(rid, m, f"{sum(r['status'] == 'SUCCESS' for r in rs)}/{n}",
-                  f"{sum(r['composite'] for r in rs) / n:.3f}",
-                  f"{sum(baseline.c(r) or 0.0 for r in rs) / n:.2f}",
-                  f"{sum(baseline.adjusted(r) for r in rs) / n:.3f}",
-                  str(sum(r["model_calls"] for r in rs)), str(sum(r["tokens_in"] + r["tokens_out"] for r in rs)))
+    t = Table("recipe", "model", "success", "excl.", "E0", "C", "E", "model calls", "tokens",
+              title=f"cost-adjusted against these runs ({baseline.basis}); excl. = INCOMPLETE/ERROR, not scored")
+    for (rid, m), all_rs in groups.items():
+        scored = [r for r in all_rs if r["status"] not in UNSCORED]
+        n = len(scored)
+        t.add_row(rid, m, f"{sum(r['status'] == 'SUCCESS' for r in scored)}/{n}",
+                  str(len(all_rs) - n) if len(all_rs) != n else "",
+                  _mean([r["composite"] for r in scored]),
+                  _mean([baseline.c(r) or 0.0 for r in scored]),
+                  _mean([baseline.adjusted(r) for r in scored]),
+                  str(sum(r["model_calls"] for r in all_rs)),
+                  str(sum(r["tokens_in"] + r["tokens_out"] for r in all_rs)))
     return t
 
 
@@ -177,15 +190,64 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
                 raise typer.Exit(code=1)
         used, result = store.aggregate(chosen)
         console.print(_cells_table(used, result))
-        missing = sorted({r["task_version"] for r in store.rows()} - set(used.medians))
+        from harness_factory.results.cost import baseline_key
+        missing = sorted({baseline_key(r) for r in store.rows()} - set(used.medians))
         if missing:
             console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
+        for task, n in store.stale_tasks().items():
+            console.print(f"[yellow]{task} has {n} different definitions in the store (edited between runs); "
+                          f"its rows pool into the same task class")
         return
     t = Table("id", "task", "recipe", "model", "status", "E0", "tools", "created")
     for r in store.recent(limit):
         t.add_row(str(r["id"]), r["task_version"], r["recipe_id"], r["canonical_model"], r["status"],
                   f"{r['composite']:.3f}", str(r["tool_calls"]), r["created_at"].strftime("%H:%M:%S"))
     console.print(t)
+
+
+tools_app = typer.Typer(no_args_is_help=True, help="Declared tool catalog (catalog/tools.yaml).")
+app.add_typer(tools_app, name="tools")
+
+
+@tools_app.command("freeze")
+def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if tools.yaml is out of date")) -> None:
+    """Discover every server's tools and write their schema hashes into tools.yaml, so a later schema change
+    fails provisioning (drift) instead of silently changing what the model sees."""
+    import yaml
+
+    from harness_factory.env.sandbox import make_sandbox
+    from harness_factory.mcp.pool import MCPSessionPool
+
+    f = _factory(store=False)
+
+    async def discover() -> dict[str, str]:
+        with make_sandbox("freeze") as sb:
+            sb.reset(f.tasks.all()[0])
+            declared = f.declared.model_copy(deep=True)
+            for s in declared.servers:                      # discovery only: ignore declared hashes
+                for t in s.tools:
+                    t.schema_hash = None
+            async with MCPSessionPool(declared, [s.id for s in declared.servers], sb.env(), sb.launch) as pool:
+                return {ref: pool.catalog.schema_hash(ref) for ref in pool.catalog.tools}
+
+    hashes = asyncio.run(discover())
+    text = settings.TOOLS_FILE.read_text()
+    data = yaml.safe_load(text)
+    changed = []
+    for server in data["servers"]:
+        for tool in server["tools"]:
+            ref = f"{server['id']}.{tool['name']}"
+            if tool.get("schema_hash") != hashes[ref]:
+                changed.append(ref)
+                tool["schema_hash"] = hashes[ref]
+    if check:
+        for ref in changed:
+            console.print(f"[red]stale[/] {ref}")
+        console.print("tools.yaml is up to date" if not changed else f"{len(changed)} tool(s) changed")
+        raise typer.Exit(code=1 if changed else 0)
+    header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
+    settings.TOOLS_FILE.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
+    console.print(f"wrote {len(hashes)} schema hashes ({len(changed)} changed) to {settings.TOOLS_FILE.name}")
 
 
 baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")
@@ -209,10 +271,15 @@ def baseline_save(note: str = typer.Option("", "--note")) -> None:
 def baseline_list() -> None:
     """Saved baselines, oldest first."""
     from harness_factory.results.store import ResultsStore
-    t = Table("id", "basis", "tasks", "note", "created")
-    for b in ResultsStore().list_baselines():
+    store = ResultsStore()
+    t = Table("id", "basis", "provider|task medians", "note", "created")
+    for b in store.list_baselines():
         t.add_row(b.id, b.basis, str(len(b.medians)), b.note, b.created_at.strftime("%Y-%m-%d %H:%M"))
     console.print(t)
+    legacy = store.legacy_baselines()
+    if legacy:
+        console.print(f"[yellow]{len(legacy)} baseline(s) saved before per-provider medians are ignored: "
+                      f"{', '.join(legacy)}")
 
 
 if __name__ == "__main__":

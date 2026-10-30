@@ -35,7 +35,7 @@ def limited(factory, **limits):
     providers.get("scripted").limits = providers.get("scripted").limits.model_copy(update=limits)
     t = FakeTime()
     factory.providers = providers
-    factory.ledger = QuotaLedger(providers, clock=t.clock, sleep=t.sleep)
+    factory.ledger = QuotaLedger(providers, clock=t.clock, sleep=t.sleep, jitter_s=0)
     return t
 
 
@@ -143,3 +143,23 @@ async def test_a_failing_run_does_not_stop_the_campaign(factory):
     result = await run_campaign(factory, specs, concurrency=3)
     assert [r.run_key.task_version for r in result.records] == ["fs-01@1", "sql-01@1"]
     assert len(result.errors) == 1 and "no-such-model" in result.errors[0].error
+
+
+async def test_token_reservations_stop_a_burst_overshooting_tpm(factory):
+    t = limited(factory, tpm=1000)
+    stamps: list[float] = []
+
+    async def worker():
+        await factory.ledger.acquire("scripted", tokens=400)           # each call expects ~400 tokens
+        stamps.append(t.now)
+
+    await asyncio.gather(*(worker() for _ in range(5)))
+    first_window = [s for s in stamps if s < 1_000_000.0 + 60]
+    assert len(first_window) == 2                                       # 2 x 400 fits in 1000; a third would not
+
+
+async def test_reservation_is_corrected_by_actual_usage(factory):
+    limited(factory, tpm=1000)
+    await factory.ledger.acquire("scripted", tokens=900)
+    factory.ledger.record_tokens("scripted", 100, reserved=900)         # the call actually used 100
+    assert factory.ledger.remaining("scripted")["tpm"] == 900

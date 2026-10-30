@@ -8,9 +8,12 @@ smoke          every task x every model on one recipe: the P0 gate
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 import harness_factory.shapes.builtin  # noqa: F401
@@ -32,7 +35,7 @@ from harness_factory.results.store import ResultsStore
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import ShapeRegistry
-from harness_factory.shapes.result import RunResult, RunStatus
+from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import Backend
 from harness_factory.tasks.model import Task
@@ -68,20 +71,45 @@ def _cost(spans, providers: ProviderCatalog, provider_id: str, wall_s: float) ->
     return led
 
 
+def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
+    """Everything a person needs to debug a run, next to its trace: the full conversation (prompts, stage
+    instructions, model replies, tool calls with arguments, tool results), the final answer and how it ended."""
+    path = trace_path.with_suffix(".transcript.json")
+    path.write_text(json.dumps({
+        "run_key": inst.run_key.as_str(), "status": result.status.value, "error": result.error,
+        "output": result.output, "snapshot": inst.snapshot, "messages": result.messages,
+    }, indent=1, default=str))
+    return path
+
+
+# A run that did not stop by itself (budget, V3 stage cap, context overflow, malformed output) is graded on the
+# environment, but cannot be a clean success: its outcome is scaled by this factor and its status is at most
+# PARTIAL. Without it, a harness that solves early and then keeps calling until a cap scores like a clean run
+# (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
+OVERRUN_OUTCOME_FACTOR = 0.5
+OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"})
+
+
+def overran(result: RunResult) -> bool:
+    return any(v.kind in OVERRUN_KINDS for v in result.violations)
+
+
 def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -> RunStatus:
-    if not result.finished:
+    """Every scored run gets its status from the environment. Unscored runs keep INCOMPLETE / ERROR."""
+    if not result.scored:
         return result.status
     state = next((g for g in grades if g.grader_id == "state_diff"), None)
     critical = any(v.critical for g in grades for v in g.violations) or any(v.critical for v in result.violations)
     if state is None or critical:
         return RunStatus.FAIL
-    if state.score >= threshold:
+    if state.score >= threshold and not overran(result):
         return RunStatus.SUCCESS
     return RunStatus.PARTIAL if state.score > 0 else RunStatus.FAIL
 
 
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
-                  seed: int = 0, backend: Backend | None = None) -> EffectivenessRecord:
+                  seed: int = 0, backend: Backend | None = None, flush: bool = True) -> EffectivenessRecord:
+    """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end."""
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
                          ledger=f.ledger, seed=seed, backend=backend) as p:
@@ -92,11 +120,21 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                               model=k.canonical_model, provider=k.provider, seed=k.seed,
                               variant=recipe.variant.value, task_class=p.task_class,
                               prompt_hash=inst.snapshot["prompt_hash"]) as root:
+            inst.budget.start()
             try:
                 result = await shape.run(inst)
             except HarnessError as e:
                 result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
                                    error=f"{e.kind.value}: {e.message}", violations=list(inst.tools.violations))
+            except GraphRecursionError as e:  # the shape ran past its own step bound: the harness's doing
+                result = RunResult(run_key=inst.run_key, status=RunStatus.BUDGET_EXCEEDED, scored=True,
+                                   error=f"recursion limit: {str(e)[:300]}",
+                                   violations=[*inst.tools.violations,
+                                               Violation(kind="budget_exceeded", detail="graph recursion limit")])
+            except Exception as e:  # noqa: BLE001  (a crash still gets graded, traced and recorded)
+                result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
+                                   error=f"crash: {type(e).__name__}: {str(e)[:500]}",
+                                   violations=list(inst.tools.violations))
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
             with inst.tracer.span(SpanKind.grade, "pipeline"):
@@ -109,11 +147,13 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         result.trajectory = list(inst.tracer.spans)
         result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0)
         trace_path = inst.tracer.write_jsonl()
+        transcript_path = write_transcript(trace_path, inst, result)
 
         by_id = {g.grader_id: g for g in grades}
         violations = list(result.violations) + [v for g in grades for v in g.violations]
         scores = FamilyScores(
-            outcome=by_id["state_diff"].score if "state_diff" in by_id and result.finished else 0.0,
+            outcome=(by_id["state_diff"].score * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
+                     if "state_diff" in by_id and result.scored else 0.0),
             trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
             efficiency=0.0,   # normalized against the class median at aggregation time (P2)
             safety=len(violations),
@@ -129,10 +169,13 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             trace_path=str(trace_path),
             output=result.output if isinstance(result.output, str) else None,
             messages=result.messages,
+            transcript_path=str(transcript_path),
         )
     if f.store:
         f.store.add(rec)
     f.tracker.log(rec, recipe)
+    if flush:
+        await asyncio.to_thread(Tracer.flush)
     return rec
 
 
@@ -207,11 +250,14 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4) -
         async with gate:
             try:
                 return await run_one(f, f.tasks.get(spec.task_id), f.recipes[spec.recipe_id], spec.canonical_model,
-                                     spec.provider, seed=spec.seed)
+                                     spec.provider, seed=spec.seed, flush=False)
             except Exception as e:  # noqa: BLE001  (reported per run with its spec; the campaign carries on)
                 return CampaignError(spec=spec, error=f"{type(e).__name__}: {str(e)[:500]}")
 
-    outcomes = await asyncio.gather(*(one(s) for s in specs))
+    try:
+        outcomes = await asyncio.gather(*(one(s) for s in specs))
+    finally:
+        await asyncio.to_thread(Tracer.flush)          # once per campaign, including an interrupted one
     return CampaignResult(
         records=[o for o in outcomes if isinstance(o, EffectivenessRecord)],
         errors=[o for o in outcomes if isinstance(o, CampaignError)],

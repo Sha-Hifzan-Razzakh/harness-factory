@@ -61,6 +61,15 @@ class ToolCatalogFile(BaseModel):
     def all_refs(self) -> list[str]:
         return [t.ref(s.id) for s in self.servers for t in s.tools]
 
+    def env_hash(self, server_ids: list[str], provider_model_id: str) -> str:
+        """Identity of the tool environment a run sees, plus the concrete provider model. Part of RunKey."""
+        from harness_factory.hashing import content_hash
+        specs = {t.ref(s.id): t.model_dump(mode="json") for s in self.servers if s.id in server_ids for t in s.tools}
+        return content_hash({"tools": specs, "provider_model_id": provider_model_id}, 12)
+
+    def unhashed_tools(self) -> list[str]:
+        return [t.ref(s.id) for s in self.servers for t in s.tools if not t.schema_hash]
+
 
 def load_tool_catalog(path: Path) -> ToolCatalogFile:
     return ToolCatalogFile.model_validate(yaml.safe_load(path.read_text()))

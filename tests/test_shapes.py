@@ -50,7 +50,8 @@ async def test_step_cap_does_not_block_the_last_steps_tools(factory):
     capped = base.model_copy(update={"config": base.config.model_copy(update={"max_steps": 1})})
     rec = await run_one(factory, factory.tasks.get("fs-01"), capped, "scripted/replay", "scripted")
     assert rec.cost.tool_calls == 1                       # the write happened
-    assert rec.status.value == "BUDGET_EXCEEDED"          # but the loop could not take a second step
+    assert rec.status.value == "PARTIAL"                  # graded on the environment, but did not stop by itself
+    assert rec.scores.outcome == 0.5 and any(v.kind == "budget_exceeded" for v in rec.violations)
 
 
 # ---------------------------------------------------------------- V3
@@ -113,14 +114,19 @@ async def test_v3_stage_step_cap_moves_the_run_on(factory):
         {"content": "done"}, {"content": "Created notes/todo.txt."}])
     rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
                         "scripted", backend=backend)
-    assert rec.status.value == "SUCCESS"
-    assert any(v.kind == "loop" for v in rec.violations)                  # trajectory grader saw the repeats
+    assert rec.status.value == "PARTIAL"                                  # a capped stage is an overrun
+    assert {"loop", "stage_cap"} <= {v.kind for v in rec.violations}
 
 
 # ---------------------------------------------------------------- recipe contract
 
-def test_adding_workflow_field_kept_existing_recipe_identity(factory):
-    assert factory.recipes["v2-base"].content_hash() == "8c49e2941642e0ca"
+def test_unset_optional_fields_keep_recipe_identity(factory):
+    """Optional fields (workflow, config.call_timeout_s) are omitted from the hash when unset. Pinned so an
+    accidental identity change fails here; re-pin only with a PR note (CLAUDE.md, Run identity)."""
+    r = factory.recipes["v2-base"]
+    assert r.content_hash() == "79abd03818943f65"
+    timed = r.model_copy(update={"config": r.config.model_copy(update={"call_timeout_s": 30})})
+    assert timed.content_hash() != r.content_hash()
 
 
 def test_workflow_changes_recipe_identity(factory):
@@ -146,3 +152,107 @@ def test_validator_workflow_rules(factory):
     bad.stages[0].tools = ["web.fetch"]
     bad.stages[1].prompt = "stage/missing"
     assert {"stage_tool_resolves", "prompt_exists"} <= rules(v3.model_copy(update={"workflow": bad}))
+
+async def test_v3_verification_reread_is_not_wasted(factory):
+    """inspect reads, act writes, verify re-reads: the re-read follows a write, so it is verification (Q = 1)."""
+    content = "[server]\nhost = 0.0.0.0\nport = 9090\n\n[logging]\nlevel = info\n"
+    read = {"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "config/app.ini"}}]}
+    backend = ScriptedBackend([
+        read, {"content": "port is 8080"},
+        {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "config/app.ini", "content": content}}]},
+        {"content": "Changed the port to 9090."},
+        read, {"content": "Changed the port to 9090."},
+    ])
+    rec = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=backend)
+    assert rec.status.value == "SUCCESS" and rec.scores.trajectory == 1.0
+
+
+async def test_rereading_without_a_change_in_between_is_wasted(factory):
+    read = {"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "config/app.ini"}}]}
+    content = "[server]\nhost = 0.0.0.0\nport = 9090\n\n[logging]\nlevel = info\n"
+    backend = ScriptedBackend([read, read, {"tool_calls": [{"name": "fs__write_file", "arguments": {
+        "path": "config/app.ini", "content": content}}]}, {"content": "done"}])
+    rec = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "scripted/replay",
+                        "scripted", backend=backend)
+    assert rec.scores.trajectory == pytest.approx(1 - 1 / 3)
+
+
+async def test_stage_prompts_list_only_that_stages_tools(factory):
+    from harness_factory.substrate.prompts import PromptAssembler
+    task, recipe = factory.tasks.get("fs-02"), factory.recipes["v3-staged"]
+    prompts = PromptAssembler().stage_prompts(recipe, task, ["fs__list_dir", "fs__read_file", "fs__write_file"])
+    assert "fs__write_file" not in prompts["inspect"] and "fs__write_file" not in prompts["verify"]
+    assert "fs__write_file" in prompts["act"]
+
+
+async def test_v3_retry_needs_the_exact_marker(factory):
+    """'Retrying is not needed' must not send the run back to act; only the 'RETRY:' marker does."""
+    backend = ScriptedBackend([
+        {"content": "nothing to read"},
+        {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "notes/todo.txt", "content": "buy milk"}}]},
+        {"content": "done"},
+        {"content": "Retrying is not needed: notes/todo.txt is correct."},
+    ])
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=backend)
+    assert [s["name"] for s in _spans(rec, "handoff")] == ["stage:inspect", "stage:act", "stage:verify"]
+    assert rec.status.value == "SUCCESS"
+
+
+async def test_overrunning_after_solving_is_treated_the_same_in_v2_and_v3(factory):
+    """A model that solves the task, then keeps reading until stopped. V2 hits its step cap; V3 hits a stage cap.
+    Both are graded on the environment and both carry the overrun as a violation."""
+    write = {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "notes/todo.txt", "content": "buy milk"}}]}
+    look = {"tool_calls": [{"name": "fs__list_dir", "arguments": {"path": "notes"}}]}
+    base = factory.recipes["v2-base"]
+    v2 = base.model_copy(update={"config": base.config.model_copy(update={"max_steps": 6})})
+    r2 = await run_one(factory, factory.tasks.get("fs-01"), v2, "scripted/replay", "scripted",
+                       backend=ScriptedBackend([write] + [look] * 20))
+    r3 = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v3-staged"], "scripted/replay",
+                       "scripted", backend=ScriptedBackend([{"content": "ok"}, write] + [look] * 30))
+    assert r2.status.value == r3.status.value == "PARTIAL"
+    assert r2.scores.outcome == r3.scores.outcome == 0.5
+    assert any(v.kind == "budget_exceeded" for v in r2.violations)
+    assert any(v.kind == "stage_cap" for v in r3.violations)
+
+
+async def test_overrunning_with_varied_calls_cannot_match_a_clean_run(factory):
+    """The farming case: solve, then keep calling with slightly different arguments until the cap (no exact
+    repeats, so Q stays 1). It must score below the clean run and stay out of the pass rate."""
+    content = "[server]\nhost = 0.0.0.0\nport = 9090\n\n[logging]\nlevel = info\n"
+    write = {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "config/app.ini", "content": content}}]}
+    variants = [{"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "./" * i + "config/app.ini"}}]}
+                for i in range(20)]
+    farm = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "scripted/replay",
+                         "scripted", backend=ScriptedBackend([write] + variants))
+    clean = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "scripted/replay",
+                          "scripted", backend=ScriptedBackend([write, {"content": "done"}]))
+    assert farm.scores.trajectory == 1.0                                  # nothing repeated exactly...
+    assert farm.status.value == "PARTIAL" and clean.status.value == "SUCCESS"
+    assert farm.composite < clean.composite                               # ...but it cannot tie the clean run
+
+
+async def test_a_perfect_v3_run_has_no_loop_violation(factory):
+    q = {"tool_calls": [{"name": "sql__query", "arguments": {"sql": "SELECT COUNT(*) FROM customers WHERE city='Dubai'"}}]}
+    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([q, {"content": "3"}, q, {"content": "3"}, q,
+                                                             {"content": "3"}]))
+    assert not [v for v in rec.violations if v.kind == "loop"]
+
+
+async def test_identical_writes_are_wasted(factory):
+    write = {"tool_calls": [{"name": "fs__write_file", "arguments": {"path": "notes/todo.txt", "content": "buy milk"}}]}
+    read = {"tool_calls": [{"name": "fs__read_file", "arguments": {"path": "notes/todo.txt"}}]}
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([write, read, write, read, {"content": "done"}]))
+    assert rec.scores.trajectory == pytest.approx(0.5)      # 2nd write: no new effect; 2nd read: nothing changed
+
+
+async def test_v3_rechecks_on_a_read_only_task_are_not_wasted(factory):
+    q = {"tool_calls": [{"name": "sql__query", "arguments": {"sql": "SELECT COUNT(*) FROM customers WHERE city='Dubai'"}}]}
+    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v3-staged"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend([q, {"content": "3"}, q, {"content": "3"}, q,
+                                                             {"content": "3"}]))
+    assert rec.status.value == "SUCCESS" and rec.scores.trajectory == 1.0
+

@@ -14,7 +14,19 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from harness_factory import settings
 from harness_factory.hashing import content_hash
+
+PromptSources = dict[str, str]          # template ref ("system/default") -> template source text
+
+
+def default_prompt_sources(root: Path | None = None) -> PromptSources:
+    """Every .j2 under the prompts directory, keyed by ref. Missing templates are a validator finding, not a
+    hashing error, so a ref with no file simply contributes nothing here."""
+    root = root or settings.PROMPTS
+    if not root.is_dir():
+        return {}
+    return {str(p.relative_to(root).with_suffix("")).replace("\\", "/"): p.read_text() for p in sorted(root.rglob("*.j2"))}
 
 Tier = Literal["T1", "T2", "T3", "T4"]
 SideEffectName = Literal["READ", "REVERSIBLE", "IRREVERSIBLE"]
@@ -68,6 +80,7 @@ class RuntimeConfig(BaseModel):
     backoff_s: float = 2.0
     compaction_at: float = 0.8
     parallel_tool_calls: bool = False
+    call_timeout_s: int | None = Field(None, gt=0)    # per model call; None = settings.CALL_TIMEOUT_S
 
 
 class PolicySet(BaseModel):
@@ -121,9 +134,22 @@ class WorkflowSpec(BaseModel):
         return [s.id for s in self.stages].index(stage_id)
 
 
-# Optional recipe fields added after results were first recorded. When unset they are dropped before hashing,
-# so adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity").
-_HASH_OMIT_WHEN_NONE = ("workflow",)
+# Optional fields added after results were first recorded. When unset they are dropped before hashing, so
+# adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
+_HASH_OMIT_WHEN_NONE = ("workflow", "config.call_timeout_s")
+
+# Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
+# axis. Both are nulled before hashing.
+_SLOT_AXES = ("canonical_model", "seed")
+
+
+def _drop_none(data: dict, dotted: str) -> None:
+    *path, last = dotted.split(".")
+    node = data
+    for key in path:
+        node = node.get(key) or {}
+    if isinstance(node, dict) and node.get(last) is None:
+        node.pop(last, None)
 
 
 class HarnessRecipe(BaseModel):
@@ -144,13 +170,26 @@ class HarnessRecipe(BaseModel):
     grader_hooks: list[str] = Field(default_factory=list)
     workflow: WorkflowSpec | None = None              # required by V3_WORKFLOW_GRAPH, rejected elsewhere
 
-    def content_hash(self) -> str:
+    def prompt_refs(self) -> list[str]:
+        refs = [self.prompts.system, self.prompts.task] + ([self.prompts.operator] if self.prompts.operator else [])
+        if self.workflow:
+            refs += [st.prompt for st in self.workflow.stages]
+        return refs
+
+    def content_hash(self, prompts: PromptSources | None = None) -> str:
+        """Identity of the harness: the recipe minus its campaign axes, plus the source of every prompt
+        template it references. Editing a template changes behaviour, so it changes the hash.
+
+        `prompts` maps template ref -> source text; by default it is read from the prompts directory.
+        """
         data = self.model_dump(mode="json")
         for slot in data["model_slots"].values():
-            slot["canonical_model"] = None
-        for key in _HASH_OMIT_WHEN_NONE:
-            if data.get(key) is None:
-                data.pop(key, None)
+            for axis in _SLOT_AXES:
+                slot[axis] = None
+        for dotted in _HASH_OMIT_WHEN_NONE:
+            _drop_none(data, dotted)
+        sources = prompts if prompts is not None else default_prompt_sources()
+        data["prompt_sources"] = {ref: sources[ref] for ref in sorted(set(self.prompt_refs())) if ref in sources}
         return content_hash(data)
 
     def with_model(self, canonical_model: str, role: str = "executor") -> HarnessRecipe:

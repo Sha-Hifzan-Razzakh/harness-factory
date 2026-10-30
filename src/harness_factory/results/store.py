@@ -16,9 +16,12 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     insert,
+    inspect,
     select,
+    text,
 )
 
 from harness_factory import settings
@@ -54,13 +57,16 @@ runs = Table(
     Column("grades", JSON, nullable=False),
     Column("trace_path", String),
     Column("created_at", DateTime, nullable=False),
+    Column("output", Text),                                  # added after v1: nullable, see _migrate()
+    Column("transcript_path", String),
 )
 
 cost_baselines = Table(
     "cost_baselines", metadata,
     Column("id", String(12), primary_key=True),          # content hash of basis + medians
-    Column("basis", String, nullable=False),
+    Column("basis", String, nullable=False),            # display summary; per-provider bases below
     Column("medians", JSON, nullable=False),
+    Column("bases", JSON),                              # added after v1: nullable, see _migrate()
     Column("counts", JSON, nullable=False),
     Column("note", String, nullable=False),
     Column("created_at", DateTime, nullable=False),
@@ -79,38 +85,69 @@ def record_row(rec: EffectivenessRecord) -> dict:
         wall_s=rec.cost.wall_s, usd=rec.cost.usd,
         violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
-        created_at=datetime.now(UTC),
+        created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path,
     )
 
 
+def env_of(row: dict) -> str:
+    """env_hash from a stored run key (rows written before env_hash existed have 7 fields)."""
+    parts = str(row.get("run_key", "")).split("|")
+    return parts[7] if len(parts) > 7 else "none"
+
+
 class CellResult(BaseModel):
-    """One cell (task class x recipe x model), scored against a cost baseline."""
+    """One cell (task class x recipe x model x provider x environment), scored against a cost baseline.
+
+    Provider and environment hash are part of the cell until cross-provider equivalence is calibrated (P2):
+    the same canonical model on two providers, or before and after a tools.yaml / providers.yaml edit, is not
+    yet known to be the same experiment.
+    """
     task_class: str
     recipe_id: str
     recipe_hash: str
     canonical_model: str
-    e: CellAggregate                  # cost-adjusted E: mean, spread, ci95, pass rate
+    provider: str = ""
+    env_hash: str = "none"
+    e: CellAggregate                  # cost-adjusted E over scored runs: mean, spread, ci95, pass rate
     mean_e0: float                    # before cost
     mean_c: float                     # efficiency penalty input, 0..1
+    excluded: int = 0                 # INCOMPLETE / ERROR runs: infrastructure or setup, not the harness
     tokens: int
     usd: float
 
 
+# Runs that say nothing about the harness: provider down or out of quota (INCOMPLETE), or a setup problem / crash
+# (ERROR). They are reported per cell, never averaged in as zeros.
+UNSCORED = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
+
+
 def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
-    groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
-        groups[(r["task_class"], r["recipe_hash"], r["canonical_model"])].append(r)
+        groups[(r["task_class"], r["recipe_hash"], r["canonical_model"], r.get("provider", ""), env_of(r))].append(r)
     out = []
-    for (tc, rh, m), rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2])):
-        adjusted = [baseline.adjusted(r) for r in rs]
+    for (tc, rh, m, prov, env), all_rs in sorted(
+            groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
+        rs = [r for r in all_rs if r["status"] not in UNSCORED]
+        n = len(rs) or 1
         out.append(CellResult(
-            task_class=tc, recipe_id=rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m,
-            e=CellAggregate.from_values(f"{tc}|{rh}|{m}", adjusted, [r["status"] == RunStatus.SUCCESS.value
-                                                                      for r in rs]),
-            mean_e0=sum(r["composite"] for r in rs) / len(rs),
-            mean_c=sum(baseline.c(r) or 0.0 for r in rs) / len(rs),
-            tokens=sum(r["tokens_in"] + r["tokens_out"] for r in rs), usd=sum(r["usd"] for r in rs)))
+            task_class=tc, recipe_id=all_rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m, provider=prov,
+            env_hash=env,
+            e=CellAggregate.from_values(f"{tc}|{rh}|{m}|{prov}|{env}", [baseline.adjusted(r) for r in rs],
+                                        [r["status"] == RunStatus.SUCCESS.value for r in rs]),
+            mean_e0=sum(r["composite"] for r in rs) / n,
+            mean_c=sum(baseline.c(r) or 0.0 for r in rs) / n,
+            excluded=len(all_rs) - len(rs),
+            tokens=sum(r["tokens_in"] + r["tokens_out"] for r in all_rs), usd=sum(r["usd"] for r in all_rs)))
     return out
+
+
+def _baseline_from_row(r) -> CostBaseline:
+    # Baselines saved before per-provider medians have no `bases`; they cannot be read as per-provider medians.
+    if not r["bases"]:
+        raise ValueError(f"baseline {r['id']} predates per-provider medians; save a new one")
+    return CostBaseline(bases=r["bases"], medians=r["medians"], counts=r["counts"], note=r["note"],
+                        created_at=r["created_at"])
 
 
 class ResultsStore:
@@ -118,6 +155,17 @@ class ResultsStore:
         settings.ensure_dirs()
         self.engine = create_engine(url or settings.RESULTS_URL)
         metadata.create_all(self.engine)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive only: add nullable columns that newer code defines and an older store lacks."""
+        for table in (runs, cost_baselines):
+            existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
+            with self.engine.begin() as c:
+                for col in table.columns:
+                    if col.name not in existing and col.nullable:
+                        c.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" '
+                                       f'{col.type.compile(dialect=self.engine.dialect)}'))
 
     def add(self, rec: EffectivenessRecord) -> int:
         with self.engine.begin() as c:
@@ -140,8 +188,8 @@ class ResultsStore:
         if self.get_baseline(baseline.id) is None:
             with self.engine.begin() as c:
                 c.execute(insert(cost_baselines).values(
-                    id=baseline.id, basis=baseline.basis, medians=baseline.medians, counts=baseline.counts,
-                    note=baseline.note, created_at=baseline.created_at))
+                    id=baseline.id, basis=baseline.basis, bases=baseline.bases, medians=baseline.medians,
+                    counts=baseline.counts, note=baseline.note, created_at=baseline.created_at))
         return baseline.id
 
     def get_baseline(self, baseline_id: str) -> CostBaseline | None:
@@ -149,14 +197,24 @@ class ResultsStore:
             r = c.execute(select(cost_baselines).where(cost_baselines.c.id == baseline_id)).mappings().first()
         if r is None:
             return None
-        return CostBaseline(basis=r["basis"], medians=r["medians"], counts=r["counts"], note=r["note"],
-                            created_at=r["created_at"])
+        return _baseline_from_row(r)
 
     def list_baselines(self) -> list[CostBaseline]:
         with self.engine.connect() as c:
             rs = c.execute(select(cost_baselines).order_by(cost_baselines.c.created_at)).mappings().all()
-        return [CostBaseline(basis=r["basis"], medians=r["medians"], counts=r["counts"], note=r["note"],
-                             created_at=r["created_at"]) for r in rs]
+        return [_baseline_from_row(r) for r in rs if r["bases"]]       # pre-per-provider rows are skipped
+
+    def legacy_baselines(self) -> list[str]:
+        """Ids of baselines saved before per-provider medians: unreadable, listed so the CLI can say so."""
+        with self.engine.connect() as c:
+            return [r[0] for r in c.execute(select(cost_baselines.c.id).where(cost_baselines.c.bases.is_(None)))]
+
+    def stale_tasks(self) -> dict[str, int]:
+        """task_version -> number of distinct task hashes stored for it (> 1 = the task changed between runs)."""
+        hashes: dict[str, set[str]] = defaultdict(set)
+        for r in self.rows():
+            hashes[r["task_version"]].add(str(r["run_key"]).split("|")[1])
+        return {t: len(h) for t, h in sorted(hashes.items()) if len(h) > 1}
 
     def aggregate(self, baseline: CostBaseline | None = None) -> tuple[CostBaseline, list[CellResult]]:
         """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used."""

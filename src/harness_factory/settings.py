@@ -50,6 +50,8 @@ SANDBOXES_DIR = VAR / "sandboxes"
 OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")  # e.g. http://localhost:4318
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
 
+CALL_TIMEOUT_S = int(os.environ.get("HF_CALL_TIMEOUT_S", "120"))   # per model call, unless the recipe sets one
+
 SANDBOX = os.environ.get("HF_SANDBOX", "local")                                 # local | docker
 SANDBOX_BASE_IMAGE = os.environ.get("HF_SANDBOX_BASE_IMAGE", "python:3.12-slim")
 SANDBOX_PYTHON = os.environ.get("HF_SANDBOX_PYTHON", "3.12")                     # must match the base image
