@@ -49,19 +49,21 @@ def kb_server():
     proc.wait()
 
 
-def kb_spec(url: str, version: str = "1.0", schema_hash: str | None = None, auth_env: str = "HF_TEST_KB_TOKEN"):
+def kb_spec(url: str, version: str = "1.0", schema_hash: str | None = None, auth_env: str = "HF_TEST_KB_TOKEN",
+            description_hash: str | None = None):
     return MCPServerSpec(id="kb", transport="streamable_http", url=url, version=version, auth_env=auth_env,
                          tools=[ToolSpec(name="lookup", side_effect=SideEffect.READ, risk="R0", timeout_s=10,
-                                         schema_hash=schema_hash)])
+                                         schema_hash=schema_hash, description_hash=description_hash)])
 
 
 async def live_setup(factory, url):
-    """The factory with `kb` declared (schema hash discovered, as `hfx tools freeze` would), a v2 recipe that opens
+    """The factory with `kb` declared (schema and description hashes discovered, as `hfx tools freeze` would), a v2 recipe that opens
     it, and a task that allows it."""
     probe = factory.declared.model_copy(update={"servers": [kb_spec(url)]})
     async with MCPSessionPool(probe, ["kb"], {}) as pool:
-        h = pool.catalog.schema_hash("kb.lookup")
-    declared = factory.declared.model_copy(update={"servers": [*factory.declared.servers, kb_spec(url, schema_hash=h)]})
+        h, dh = pool.catalog.schema_hash("kb.lookup"), pool.catalog.description_hash("kb.lookup")
+    declared = factory.declared.model_copy(update={"servers": [*factory.declared.servers,
+                                                               kb_spec(url, schema_hash=h, description_hash=dh)]})
     f = dataclasses.replace(factory, declared=declared)
     base = factory.recipes["v2-base"]
     recipe = base.model_copy(update={"id": "v2-kb", "tools": ToolSlice(tool_ids=["fs.*", "sql.*", "kb.*"],
@@ -112,6 +114,7 @@ async def test_a_live_run_calls_the_remote_server_and_the_token_stays_out_of_rec
     t = json.loads(Path(rec.transcript_path).read_text())
     assert t["snapshot"]["mcp_transports"]["kb"] == "STREAMABLE_HTTP"
     assert t["snapshot"]["remote_servers"] == {"kb": f"{kb_server['url']}@1.0"}        # marked as a live run
+    assert t["snapshot"]["remote_versions"] == {"kb": "1.0"}                           # what the server reported
     tool_msgs = [m for m in t["messages"] if m["role"] == "tool"]
     assert tool_msgs[0]["content"] == "Paid order value minus refunds."
     assert rec.run_key.env_hash != f.declared.env_hash(["fs", "sql"], "replay")
@@ -208,6 +211,19 @@ def test_tools_freeze_skips_remote_servers_without_the_opt_in(tmp_path, monkeypa
 
 
 # ------------------------------------------------------------------ record and replay (EXT-08)
+
+async def test_a_server_running_another_version_than_the_pin_fails_provisioning(factory, kb_server, monkeypatch):
+    """EXT-05: the pin is part of env_hash, so a server that now reports another version is another experiment."""
+    monkeypatch.setenv("HF_TEST_KB_TOKEN", TOKEN)
+    monkeypatch.setenv("HF_ALLOW_REMOTE", "1")
+    f, recipe, task = await live_setup(factory, kb_server["url"])
+    kb = f.declared.server("kb")
+    repinned = f.declared.model_copy(update={"servers": [s if s.id != "kb" else kb.model_copy(update={"version": "2.0"})
+                                                         for s in f.declared.servers]})
+    with pytest.raises(HarnessError, match="reports version '1.0' but tools.yaml pins '2.0'"):
+        await run_one(dataclasses.replace(f, declared=repinned), task, recipe, "scripted/replay", "scripted",
+                      backend=ScriptedBackend([LOOKUP, {"content": "ok"}]))
+
 
 def tool_texts(rec):
     t = json.loads(Path(rec.transcript_path).read_text())

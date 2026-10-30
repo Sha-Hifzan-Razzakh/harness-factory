@@ -3,7 +3,9 @@
 A live run against a remote server can't be repeated: the service changes, goes down, or costs a token. In record
 mode every remote answer is saved; in replay mode the same runs are answered from the recording, offline, with no
 token and no network. Recordings are per server and pinned version (a new version needs a new recording), keyed by
-tool and arguments:
+tool and arguments within the run's scope: the task (id and version), the run seed and the test tenant's seed state.
+Two tasks that make the same call against different worlds never share an answer (a recording made before scopes
+existed is a miss: record it again):
 
     <HF_REMOTE_RECORDINGS>/<server>@<version>/_tools.json            discovery (tool names and schemas)
     <HF_REMOTE_RECORDINGS>/<server>@<version>/<tool>/<args hash>.json one answer: text, error flag, structured
@@ -28,14 +30,25 @@ from harness_factory.env.mcp.servers import MCPServerSpec
 from harness_factory.hashing import content_hash
 
 
+def recording_scope(task_key: str, seed: int, tenant_seed: Any) -> str:
+    """What a recorded answer depends on besides the call: which task, which run seed, and the state the test tenant
+    was reset to (a seed edited without a version bump is still another world)."""
+    return content_hash({"task": task_key, "seed": seed, "tenant_seed": tenant_seed}, 16)
+
+
 class Recording:
-    def __init__(self, root: Path, spec: MCPServerSpec) -> None:
+    def __init__(self, root: Path, spec: MCPServerSpec, scope: str | None = None) -> None:
         self.dir = root / f"{spec.id}@{spec.version}"
+        self.scope = scope
 
     @staticmethod
-    def key(tool: str, args: dict[str, Any], n: int = 0) -> str:
+    def call_key(tool: str, args: dict[str, Any], n: int = 0, scope: str | None = None) -> str:
         """n: earlier identical calls in the same session. 0 keeps the key recordings had before repeats counted."""
-        return content_hash({"tool": tool, "args": args, **({"n": n} if n else {})}, 16)
+        return content_hash({"tool": tool, "args": args, **({"n": n} if n else {}),
+                             **({"scope": scope} if scope else {})}, 16)
+
+    def key(self, tool: str, args: dict[str, Any], n: int = 0) -> str:
+        return self.call_key(tool, args, n, self.scope)
 
     def exists(self) -> bool:
         return (self.dir / "_tools.json").is_file()

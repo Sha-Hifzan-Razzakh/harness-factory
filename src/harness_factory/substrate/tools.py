@@ -113,20 +113,24 @@ class ToolExecutor:
         span.attributes["args_hash"] = content_hash(args, 12)
         span.attributes["args"] = json.dumps(args, default=str)[:ARGS_CHARS]
         spec = self.declared.spec(ref)
-        span.attributes["side_effect"] = spec.side_effect.value
-        mode = self.policy.permission_mode.get(spec.side_effect.value, "DENY")
+        side_effect, risk = spec.effect_for(args)          # a call can be stronger than the tool (env/mcp/effects.py)
+        span.attributes["side_effect"] = side_effect.value
+        if side_effect != spec.side_effect:
+            span.attributes.update(escalated=True, risk=risk)
+        mode = self.policy.permission_mode.get(side_effect.value, "DENY")
         span.attributes["permission"] = mode
         if mode != "AUTO":
             # ASK routes to the ApprovalGate from P3; until then it is treated as a denial.
             span.error = ErrorKind.POLICY.value
-            self.violations.append(Violation(kind="policy_denied", detail=f"{ref} ({spec.side_effect.value})"))
-            return ToolResult(text=f"Permission denied: {ref} is {spec.side_effect.value} and needs approval.",
+            self.violations.append(Violation(kind="policy_denied", detail=f"{ref} ({side_effect.value})"))
+            what = ref if side_effect == spec.side_effect else f"this {ref} call"
+            return ToolResult(text=f"Permission denied: {what} is {side_effect.value} and needs approval.",
                               is_error=True)
         if spec.agent is not None and self.agent_calls.get(ref, 0) >= spec.agent.max_calls:
             span.error = ErrorKind.TOOL_ERROR.value          # the harness's choice: counts as invalid in Q
             return ToolResult(text=f"{ref} limit reached: at most {spec.agent.max_calls} calls per run.",
                               is_error=True)
-        if spec.side_effect != SideEffect.READ:
+        if side_effect != SideEffect.READ:
             span.attributes["idempotency_key"] = self.idempotency_key(ref, args)
         # Faults fire only on calls that passed every check above, so a refused call is never a "fault".
         fault = self.faults.decide(ref) if self.faults else None

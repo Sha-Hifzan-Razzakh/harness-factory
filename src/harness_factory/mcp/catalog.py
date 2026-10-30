@@ -11,7 +11,7 @@ from harness_factory.mcp.client import DiscoveredTool
 
 class DriftIssue(BaseModel):
     tool_ref: str
-    problem: str                 # undeclared | missing | schema_changed
+    problem: str                 # undeclared | missing | schema_changed | description_changed
 
 
 class ToolCatalog(BaseModel):
@@ -27,8 +27,13 @@ class ToolCatalog(BaseModel):
     def schema_hash(self, ref: str) -> str:
         return content_hash(self.tools[ref].input_schema)
 
+    def description_hash(self, ref: str) -> str:
+        """The description is what the model reads to decide what a tool does: changing it changes behaviour."""
+        return content_hash(self.tools[ref].description)
+
     def catalog_hash(self) -> str:
-        return content_hash({ref: self.schema_hash(ref) for ref in sorted(self.tools)})
+        return content_hash({ref: {"schema": self.schema_hash(ref), "description": self.description_hash(ref)}
+                             for ref in sorted(self.tools)})
 
     def drift(self) -> list[DriftIssue]:
         issues = [DriftIssue(tool_ref=r, problem="undeclared") for r in self.tools if r not in self.specs]
@@ -36,4 +41,6 @@ class ToolCatalog(BaseModel):
         for ref, spec in self.specs.items():
             if ref in self.tools and spec.schema_hash and spec.schema_hash != self.schema_hash(ref):
                 issues.append(DriftIssue(tool_ref=ref, problem="schema_changed"))
+            if ref in self.tools and spec.description_hash and spec.description_hash != self.description_hash(ref):
+                issues.append(DriftIssue(tool_ref=ref, problem="description_changed"))
         return issues

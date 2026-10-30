@@ -310,8 +310,8 @@ app.add_typer(tools_app, name="tools")
 
 @tools_app.command("freeze")
 def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if tools.yaml is out of date")) -> None:
-    """Discover every server's tools and write their schema hashes into tools.yaml, so a later schema change
-    fails provisioning (drift) instead of silently changing what the model sees."""
+    """Discover every server's tools and write their schema and description hashes into tools.yaml, so a later
+    change to either fails provisioning (drift) instead of silently changing what the model sees."""
     import yaml
 
     from harness_factory.env.sandbox import make_sandbox
@@ -319,17 +319,18 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
 
     f = _factory(store=False)
 
-    async def discover() -> dict[str, str]:
+    async def discover() -> dict[str, dict[str, str]]:
         with make_sandbox("freeze") as sb:
             sb.reset(f.tasks.all()[0])
             declared = f.declared.model_copy(deep=True)
             for s in declared.servers:                      # discovery only: ignore declared hashes
                 for t in s.tools:
-                    t.schema_hash = None
+                    t.schema_hash = t.description_hash = None
             remote_ok = settings.allow_remote() or settings.remote_mode() == "replay"     # replay: recorded schemas
             servers = [s.id for s in declared.servers if not s.remote or remote_ok]
             async with MCPSessionPool(declared, servers, sb.env(), sb.launch) as pool:
-                return {ref: pool.catalog.schema_hash(ref) for ref in pool.catalog.tools}
+                return {ref: {"schema_hash": pool.catalog.schema_hash(ref),
+                              "description_hash": pool.catalog.description_hash(ref)} for ref in pool.catalog.tools}
 
     skipped = [s.id for s in f.declared.servers if s.remote and not (settings.allow_remote()
                                                                       or settings.remote_mode() == "replay")]
@@ -345,9 +346,9 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
             continue
         for tool in server["tools"]:
             ref = f"{server['id']}.{tool['name']}"
-            if tool.get("schema_hash") != hashes[ref]:
+            if any(tool.get(k) != v for k, v in hashes[ref].items()):
                 changed.append(ref)
-                tool["schema_hash"] = hashes[ref]
+                tool.update(hashes[ref])
     if check:
         for ref in changed:
             console.print(f"[red]stale[/] {ref}")
@@ -355,7 +356,8 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
         raise typer.Exit(code=1 if changed else 0)
     header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
     settings.TOOLS_FILE.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
-    console.print(f"wrote {len(hashes)} schema hashes ({len(changed)} changed) to {settings.TOOLS_FILE.name}")
+    console.print(f"wrote {len(hashes)} tools' schema and description hashes ({len(changed)} changed) to "
+                  f"{settings.TOOLS_FILE.name}")
 
 
 baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")
