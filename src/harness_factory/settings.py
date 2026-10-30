@@ -64,3 +64,8 @@ DOCKER_BIN = os.environ.get("HF_DOCKER", "docker")
 def ensure_dirs() -> None:
     for d in (VAR, TRACES_DIR, SANDBOXES_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+
+def allow_remote() -> bool:
+    """Live calls to remote MCP servers are opt-in (ENV-02): HF_ALLOW_REMOTE=1. Read at call time."""
+    return os.environ.get("HF_ALLOW_REMOTE") == "1"

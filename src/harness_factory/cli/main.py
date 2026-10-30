@@ -326,14 +326,20 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
             for s in declared.servers:                      # discovery only: ignore declared hashes
                 for t in s.tools:
                     t.schema_hash = None
-            async with MCPSessionPool(declared, [s.id for s in declared.servers], sb.env(), sb.launch) as pool:
+            servers = [s.id for s in declared.servers if not s.remote or settings.allow_remote()]
+            async with MCPSessionPool(declared, servers, sb.env(), sb.launch) as pool:
                 return {ref: pool.catalog.schema_hash(ref) for ref in pool.catalog.tools}
 
+    skipped = [s.id for s in f.declared.servers if s.remote and not settings.allow_remote()]
+    if skipped:
+        console.print(f"[yellow]skipped remote server(s) {', '.join(skipped)}: set HF_ALLOW_REMOTE=1 to check them")
     hashes = asyncio.run(discover())
     text = settings.TOOLS_FILE.read_text()
     data = yaml.safe_load(text)
     changed = []
     for server in data["servers"]:
+        if server["id"] in skipped:
+            continue
         for tool in server["tools"]:
             ref = f"{server['id']}.{tool['name']}"
             if tool.get("schema_hash") != hashes[ref]:

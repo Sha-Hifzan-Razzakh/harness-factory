@@ -135,6 +135,12 @@ class ToolExecutor:
         except TimeoutError:
             span.error = ErrorKind.TOOL_TIMEOUT.value
             return ToolResult(text=f"{ref} timed out after {spec.timeout_s}s", is_error=True)
+        except Exception as e:
+            if not self.declared.server(ref.split(".")[0]).remote:
+                raise
+            span.error = ErrorKind.TOOL_ERROR.value          # a remote server failing in transit: environment,
+            span.attributes["infra"] = type(e).__name__      # not the model, so excluded from Q like a fault
+            return ToolResult(text=f"{ref} is unavailable right now ({type(e).__name__}).", is_error=True)
         if fault == "garbled":                               # it really ran; the answer came back cut off
             result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
         if len(result.text) > MAX_INLINE_CHARS:

@@ -122,6 +122,34 @@ needs no network inside containers. Any base image that provides Python works; s
 Graders read the host-side directories, so a run grades identically in either sandbox. The sandbox kind and
 image tag are recorded in each run's snapshot.
 
+## Remote MCP servers
+
+A recipe can also open an **existing** MCP server: a third-party service, or an organisation's MCP gateway, over
+streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
+
+```yaml
+- id: kb
+  transport: streamable_http
+  url: https://kb.internal.example/mcp
+  version: "2026.10"              # pinned: url and version are part of the run's env_hash
+  auth_env: KB_MCP_TOKEN          # the bearer token's env var, set in .env; never in a file the factory writes
+  tools:
+  - {name: lookup, side_effect: READ, risk: R0, timeout_s: 10}
+```
+
+- **The sandbox stays offline.** The factory's MCP client connects from the factory process; the run's sandbox
+  keeps `--network none`. The model reaches the server only through the tools the recipe and task allow.
+- **Read-only for now.** Remote tools must be `READ`: a remote side effect must land somewhere the factory can reset
+  before each run and grade afterwards (a test tenant, EXT-07), which isn't built yet. The catalog refuses anything
+  else.
+- **Opt-in.** Live remote calls make a run depend on a service the factory doesn't control, so they need
+  `HF_ALLOW_REMOTE=1`. Such runs record `snapshot.remote_servers` (url@version), and a new server version starts new
+  cells. `hfx tools freeze` checks remote servers only with the opt-in and keeps their hashes otherwise.
+- **Failures are the environment's.** A remote server that is unreachable at the start fails provisioning with the
+  reason (a missing token names its variable). One that fails mid-run turns that tool call into an error the model
+  sees, marked `infra` and excluded from Q like an injected fault. Each session lives in its own task, so a dead
+  server never cancels the run.
+
 ## Running in containers
 
 Two images, two Dockerfiles:

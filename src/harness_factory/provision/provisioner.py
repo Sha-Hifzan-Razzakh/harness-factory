@@ -148,6 +148,11 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     issues = validate_recipe(recipe, declared, providers=providers, provider_id=provider_id)
     if issues:
         raise HarnessError(ErrorKind.PROVISION, "; ".join(f"{i.rule}: {i.detail}" for i in issues))
+    remote = {sid: f"{declared.server(sid).url}@{declared.server(sid).version}"
+              for sid in recipe.tools.mcp_servers if declared.server(sid).remote}
+    if remote and not settings.allow_remote():
+        raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} opens remote MCP server(s) {', '.join(remote)}: live "
+                                                f"remote calls are opt-in (set HF_ALLOW_REMOTE=1)")
     run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers,
                           fault=fault)
     for slot in recipe.model_slots.values():
@@ -187,6 +192,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
                           "fault_profile": fault.id if fault else None,
                           **({"delegate": delegate.child.id} if delegate else {}),
+                          **({"remote_servers": remote} if remote else {}),    # a live run (ENV-02)
                           **sandbox.describe()},
             )
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,

@@ -34,9 +34,18 @@ class MCPSessionPool:
     async def _open(self) -> MCPSessionPool:
         discovered = []
         for sid in self.servers:
-            client = await self._stack.enter_async_context(MCPClient(self.declared.server(sid), self.env, self.launcher))
+            spec = self.declared.server(sid)
+            try:
+                client = await self._stack.enter_async_context(MCPClient(spec, self.env, self.launcher))
+                discovered += await client.list_tools()
+            except HarnessError:
+                raise
+            except Exception as e:
+                if not spec.remote:
+                    raise
+                raise HarnessError(ErrorKind.PROVISION, f"remote MCP server {sid!r} at {spec.url}: "
+                                                        f"{type(e).__name__}: {str(e)[:300]}") from e
             self.clients[sid] = client
-            discovered += await client.list_tools()
         self.catalog = ToolCatalog.build(discovered, self.declared, self.servers)
         drift = self.catalog.drift()
         if drift:
