@@ -33,7 +33,7 @@ def _reachable(url: str) -> bool:
 def _print_sinks(f) -> None:
     """Where this command's results go. Printed up front, so a stale .env (wrong port, someone else's MLflow, a
     missing extra) is visible before a campaign spends quota."""
-    console.print(f"[dim]results  {settings.RESULTS_URL if f.store else '(not stored)'}[/]")
+    console.print(f"[dim]results  {f.store.engine.url.render_as_string() if f.store else '(not stored)'}[/]")
     otlp = settings.OTLP_ENDPOINT
     if not otlp:
         console.print(f"[dim]traces   {settings.TRACES_DIR} (JSONL); OTLP off[/]")
@@ -365,3 +365,133 @@ def baseline_list() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+select_app = typer.Typer(no_args_is_help=True, help="Selector: which recipe to use per task class (SEL-01..06).")
+app.add_typer(select_app, name="select")
+
+
+def _evidence(f, baseline_id: str | None):
+    from harness_factory.results.cost import CostBaseline
+    rows = f.store.rows()
+    if baseline_id:
+        b = f.store.get_baseline(baseline_id)
+        if b is None:
+            raise typer.BadParameter(f"no baseline {baseline_id!r} (hfx baseline list)")
+        return rows, b
+    return rows, CostBaseline.from_rows(rows, note="live")
+
+
+def _decision_row(t: Table, d) -> None:
+    top = d.ranked[0] if d.ranked else None
+    ev = f"{top.mean_e:.3f} [{top.ci95[0]:.2f}-{top.ci95[1]:.2f}] n={top.n}" if top else "-"
+    runner = f"{d.ranked[1].recipe_id} {d.ranked[1].mean_e:.3f}" if len(d.ranked) > 1 else "-"
+    pruned = ", ".join(f"{p.recipe_id} ({p.rule})" for p in d.pruned) or "-"
+    t.add_row(d.task_class, d.rule, " + ".join(d.chosen), ev, runner, str(len(d.insufficient)), pruned)
+
+
+@select_app.command("show")
+def select_show(model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
+                policy: str | None = typer.Option(None, "--policy", help="a frozen policy id instead of live"),
+                baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id")) -> None:
+    """The recipe the selector picks for every task class, with its evidence."""
+    from harness_factory.select.policy import build_policy, load_policy
+    f = _factory()
+    if policy:
+        p = load_policy(policy)
+    else:
+        rows, b = _evidence(f, baseline)
+        p = build_policy(f, rows, b, model, provider)
+    t = Table("class", "rule", "chosen", "E [95% CI] n", "runner-up", "below min", "pruned",
+              title=f"{p.canonical_model} on {p.provider}   policy {p.id}{' (frozen)' if policy else ' (live)'}   "
+                    f"baseline {p.baseline_id}")
+    for d in p.decisions.values():
+        _decision_row(t, d)
+    console.print(t)
+
+
+@select_app.command("freeze")
+def select_freeze(model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
+                  baseline: str | None = typer.Option(None, "--baseline"), note: str = typer.Option("", "--note")) -> None:
+    """Freeze the current decisions as a content-addressed policy, so provisioning stays stable as runs arrive."""
+    from harness_factory.select.policy import build_policy, save_policy
+    f = _factory()
+    rows, b = _evidence(f, baseline)
+    p = build_policy(f, rows, b, model, provider, note=note)
+    console.print(f"saved policy {p.id} ({len(p.decisions)} classes) to {save_policy(p)}")
+
+
+@select_app.command("evaluate")
+def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
+                    split: str = typer.Option("HELD_OUT", "--split"),
+                    concurrency: int = typer.Option(4, "--concurrency", "-j"),
+                    dry_run: bool = typer.Option(False, "--dry-run", help="show the picks and the runs, then stop")) -> None:
+    """SEL-06: run the held-out tasks with the selector's pick, the best global recipe, rules-only and the
+    hand-picked baseline, and compare mean E. Held-out runs never inform the picks. Done runs are reused."""
+    from harness_factory.provision.provisioner import run_key_for
+    from harness_factory.results.cost import CostBaseline
+    from harness_factory.runner.runner import RunSpec, run_campaign
+    from harness_factory.select.policy import evidence_rows, plan_evaluation, score_evaluation
+    from harness_factory.tasks.model import Split
+    f = _factory()
+    _print_sinks(f)
+    plan = plan_evaluation(f, f.store.rows(), model, provider, split=Split(split))
+    t = Table("task", *plan.picks, title=f"{split} picks for {model} on {provider} (evidence baseline {plan.baseline_id})")
+    for task_id in plan.picks["selector"]:
+        t.add_row(task_id, *(plan.picks[s][task_id] for s in plan.picks))
+    console.print(t)
+    for n in plan.notes:
+        console.print(f"[yellow]{n}")
+    runs = plan.runs()
+    console.print(f"{len(runs)} distinct runs (strategies that agree share one)")
+    if dry_run:
+        return
+    specs = [RunSpec(task_id=tk, recipe_id=r, canonical_model=model, provider=provider) for tk, r in runs]
+    asyncio.run(run_campaign(f, specs, concurrency, resume=True))
+    rows = f.store.rows()
+    keys = {(tk, r): run_key_for(f.tasks.get(tk), f.recipes[r], model, provider, 0, declared=f.declared,
+                                 providers=f.providers).as_str() for tk, r in runs}
+    # Cost medians over the evidence plus the evaluation runs themselves, so a strategy that solves a held-out
+    # task more cheaply than another scores higher; all strategies are scored against this one baseline.
+    planned = set(keys.values())
+    baseline = CostBaseline.from_rows(evidence_rows(rows, set(plan.picks["selector"])) +
+                                      [r for r in rows if r["run_key"] in planned], note="evaluation")
+    scores = score_evaluation(plan, f, rows, baseline, keys)
+    st = Table("strategy", "mean E", "passed", "scored", title=f"{split} evaluation (SEL-06)")
+    for s in scores:
+        st.add_row(s.strategy, "-" if s.mean_e is None else f"{s.mean_e:.3f}", f"{s.passed}/{s.tasks}",
+                   f"{s.scored}/{s.tasks}")
+    console.print(st)
+
+
+@app.command()
+def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option(..., "--model"),
+              provider: str = typer.Option(..., "--provider"),
+              policy: str | None = typer.Option(None, "--policy", help="frozen policy id; default: decide live"),
+              baseline: str | None = typer.Option(None, "--baseline"), seed: int = typer.Option(0, "--seed")) -> None:
+    """Select and run: the task's class picks the recipe (a close call runs both, SEL-04), the decision is logged
+    with its evidence (SEL-05), and the run's result feeds the next decision."""
+    from harness_factory.provision.provisioner import task_class
+    from harness_factory.runner.runner import RunSpec, run_campaign
+    from harness_factory.select.policy import load_policy, log_decision
+    from harness_factory.select.selector import decide
+    f = _factory()
+    _print_sinks(f)
+    tk = f.tasks.get(task)
+    cls = task_class(tk, f.declared)
+    if policy:
+        p = load_policy(policy)
+        if (p.canonical_model, p.provider) != (model, provider):
+            raise typer.BadParameter(f"policy {policy} is for {p.canonical_model} on {p.provider}")
+        d = p.decisions[cls]
+    else:
+        rows, b = _evidence(f, baseline)
+        d = decide(cls, model, provider, factory=f, rows=rows, baseline=b, task=tk)
+    path = log_decision(d, task=tk.key(), policy=policy, seed=seed)
+    console.print(f"{d.summary()}\n[dim]decision logged: {path}[/]")
+    specs = [RunSpec(task_id=task, recipe_id=r, canonical_model=model, provider=provider, seed=seed) for r in d.chosen]
+    result = asyncio.run(run_campaign(f, specs, concurrency=len(specs)))
+    if result.records:
+        console.print(_records_table(result.records))
+    for e in result.errors:
+        console.print(f"[red]error[/] {e.spec.recipe_id}: {e.error}")

@@ -1,0 +1,23 @@
+# Selector (SEL-01..06): how a recipe is chosen for a task class, model and provider.
+# Hard rules prune, measured effectiveness ranks, rules decide on cold start. See src/harness_factory/select/.
+
+# A cell (task class x recipe x model x provider x environment) needs this many scored clean runs before it is
+# ranked. Below it the cell is reported as "not enough evidence": one run has no confidence interval to speak of.
+min_runs: 3
+
+# null = every recipe in the catalog is a candidate; or list recipe ids.
+candidates: null
+
+# SEL-06: the hand-picked baseline the selector is evaluated against.
+hand_picked: v2-base
+
+# SEL-03, cold start: the first rule whose class pattern (fnmatch on depth|side_effects|risk) matches wins.
+defaults:
+  - {class: "UNKNOWN_PATH|*", recipe: v3-staged}     # look around before acting
+  - {class: "*", recipe: v2-base}
+
+# SEL-01: shapes that fit each step depth. One model call can't read and then act, so V1 only fits single steps.
+depth_shapes:
+  SINGLE_STEP: [V1_SINGLE_CALL, V2_TOOL_LOOP, V3_WORKFLOW_GRAPH]
+  KNOWN_PATH: [V2_TOOL_LOOP, V3_WORKFLOW_GRAPH]
+  UNKNOWN_PATH: [V2_TOOL_LOOP, V3_WORKFLOW_GRAPH]
