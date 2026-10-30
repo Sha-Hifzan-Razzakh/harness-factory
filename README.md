@@ -180,7 +180,9 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
   [Test tenants](#test-tenants)).
 - **Opt-in.** Live remote calls make a run depend on a service the factory doesn't control, so they need
   `HF_ALLOW_REMOTE=1`. Such runs record `snapshot.remote_servers` (url@version), and a new server version starts new
-  cells. `hfx tools freeze` checks remote servers only with the opt-in and keeps their hashes otherwise.
+  cells. A server that reports a version at initialize must report the pinned one, or provisioning fails; what it
+  reported is in `snapshot.remote_versions` (empty: it reports none, so the pin can't be checked). `hfx tools
+  freeze` checks remote servers only with the opt-in and keeps their hashes otherwise.
 - **Failures are the environment's.** A remote server that is unreachable at the start fails provisioning with the
   reason (a missing token names its variable). One that fails mid-run turns that tool call into an error the model
   sees, marked `infra` and excluded from Q like an injected fault. Each session lives in its own task, so a dead
@@ -190,7 +192,9 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
   `HF_REMOTE_MODE=replay` answers the same runs from that recording with no network, no token and no opt-in, so
   they repeat exactly and can run in CI. Replayed runs show transport `REPLAY` and `snapshot.remote_mode: replay`;
   a call the live run never made gets an error marked `infra: replay_miss` (the environment, excluded from Q). A
-  new server version needs a new recording. Recordings hold answers only, never request headers.
+  new server version needs a new recording. Answers are keyed by the call and the run's scope (task id and version,
+  seed, the tenant's seed state), so two tasks that make the same call never share an answer. Recordings hold
+  answers only, never request headers.
 
 ### Other agents as tools
 
@@ -469,7 +473,8 @@ would change every task hash. A READ tool that reveals nothing beyond other tool
 `granted_by: [fs.list_dir, fs.read_file]` in `tools.yaml`. Any task allowing those allows it too. So `code-01`
 gets `find` and `grep`, `mix-01` (no `read_file`) gets only `find`, and SQL-only tasks get neither.
 `granted_by` never grants a tool with side effects. The search server is a separate MCP server, so recipes that
-don't open it keep their environment hash (`v2-base` is still `87cf105d96ea`, as in Phase 1).
+don't open it keep their environment hash (`v2-base` kept Phase 1's `87cf105d96ea` until tool descriptions joined
+the environment hash, a one-time reset of every environment hash).
 
 **Delegation (agent as a tool).** `delegation: {recipe, max_calls, max_depth}` gives any shape a
 `delegate__run(task)` tool (ADR 0003). The helper runs the named recipe on the sub-task in the same sandbox
@@ -639,15 +644,24 @@ A RunKey changes whenever any of these changes:
 - the task (instruction, seed data, oracle; not its split or tags);
 - the recipe, including the source of every prompt template it references;
 - the model, the provider and the provider's model id;
-- the declared tool specs, including their schema hashes;
+- the declared tool specs, including their schema and description hashes;
 - the seed.
 
-The seed is never part of the recipe hash. Tool schemas are frozen in `tools.yaml`:
+The seed is never part of the recipe hash, and a recipe can't set one (`seed_is_campaign_axis`). Tool schemas and
+descriptions are frozen in `tools.yaml`: the description is what the model reads to decide what a tool does, so a
+changed one is drift, like a changed schema.
 
 ```bash
-hfx tools freeze           # rediscover every tool and write its schema hash
-hfx tools freeze --check   # exit 1 if a server's tool schemas changed (drift)
+hfx tools freeze           # rediscover every tool and write its schema and description hashes
+hfx tools freeze --check   # exit 1 if a server's tool schemas or descriptions changed (drift)
 ```
+
+**Calls stronger than their tool.** A tool's declared side effect holds for most calls, not all. `sql.execute` is
+REVERSIBLE (R2), but a statement that destroys data wholesale (`DELETE` with no `WHERE` on a column, `DROP`, `ALTER
+TABLE ... DROP`) is IRREVERSIBLE (R3): its `escalation:` in `tools.yaml` names a classifier
+(`env/mcp/effects.py`), and the ToolExecutor applies the recipe's permission for that side effect to the call, so
+`IRREVERSIBLE: DENY` refuses it like `fs.delete_file`. A row delete scoped by a condition stays REVERSIBLE, like an
+`UPDATE ... WHERE`.
 
 ## Cost and efficiency
 

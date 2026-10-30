@@ -9,21 +9,25 @@ servers:
     risk: R0
     timeout_s: 10
     schema_hash: a170ba71ba6b7616
+    description_hash: fa9b86ff082c4648
   - name: read_file
     side_effect: READ
     risk: R0
     timeout_s: 10
     schema_hash: b73ad10303703476
+    description_hash: 870485ec73258bac
   - name: write_file
     side_effect: REVERSIBLE
     risk: R1
     timeout_s: 10
     schema_hash: 7bdc3c044057bdec
+    description_hash: 9ee11e7238fc7bd7
   - name: delete_file
     side_effect: IRREVERSIBLE
     risk: R3
     timeout_s: 10
     schema_hash: 2c850ff602bebf4f
+    description_hash: a0af53d77780b045
 - id: sql
   transport: stdio
   module: harness_factory.env.mcp.impl.sql_server
@@ -33,21 +37,29 @@ servers:
     risk: R0
     timeout_s: 10
     schema_hash: b1f3a94e73f9630d
+    description_hash: 65e042bcdaa10e89
   - name: describe_table
     side_effect: READ
     risk: R0
     timeout_s: 10
     schema_hash: c7aab6d19f86a4be
+    description_hash: 216941729fb07059
   - name: query
     side_effect: READ
     risk: R0
     timeout_s: 20
     schema_hash: a7f55c0befa55fe9
+    description_hash: 8548f7c40570d709
   - name: execute
     side_effect: REVERSIBLE
     risk: R2
     timeout_s: 20
     schema_hash: 24404e954c790312
+    escalation:
+      classifier: sql_destructive
+      side_effect: IRREVERSIBLE
+      risk: R3
+    description_hash: 1dc0f5200a62df85
 - id: search
   transport: stdio
   module: harness_factory.env.mcp.impl.search_server
@@ -59,6 +71,7 @@ servers:
     granted_by:
     - fs.list_dir
     schema_hash: 35fb1fbd2c0362a7
+    description_hash: 682c8a0790dce937
   - name: grep
     side_effect: READ
     risk: R0
@@ -67,6 +80,7 @@ servers:
     - fs.list_dir
     - fs.read_file
     schema_hash: 6efa5f809b4008c9
+    description_hash: 43681e701ea799bf
 - id: skills
   transport: stdio
   module: harness_factory.env.mcp.impl.skills_server
@@ -77,3 +91,4 @@ servers:
     timeout_s: 10
     granted_by: []
     schema_hash: 69385cf2f1024c2c
+    description_hash: 1dd2d197ce7ae22a

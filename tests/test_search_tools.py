@@ -57,7 +57,8 @@ def test_search_is_granted_by_the_tools_it_adds_nothing_to(factory):
 
 def test_adding_search_moved_no_existing_identity(factory):
     d = factory.declared
-    assert d.env_hash(factory.recipes["v2-base"].tools.mcp_servers, "openai/gpt-oss-120b") == "87cf105d96ea"  # Phase 1
+    # Phase 1's 87cf105d96ea, reset once by #42 (tool descriptions and sql.execute's escalation joined env_hash)
+    assert d.env_hash(factory.recipes["v2-base"].tools.mcp_servers, "openai/gpt-oss-120b") == "a55c2fb739f1"
     assert factory.recipes["v2-base"].content_hash() == "79abd03818943f65"
 
 

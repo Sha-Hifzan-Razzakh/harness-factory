@@ -97,10 +97,11 @@ def take() -> dict[str, Any]:
                 "transport": s.transport, "module": s.module, "url": s.url, "version": s.version,
                 "auth_env": s.auth_env, "tenant": s.tenant is not None,
                 "tools": [{"name": t.name, "side_effect": t.side_effect.value, "risk": t.risk,
-                           "schema_hash": t.schema_hash, "granted_by": t.granted_by, "agent": t.agent is not None}
+                           "schema_hash": t.schema_hash, "description_hash": t.description_hash,
+                           "granted_by": t.granted_by, "agent": t.agent is not None}
                           for t in s.tools],
                 "env": content_hash({t.ref(s.id): t.hashed() for t in s.tools}, 12),
-                "unhashed": [t.ref(s.id) for t in s.tools if not t.schema_hash],
+                "unhashed": [t.ref(s.id) for t in s.tools if not t.schema_hash or not t.description_hash],
             }
 
     # Recipes: raw files (paths, bases) and the resolved, validated recipes.
