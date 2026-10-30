@@ -276,12 +276,17 @@ def plan_status(f: Factory, specs: list[RunSpec]) -> PlanStatus:
 
 def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
          seeds: int = 1, task_ids: list[str] | None = None,
-         faults: list[str | None] | None = None) -> list[RunSpec]:
+         faults: list[str | None] | None = None, tag: str | None = None) -> list[RunSpec]:
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
-    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both)."""
+    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
+    tag: only tasks carrying this tag (e.g. "batch-3", the independently written tasks)."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
+    if tag is not None:
+        tasks = [t for t in tasks if tag in t.tags]
+        if not tasks:
+            raise ValueError(f"no runnable task is tagged {tag!r}")
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs

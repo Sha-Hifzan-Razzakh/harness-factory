@@ -1,0 +1,9 @@
+# Payment retry (dunning) defaults for every region. Region files in this folder override these keys.
+[retry]
+retry_days = [1, 3, 7]
+max_attempts = 3
+notify_customer = true
+
+[final]
+action = "suspend"
+after_days = 21

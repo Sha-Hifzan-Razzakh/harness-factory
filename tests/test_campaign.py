@@ -89,6 +89,14 @@ def test_plan_order_is_fixed(factory):
                                                        ("v3-staged", 1)]
 
 
+def test_a_tag_plans_only_its_tasks_and_never_held_out_ones(factory):
+    specs = plan(factory, "v2-base", "scripted", ["scripted/replay"], tag="batch-3")
+    tasks = [factory.tasks.get(s.task_id) for s in specs]
+    assert tasks and all("batch-3" in t.tags and t.split.value != "HELD_OUT" for t in tasks)
+    with pytest.raises(ValueError, match="no runnable task is tagged 'nope'"):
+        plan(factory, "v2-base", "scripted", ["scripted/replay"], tag="nope")
+
+
 async def test_parallel_and_serial_campaigns_agree(factory):
     specs = plan(factory, ["v2-base", "v3-staged"], "scripted", ["scripted/replay", "scripted/noisy"],
                  task_ids=["fs-02", "sql-01"])

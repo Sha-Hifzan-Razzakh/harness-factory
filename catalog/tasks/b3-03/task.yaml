@@ -1,0 +1,94 @@
+id: b3-03
+version: 1
+domain: data
+instruction: Today is 2026-11-02. Mark every past-due invoice as overdue. An invoice is past due when it is open, its
+  due date is before today, and it still has a balance left after its successful payments and its credit notes.
+  Leave every other invoice as it is.
+env_seed:
+  files: ../../seeds/billing/files
+  sqlite: ../../seeds/billing/db.sql
+allowed_tools:
+- sql.*
+risk: R2
+expected_depth: KNOWN_PATH
+split: TEST
+status: verified
+tags:
+- batch-3
+- sql
+- write
+- dates
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: overdue_set
+    kind: sql_rows
+    weight: 0.5
+    query: SELECT id FROM invoices WHERE status = 'overdue' ORDER BY id
+    rows:
+    - [5009]
+    - [5102]
+    - [5103]
+    - [5109]
+  - id: failed_payment_and_credit_note
+    kind: sql_rows
+    weight: 0.25
+    query: SELECT id, status FROM invoices WHERE id IN (5103, 5106) ORDER BY id
+    rows:
+    - [5103, overdue]
+    - [5106, open]
+  - id: partial_payment_and_due_today
+    kind: sql_rows
+    weight: 0.25
+    query: SELECT id, status FROM invoices WHERE id IN (5102, 5110) ORDER BY id
+    rows:
+    - [5102, overdue]
+    - [5110, open]
+  - id: others_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT id, status FROM invoices WHERE id NOT IN (5009, 5102, 5103, 5106, 5109, 5110) ORDER BY id
+    rows:
+    - [5001, paid]
+    - [5002, paid]
+    - [5003, paid]
+    - [5004, paid]
+    - [5005, paid]
+    - [5006, paid]
+    - [5007, paid]
+    - [5008, paid]
+    - [5010, paid]
+    - [5011, void]
+    - [5013, paid]
+    - [5014, paid]
+    - [5101, paid]
+    - [5104, paid]
+    - [5105, paid]
+    - [5107, paid]
+    - [5108, paid]
+    - [5111, paid]
+    - [5112, open]
+    - [5201, draft]
+  - id: amounts_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(amount) FROM invoices
+    rows:
+    - [26, 29910.0]
+  - id: payments_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(amount) FROM payments
+    rows:
+    - [22, 23640.0]
+  - id: credit_notes_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(amount) FROM credit_notes
+    rows:
+    - [3, 380.0]
