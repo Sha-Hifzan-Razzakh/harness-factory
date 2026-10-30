@@ -20,10 +20,10 @@ def _factory(store: bool = True):
 
 
 def _records_table(recs) -> Table:
-    t = Table("task", "class", "recipe", "model", "status", "O", "Q", "E", "calls", "tools", "tokens")
+    t = Table("task", "class", "recipe", "model", "faults", "status", "O", "Q", "E", "calls", "tools", "tokens")
     for r in recs:
         colour = {"SUCCESS": "green", "PARTIAL": "yellow"}.get(r.status.value, "red")
-        t.add_row(r.run_key.task_version, r.task_class, r.recipe_id, r.run_key.canonical_model,
+        t.add_row(r.run_key.task_version, r.task_class, r.recipe_id, r.run_key.canonical_model, r.fault or "",
                   f"[{colour}]{r.status.value}", f"{r.scores.outcome:.2f}", f"{r.scores.trajectory:.2f}",
                   f"{r.composite:.3f}", str(r.cost.model_calls), str(r.cost.tool_calls),
                   str(r.cost.tokens_in + r.cost.tokens_out))
@@ -32,14 +32,16 @@ def _records_table(recs) -> Table:
 
 def _cells_table(baseline, cells, by_class: bool = True) -> Table:
     cols = (["task class"] if by_class else []) + ["recipe", "model", "provider", "env", "n", "excl.", "success",
-                                                     "E0", "C", "E", "ci95 (E)", "tokens"]
+                                                     "E0", "C", "R", "E", "ci95 (E)", "tokens"]
     t = Table(*cols, title=f"cost baseline {baseline.id} ({baseline.basis}, {baseline.note or 'saved'})")
     for c in cells:
         row = ([c.task_class] if by_class else []) + [
             c.recipe_id, c.canonical_model, c.provider, c.env_hash[:6], str(c.e.n),
             str(c.excluded) if c.excluded else "",
             f"{c.e.pass_rate:.0%}" if c.e.n else "-", f"{c.mean_e0:.3f}" if c.e.n else "-",
-            f"{c.mean_c:.2f}" if c.e.n else "-", f"{c.e.mean:.3f}" if c.e.n else "-",
+            f"{c.mean_c:.2f}" if c.e.n else "-",
+            f"{c.robustness:.2f} (n={c.n_faulted})" if c.robustness is not None else "-",
+            f"{c.e.mean:.3f}" if c.e.n else "-",
             f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]" if c.e.n > 1 else "-", str(c.tokens)]
         t.add_row(*row)
     return t
@@ -49,32 +51,36 @@ def _mean(values: list[float]) -> str:
     return f"{sum(values) / len(values):.3f}" if values else "-"
 
 
-def _summary_table(recs) -> Table:
-    """One row per recipe x model, cost-adjusted against these runs: the comparison the factory exists to make.
+def _wmean(cells, value) -> str:
+    """Mean of a per-cell value, weighted by each cell's scored runs."""
+    n = sum(c.e.n for c in cells)
+    return f"{sum(value(c) * c.e.n for c in cells) / n:.3f}" if n else "-"
 
-    Each run is scored against its own task's median (and its own class's weights), then pooled across tasks.
-    INCOMPLETE / ERROR runs (infrastructure, setup) are counted in `excl.` and never averaged in.
-    """
+
+def _summary_table(recs) -> Table:
+    """One row per recipe x model, built from the same cells as `results --cells` (so E includes R when faulted
+    runs exist), pooled across task classes weighted by scored runs. excl. = INCOMPLETE/ERROR, never averaged."""
     from harness_factory.results.cost import CostBaseline
-    from harness_factory.results.store import UNSCORED, record_row
+    from harness_factory.results.store import aggregate_rows, record_row
 
     rows = [record_row(r) for r in recs]
     baseline = CostBaseline.from_rows(rows, note="these runs")
-    groups: dict[tuple[str, str], list[dict]] = {}
-    for r in rows:
-        groups.setdefault((r["recipe_id"], r["canonical_model"]), []).append(r)
-    t = Table("recipe", "model", "success", "excl.", "E0", "C", "E", "model calls", "tokens",
-              title=f"cost-adjusted against these runs ({baseline.basis}); excl. = INCOMPLETE/ERROR, not scored")
-    for (rid, m), all_rs in groups.items():
-        scored = [r for r in all_rs if r["status"] not in UNSCORED]
-        n = len(scored)
-        t.add_row(rid, m, f"{sum(r['status'] == 'SUCCESS' for r in scored)}/{n}",
-                  str(len(all_rs) - n) if len(all_rs) != n else "",
-                  _mean([r["composite"] for r in scored]),
-                  _mean([baseline.c(r) or 0.0 for r in scored]),
-                  _mean([baseline.adjusted(r) for r in scored]),
-                  str(sum(r["model_calls"] for r in all_rs)),
-                  str(sum(r["tokens_in"] + r["tokens_out"] for r in all_rs)))
+    groups: dict[tuple[str, str], list] = {}
+    for c in aggregate_rows(rows, baseline):
+        groups.setdefault((c.recipe_id, c.canonical_model), []).append(c)
+    faulted = sum(1 for r in recs if r.fault)
+    t = Table("recipe", "model", "success", "excl.", "E0", "C", "R", "E", "tokens",
+              title=f"cost-adjusted against these runs ({baseline.basis})"
+                    + (f"; R from {faulted} faulted runs" if faulted else ""))
+    for (rid, m), cells in groups.items():
+        n = sum(c.e.n for c in cells)
+        rs = [c.robustness for c in cells if c.robustness is not None]
+        succ = round(sum(c.e.pass_rate * c.e.n for c in cells))
+        excl = sum(c.excluded for c in cells)
+        t.add_row(rid, m, f"{succ}/{n}", str(excl) if excl else "",
+                  _wmean(cells, lambda c: c.mean_e0), _wmean(cells, lambda c: c.mean_c),
+                  f"{sum(rs) / len(rs):.2f}" if rs else "-", _wmean(cells, lambda c: c.e.mean),
+                  str(sum(c.tokens for c in cells)))
     return t
 
 
@@ -142,13 +148,17 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
           resume: bool = typer.Option(False, "--resume",
                                       help="skip runs that already have a scored result; rerun INCOMPLETE/ERROR"),
           dry_run: bool = typer.Option(False, "--dry-run", help="show what would be skipped and run, then stop"),
+          faults: str | None = typer.Option(None, "--faults",
+                                            help="fault profiles to add, comma-separated; 'none' = clean "
+                                                 "(R needs both, e.g. none,first-call-fails)"),
           strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
     """Every task x recipe x model x seed on one provider, run in parallel and paced to the provider's limits.
     One recipe is the P0 gate; several compare shapes. Interrupted (Ctrl-C, quota)? Run it again with --resume."""
     from harness_factory.provision.provisioner import run_key_for
     from harness_factory.runner.runner import plan, plan_status, run_campaign
     f = _factory()
-    specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds)
+    specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds,
+                 faults=[None if x == "none" else x for x in faults.split(",")] if faults else None)
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
     if dry_run or resume:
@@ -190,7 +200,8 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
         # The gate is about the whole plan, including runs a resume skipped.
         latest = {r["run_key"]: r["status"] for r in f.store.rows()} if f.store else {}
         keys = [run_key_for(f.tasks.get(s.task_id), f.recipes[s.recipe_id], s.canonical_model, s.provider, s.seed,
-                            declared=f.declared, providers=f.providers).as_str() for s in specs]
+                            declared=f.declared, providers=f.providers, fault=f.fault(s.fault)).as_str()
+                for s in specs if s.fault is None]           # the gate is about clean runs; faults measure R
         if result.errors or any(latest.get(k) != "SUCCESS" for k in keys):
             raise typer.Exit(code=1)
     elif result.errors:

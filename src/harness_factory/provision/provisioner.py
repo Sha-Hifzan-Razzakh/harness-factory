@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 
 from harness_factory import settings
+from harness_factory.env.faults import FaultConfig, FaultInjector
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
@@ -67,13 +68,14 @@ def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend
 
 
 def run_key_for(task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str, seed: int, *,
-                declared: ToolCatalogFile, providers: ProviderCatalog) -> RunKey:
+                declared: ToolCatalogFile, providers: ProviderCatalog, fault: FaultConfig | None = None) -> RunKey:
     """The RunKey a run will have, computed without running it. The provisioner uses this same function, so a
     campaign can tell which planned runs already have results (resume) and the two can never disagree."""
     recipe = recipe.with_model(canonical_model)
     served = providers.served(provider_id, canonical_model)
     return RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe.content_hash(),
                   canonical_model=canonical_model, provider=provider_id, seed=seed,
+                  fault_config_hash=fault.content_hash() if fault else "none",
                   env_hash=declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id))
 
 
@@ -121,12 +123,14 @@ class Provisioned:
 async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str, *,
                     declared: ToolCatalogFile, providers: ProviderCatalog, ledger: QuotaLedger,
                     seed: int = 0, backend: Backend | None = None,
-                    assembler: PromptAssembler | None = None) -> AsyncIterator[Provisioned]:
+                    assembler: PromptAssembler | None = None,
+                    fault: FaultConfig | None = None) -> AsyncIterator[Provisioned]:
     recipe = recipe.with_model(canonical_model)
     issues = validate_recipe(recipe, declared, providers=providers, provider_id=provider_id)
     if issues:
         raise HarnessError(ErrorKind.PROVISION, "; ".join(f"{i.rule}: {i.detail}" for i in issues))
-    run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers)
+    run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers,
+                          fault=fault)
     for slot in recipe.model_slots.values():
         slot.seed = seed if slot.seed is None else slot.seed
     tracer = Tracer(run_key.as_str())
@@ -146,7 +150,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
         async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch) as pool:
-            tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str())
+            tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
+                                 faults=FaultInjector(fault, seed) if fault else None)
             assembler = assembler or PromptAssembler()
             messages = assembler.assemble(recipe, task, sorted(model_name(r) for r in allowed))
             stage_prompts = assembler.stage_prompts(recipe, task, sorted(model_name(r) for r in allowed))
@@ -157,6 +162,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                               messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
+                          "fault_profile": fault.id if fault else None,
                           **sandbox.describe()},
             )
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,

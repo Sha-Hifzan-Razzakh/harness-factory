@@ -57,6 +57,9 @@ jobs:
       - name: V3 workflow gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict
 
+      - name: Fault injection (clean runs gate; faulted runs feed R)
+        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict
+
       - name: Inspect AI adapter (factory runs as an Inspect eval)
         run: |
           uv run --no-sync inspect eval src/harness_factory/integrations/inspect_task.py \

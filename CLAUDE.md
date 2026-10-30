@@ -27,6 +27,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New recipe | `catalog/recipes/**.yaml`, model slot left empty | `hfx validate` passes; V3 recipes declare `workflow:` stages with prompts under `prompts/stage/` |
 | New provider/model | `catalog/providers.yaml` | verify model ids and limits against the provider's live docs |
 | Inspect AI | `src/harness_factory/integrations/inspect_task.py` (optional extra `inspect`) | outer shell only; never move tasks or grading into Inspect (`docs/adr/0001-inspect-ai.md`) |
+| New fault profile | `catalog/faults/<id>.yaml` (rules: tools, kind, rate, nth, max_per_run) | faults fire only in `ToolExecutor`; never tell the model a failure was injected; `none` is reserved for clean runs |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
 
 ## Rules that protect the measurements
@@ -41,7 +42,9 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 - **Scoring.** Changes to `ScoreWeights.composite`, oracle semantics or run status logic change every number in
   the results store. Call them out in the PR and update the requirements doc. The store's `composite` column is
   E₀ (before cost). The final E is computed at aggregation against a cost baseline (`results/cost.py`); never
-  bake C into a stored run, because it is relative to other runs.
+  bake C into a stored run, because it is relative to other runs. Robustness R is the same: computed per cell
+  at aggregation (faulted ÷ clean mean outcome). Faulted runs feed only R, never a cell's E mean or the cost
+  medians, and an injected tool failure is never counted against Q.
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **How runs end** (`shapes/common.finish`, `runner._finalize_status`):

@@ -47,18 +47,33 @@ class PlanBackend:
     replay  follows the plan                              (a competent model)
     noisy   one call with missing arguments first          (recovers from its own error)
     lazy    drops the last plan step                       (stops early)
+    retry   follows the plan, and repeats a step whose tool reported an error or returned nothing,
+            up to 3 times                                  (robust to flaky tools; the others are not)
     """
+
+    MAX_RETRIES = 3
 
     STAGE_DONE = "Stage complete."
 
     def __init__(self, ref: Reference, style: str = "replay") -> None:
-        if style not in ("replay", "noisy", "lazy"):
+        if style not in ("replay", "noisy", "lazy", "retry"):
             raise ValueError(f"unknown scripted style {style!r}")
+        self.style = style
+        self.last_step: dict | None = None
+        self.retries = 0
         self.plan = list(ref.plan[:-1] if style == "lazy" and ref.plan else ref.plan)
         self.final = ref.final
         self.noisy_pending = style == "noisy"
         self.i = 0
         self.calls = 0
+
+    @staticmethod
+    def _last_tool_failed(messages: list[dict]) -> bool:
+        """What a careful model would notice: the last tool result is an error, or empty."""
+        if not messages or messages[-1].get("role") != "tool":
+            return False
+        text = (messages[-1].get("content") or "").strip()
+        return not text or text.lower().startswith(("error", "permission denied")) or "timed out" in text.lower()
 
     def _msg(self, name: str | None = None, args: dict | None = None, content: str | None = None) -> dict:
         self.calls += 1
@@ -72,12 +87,19 @@ class PlanBackend:
         from harness_factory.substrate.gateway import Completion, approx_tokens
 
         offered = {t["function"]["name"] for t in tools}
+        if self.style == "retry" and self._last_tool_failed(messages) and self.last_step \
+                and self.retries < self.MAX_RETRIES and model_name(self.last_step["tool"]) in offered:
+            self.retries += 1
+            msg = self._msg(model_name(self.last_step["tool"]), self.last_step["args"])
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
+        self.retries = 0
         nxt = model_name(self.plan[self.i]["tool"]) if self.i < len(self.plan) else None
         if nxt and nxt in offered and self.noisy_pending:
             self.noisy_pending = False
             msg = self._msg(nxt, {})
         elif nxt and nxt in offered:
             msg = self._msg(nxt, self.plan[self.i]["args"])
+            self.last_step = self.plan[self.i]
             self.i += 1
         elif nxt is None:
             msg = self._msg(content=self.final)
