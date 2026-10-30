@@ -1,0 +1,23 @@
+# Base V4 recipe: the planner writes a numbered plan from the task and the tool list, the executor carries it out
+# one step at a time (each step a bounded tool loop), and a blocked step sends the remaining work back to the
+# planner once.
+id: v4-planner
+version: 1
+variant: V4_PLANNER
+headless: true
+tier: T2
+model_slots:
+  planner: {role: planner, temperature: 0.0, max_output_tokens: 1024}
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 2048}
+tools:
+  tool_ids: ["fs.*", "sql.*"]
+  mcp_servers: [fs, sql]
+prompts: {system: system/default, task: task/default}
+# max_steps is the worst case (2 x (1 plan + 8 steps x 3)); tool calls and tokens are capped as in v3-staged.
+config: {max_steps: 50, max_tool_calls: 30, max_tokens: 160000, wall_time_s: 400}
+policies:
+  permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}
+planning:
+  max_plan_steps: 8                  # the longest reference plan in the catalog (ops-04) has 8 calls
+  step_max_steps: 3
+  max_replans: 1
