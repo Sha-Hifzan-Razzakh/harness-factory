@@ -29,6 +29,8 @@ class HarnessInstance:
     snapshot: dict[str, Any] = field(default_factory=dict)
     stage_prompts: dict[str, str] = field(default_factory=dict)   # V3: rendered instruction per stage id
     recoveries: int = 0                                           # malformed replies re-asked so far this run
+    scope: str | None = None                                      # tool-call scope for this level (a delegate's)
+    delegate: Any = None                                          # shapes.delegate.DelegateContext, or None
 
 
 class Harness(Protocol):

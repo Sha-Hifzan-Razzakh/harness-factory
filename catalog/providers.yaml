@@ -11,6 +11,7 @@ providers:
       - {canonical: scripted/lazy,   provider_model_id: lazy}     # stops one step early
       - {canonical: scripted/retry,  provider_model_id: retry}    # retries a step after a tool error
       - {canonical: scripted/invent, provider_model_id: invent}   # first call names a tool that doesn't exist
+      - {canonical: scripted/delegate, provider_model_id: delegate}   # hands the task to a helper when it can
 
   - id: groq
     kind: litellm

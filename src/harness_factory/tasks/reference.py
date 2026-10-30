@@ -51,16 +51,20 @@ class PlanBackend:
             up to 3 times                                  (robust to flaky tools; the others are not)
     invent  its first call names a tool that doesn't exist, which the provider rejects (like Groq's
             tool_use_failed in Phase 1's code-01); then follows the plan if it is asked again
+    delegate when offered the delegate tool, hands the whole task to the helper first; the helper (one shared
+            script, so the same plan) does the work, then the parent gives the final answer. Without a delegate
+            tool it is replay
     """
 
     INVENTED_TOOL = "fs__search_file"
+    DELEGATE = "delegate__run"
 
     MAX_RETRIES = 3
 
     STAGE_DONE = "Stage complete."
 
     def __init__(self, ref: Reference, style: str = "replay") -> None:
-        if style not in ("replay", "noisy", "lazy", "retry", "invent"):
+        if style not in ("replay", "noisy", "lazy", "retry", "invent", "delegate"):
             raise ValueError(f"unknown scripted style {style!r}")
         self.style = style
         self.last_step: dict | None = None
@@ -69,6 +73,7 @@ class PlanBackend:
         self.final = ref.final
         self.noisy_pending = style == "noisy"
         self.invent_pending = style == "invent"
+        self.delegate_pending = style == "delegate"
         self.i = 0
         self.calls = 0
 
@@ -93,6 +98,11 @@ class PlanBackend:
         from harness_factory.substrate.gateway import Completion, approx_tokens
 
         offered = {t["function"]["name"] for t in tools}
+        if self.delegate_pending and self.DELEGATE in offered:
+            self.delegate_pending = False
+            ask = next((m.get("content") or "" for m in reversed(messages) if m.get("role") == "user"), "")
+            msg = self._msg(self.DELEGATE, {"task": ask.removeprefix("Task: ")})
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if self.invent_pending and offered:
             self.invent_pending = False
             self.calls += 1

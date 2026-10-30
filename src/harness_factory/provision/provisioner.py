@@ -24,6 +24,7 @@ from harness_factory.providers.quota import QuotaLedger
 from harness_factory.recipes.model import HarnessRecipe
 from harness_factory.recipes.validate import validate_recipe
 from harness_factory.runner.spec import RunKey
+from harness_factory.shapes import delegate as delegation
 from harness_factory.shapes.base import HarnessInstance
 from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind, HarnessError
@@ -164,7 +165,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     # run's container start never stalls the other workers.
     sandbox = await _start_sandbox(task)
     try:
-        install_skills(sandbox, recipe)
+        for r in (recipe, *delegation.descendants(recipe)):      # a helper's on-demand skills too
+            install_skills(sandbox, r)
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
@@ -172,16 +174,19 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
                                  faults=FaultInjector(fault, seed) if fault else None)
             assembler = assembler or PromptAssembler()
-            messages = assembler.assemble(recipe, task, sorted(model_name(r) for r in allowed))
-            stage_prompts = assembler.stage_prompts(recipe, task, sorted(model_name(r) for r in allowed))
+            delegate = delegation.context_for(recipe, task, assembler)
+            names = sorted(model_name(r) for r in allowed) + ([delegation.DELEGATE_NAME] if delegate else [])
+            messages = assembler.assemble(recipe, task, names)
+            stage_prompts = assembler.stage_prompts(recipe, task, names)
             instance = HarnessInstance(
                 run_key=run_key, recipe=recipe, task=task, gateway=gateway, tools=tools, budget=budget,
-                tracer=tracer, messages=messages, stage_prompts=stage_prompts,
+                tracer=tracer, messages=messages, stage_prompts=stage_prompts, delegate=delegate,
                 snapshot={"prompt_hash": PromptAssembler.prompt_hash(
                               messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
                           "fault_profile": fault.id if fault else None,
+                          **({"delegate": delegate.child.id} if delegate else {}),
                           **sandbox.describe()},
             )
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,
