@@ -166,7 +166,7 @@ class AuthoringService:
                 where = v["url"] if v["transport"] != "stdio" else v["module"]
                 out.append(Item(kind=kind, id=sid, path=path, hash=v["env"], builtin=sid in BUILTIN_SERVERS,
                                 summary=f"{v['transport']} {where} · {', '.join(t['name'] for t in v['tools'])}",
-                                issues=[f"no schema_hash: {r}" for r in v["unhashed"]], detail=v))
+                                issues=[f"no schema or description hash: {r}" for r in v["unhashed"]], detail=v))
         elif kind == "fault":
             for fid, v in snap.get("faults", {}).items():
                 out.append(Item(kind=kind, id=fid, path=self._fault_path(fid), hash=v["hash"],
@@ -419,7 +419,8 @@ class AuthoringService:
         return ops, issues, notes
 
     @staticmethod
-    def _tool_entry(t, schema_hash: str | None, agent: dict | None = None) -> dict:
+    def _tool_entry(t, schema_hash: str | None, agent: dict | None = None,
+                    description_hash: str | None = None) -> dict:
         e: dict[str, Any] = {"name": t.name, "side_effect": t.side_effect, "risk": t.risk, "timeout_s": t.timeout_s}
         if t.granted_by is not None:
             e["granted_by"] = list(t.granted_by)
@@ -427,6 +428,8 @@ class AuthoringService:
             e["agent"] = agent
         if schema_hash is not None:
             e["schema_hash"] = schema_hash
+        if description_hash is not None:
+            e["description_hash"] = description_hash
         return e
 
     def _remote_ops(self, item: ServerIn):
@@ -445,7 +448,7 @@ class AuthoringService:
         if item.tenant is not None:
             entry["tenant"] = item.tenant
         entry["tools"] = [self._tool_entry(t, None, item.agents.get(t.name)) for t in item.tools]
-        notes = [("schema hashes are not set: run `HF_ALLOW_REMOTE=1 hfx tools freeze` (or HF_REMOTE_MODE=replay "
+        notes = [("schema and description hashes are not set: run `HF_ALLOW_REMOTE=1 hfx tools freeze` (or HF_REMOTE_MODE=replay "
                   "with a recording) before a recipe opens this server")]
         return ([self._tools_op(item.id, entry)] if not issues else []), issues, notes
 
@@ -469,21 +472,23 @@ class AuthoringService:
             module = Path(d) / f"{item.id}_server.py"
             module.write_text(code)
             try:
-                schemas = toolcode.discover(module, item.id)
+                served_tools = toolcode.discover_tools(module, item.id)
             except BaseException as e:      # a module that doesn't start; KeyboardInterrupt still propagates
                 if isinstance(e, KeyboardInterrupt):
                     raise
                 return [], [Issue(where=where, detail=f"the server did not start or list its tools: "
                                                      f"{type(e).__name__}: {e}")], notes
         from harness_factory.hashing import content_hash
-        declared, served = {t.name for t in item.tools}, set(schemas)
+        declared, served = {t.name for t in item.tools}, set(served_tools)
         issues = [Issue(where=where, detail=f"declared but not served: {n}") for n in sorted(declared - served)]
         issues += [Issue(where=where, detail=f"served but not declared (add side effect and risk): {n}")
                    for n in sorted(served - declared)]
         if issues:
             return [], issues, notes
         entry = {"id": item.id, "transport": "stdio", "module": toolcode.module_name(item.id),
-                 "tools": [self._tool_entry(t, content_hash(schemas[t.name])) for t in item.tools]}
+                 "tools": [self._tool_entry(t, content_hash(served_tools[t.name].input_schema),
+                                            description_hash=content_hash(served_tools[t.name].description))
+                           for t in item.tools]}
         text = code if code.endswith("\n") else code + "\n"
         return [FileOp(path=toolcode.module_path(item.id), text=text), self._tools_op(item.id, entry)], [], notes
 

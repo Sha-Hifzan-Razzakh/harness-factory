@@ -136,6 +136,8 @@ def test_local_tool_server_stub(svc, repo):
     assert entry["module"] == "harness_factory.env.mcp.impl.calc_server"
     from harness_factory.hashing import content_hash
     assert entry["tools"][0]["schema_hash"] == content_hash(toolcode.discover(module, "calc")["add"])
+    served = toolcode.discover_tools(module, "calc")["add"]                     # descriptions are frozen too (#42)
+    assert entry["tools"][0]["description_hash"] == content_hash(served.description)
     assert svc.errors() == []
 
     # A new server never changes another recipe's environment; changing this one shows who uses it.
