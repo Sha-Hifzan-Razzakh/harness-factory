@@ -37,7 +37,12 @@ _SE_ORDER = [SideEffect.READ, SideEffect.REVERSIBLE, SideEffect.IRREVERSIBLE]
 
 
 def task_tools(task: Task, declared: ToolCatalogFile) -> list[str]:
-    return [r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)]
+    """The task's allowance, plus any READ tool `granted_by` tools the task already allows."""
+    direct = [r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)]
+    granted = [r for r in declared.all_refs() if r not in direct
+               and (g := declared.spec(r).granted_by) and declared.spec(r).side_effect == SideEffect.READ
+               and all(x in direct for x in g)]
+    return direct + granted
 
 
 def max_side_effect(task: Task, declared: ToolCatalogFile) -> SideEffect:

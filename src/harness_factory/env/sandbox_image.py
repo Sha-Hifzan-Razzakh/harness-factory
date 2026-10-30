@@ -143,8 +143,9 @@ def _ensure_locked(key: str, base: str, python: str) -> str:
                                    f"pullable or already present locally. Point HF_SANDBOX_BASE_IMAGE at an image "
                                    f"you can reach (and HF_SANDBOX_PYTHON at its Python version), or use "
                                    f"HF_SANDBOX=local.") from e
-        probe = docker("run", "--rm", "--network", "none", tag, "python", "-c",
-                       "import mcp, harness_factory.env.mcp.impl.fs_server, harness_factory.env.mcp.impl.sql_server",
+        servers = [f"harness_factory.{f[:-3].replace('/', '.')}" for f in SERVER_FILES if f.startswith("env/mcp/impl/")
+                   and not f.endswith("__init__.py")]
+        probe = docker("run", "--rm", "--network", "none", tag, "python", "-c", "import mcp, " + ", ".join(servers),
                        check=False, timeout=120)
         if probe.returncode != 0:
             raise HarnessError(ErrorKind.SANDBOX, f"sandbox image {tag} cannot import the MCP servers "

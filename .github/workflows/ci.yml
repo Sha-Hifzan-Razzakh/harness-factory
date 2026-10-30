@@ -58,7 +58,7 @@ jobs:
         run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
-        run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover --models scripted/replay --strict
+        run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search --models scripted/replay --strict
 
       - name: Fault injection (clean runs gate; faulted runs feed R)
         run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict
