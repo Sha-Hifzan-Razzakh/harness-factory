@@ -37,7 +37,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #30 | `feat/api` | `…JtRe49bgfAAmdaB6W` | FastAPI catalog + results endpoints, `hfx serve`, compose service | draft, reserved | no |
 | #31 | `feat/api-campaigns` | `…JtRe49bgfAAmdaB6W` | Background campaigns over the API (start, progress, cancel, resume) | draft, reserved | no |
 | #32 | `feat/ui` | `…JtRe49bgfAAmdaB6W` | UI for authoring, runs and results | draft, reserved | no |
-| (this PR) | `chore/session-ledger` | `…JtRe49bgfAAmdaB6W` | This ledger + CLAUDE.md pointer | open | no |
+| #33 | `chore/session-ledger` | `…JtRe49bgfAAmdaB6W` | This ledger + CLAUDE.md pointer | open | no |
 
 ## ADRs
 
