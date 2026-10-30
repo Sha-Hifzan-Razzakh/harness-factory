@@ -29,9 +29,13 @@ Most of this is already in the repo; the starter prompt points to it.
 | Parallel-session rules, who owns what, claimed ADR numbers | `docs/coordination/sessions.md` |
 | This package's scope, files, acceptance criteria | §4 below, and the PR's own description |
 | Design decisions to keep | `docs/adr/` (read the ones the package names) |
-| Requirement IDs (RUN-, FWK-, SUB-, …) | Requirements v1 doc: https://claude.ai/artifact/1pWpX5ui9KmP751n8KvaTz |
+| Requirement IDs (RUN-, FWK-, SUB-, …) | `docs/requirements/requirements-v1.md` (a snapshot; the source of truth is the Requirements v1 doc, https://claude.ai/artifact/1pWpX5ui9KmP751n8KvaTz) |
 | Test-matrix and runner design notes | `docs/design/test-matrix.md` (PR #37 until it merges) |
 | Open review findings that may touch the same code | `docs/reviews/2026-10-30-code-and-depth-review.md` (PR #38) |
+
+**Before starting parallel sessions,** merge the docs PRs they read (#67 this file and the requirements snapshot,
+#37 the test-matrix notes, #38 the review), or tell each session to read them from their branches
+(`git show origin/<branch>:<path>`). Every session also needs this GitHub repo attached with push access.
 
 What the repo can't tell it, so the prompt says it:
 
@@ -48,7 +52,9 @@ Paste this into the new session, with the package number filled in:
 ```text
 Repo: Sha-Hifzan-Razzakh/harness-factory. You are taking over reserved PR #<N> (branch <branch>).
 
-1. Read CLAUDE.md, docs/coordination/sessions.md and docs/coordination/handoff.md (§4, package #<N>).
+1. Read CLAUDE.md, docs/coordination/sessions.md, docs/coordination/handoff.md (§4, package #<N>) and the
+   requirement IDs it names in docs/requirements/requirements-v1.md. (Not on main yet? Read them from branch
+   docs/handoff-packages with git show.)
 2. Record the handover (handoff.md §1): ledger row, label session:<your name>, the Owner line in the PR body.
 3. Check out the PR's branch, drop the "[skip ci] Claim:" placeholder commit, rebase on main.
 4. Build the package to its acceptance criteria. One concern only; append-only edits to shared files.
