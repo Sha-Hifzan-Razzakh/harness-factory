@@ -157,21 +157,35 @@ async def test_a_remote_server_failing_mid_run_is_the_environment_not_the_model(
     assert rec.scores.trajectory == 1.0                                               # not counted as invalid
 
 
-async def test_cancelling_while_a_remote_session_opens_leaves_no_task_behind(factory, kb_server, monkeypatch):
+async def test_cancelling_while_a_remote_session_opens_leaves_no_task_behind(monkeypatch):
     import asyncio
 
     from harness_factory.mcp.client import MCPClient
+
+    async def silent(reader, writer):                         # accepts, never answers: the handshake hangs
+        await asyncio.sleep(3600)
+
+    server = await asyncio.start_server(silent, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
     monkeypatch.setenv("HF_TEST_KB_TOKEN", TOKEN)
     before = set(asyncio.all_tasks())
-    client = MCPClient(kb_spec(kb_server["url"]), {})
+    client = MCPClient(kb_spec(f"http://127.0.0.1:{port}/mcp"), {})
     opening = asyncio.ensure_future(client.__aenter__())
-    await asyncio.sleep(0.01)                                                         # mid-handshake
+    for _ in range(100):                                      # wait until the owner task is mid-handshake
+        if client._owner is not None:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
+    assert not opening.done()
     opening.cancel()
     with pytest.raises(asyncio.CancelledError):
         await opening
-    await asyncio.sleep(0)
-    assert client._owner is None or client._owner.done()
-    assert not {t for t in asyncio.all_tasks() - before if not t.done() and t is not asyncio.current_task()}
+    assert client._owner is not None and client._owner.done()
+    leftover = {t for t in asyncio.all_tasks() - before if not t.done() and t is not asyncio.current_task()}
+    server.close()
+    for t in leftover:                                        # only the silent server's own handler may remain
+        assert t.get_coro().__qualname__.startswith("test_cancelling"), t
+        t.cancel()
 
 
 def test_tools_freeze_skips_remote_servers_without_the_opt_in(tmp_path, monkeypatch):
