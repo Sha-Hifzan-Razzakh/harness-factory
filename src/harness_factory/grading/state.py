@@ -35,11 +35,25 @@ def _pointer(doc, pointer: str):
     return doc
 
 
+def _strict_eq(a, b) -> bool:
+    """JSON equality where booleans are not numbers: Python's True == 1 and False == 0 would let an expected
+    1 match true (and "0" match false). Integers and floats still compare by value (JSON has one number type)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_strict_eq(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_strict_eq(x, y) for x, y in zip(a, b, strict=True))
+    if isinstance(a, (dict, list)) or isinstance(b, (dict, list)):
+        return False
+    return type(a) is type(b) and a == b if isinstance(a, str) or isinstance(b, str) else a == b
+
+
 def _same(actual, expected: str) -> bool:
     if isinstance(actual, str) and actual == expected:
         return True
     try:
-        return json.loads(expected) == actual
+        return _strict_eq(json.loads(expected), actual)
     except ValueError:
         return False
 

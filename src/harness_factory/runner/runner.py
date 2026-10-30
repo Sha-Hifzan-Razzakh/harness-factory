@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,8 @@ from harness_factory.substrate.gateway import Backend
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import load_reference
 from harness_factory.tasks.registry import TaskRegistry
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -124,6 +127,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                   fault: str | None = None) -> EffectivenessRecord:
     """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end.
     fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run."""
+    f.graders.check(task)          # a grader typo fails here, before any quota is spent (and on every resume)
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
                          ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p:
@@ -196,10 +200,23 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         )
     if f.store:
         f.store.add(rec)
-    f.tracker.log(rec, recipe)
+    await _mirror(f, rec, recipe)
     if flush:
         await asyncio.to_thread(Tracer.flush)
     return rec
+
+
+async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe) -> None:
+    """Mirror a stored run to MLflow. The results store is the source of truth, so a mirror failure is a warning,
+    never a run or campaign error. The MLflow client is synchronous network I/O: it runs in a thread so a slow
+    server can't stall the event loop (and the wall time of every other run on it)."""
+    if not f.tracker.enabled:
+        return
+    try:
+        await asyncio.to_thread(f.tracker.log, rec, recipe)
+    except Exception as e:  # noqa: BLE001  any client or server failure: the run itself is already stored
+        f.tracker.failures = getattr(f.tracker, "failures", 0) + 1
+        log.warning("MLflow mirror failed for %s: %s: %s", rec.run_key.short(), type(e).__name__, str(e)[:300])
 
 
 async def run_reference(f: Factory, task: Task) -> Grade:
@@ -285,6 +302,8 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
+    for t in tasks:
+        f.graders.check(t)                                   # unknown grader: likewise
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)
             for t in tasks for r in recipe_ids for m in models for fid in faults for s in range(seeds)]

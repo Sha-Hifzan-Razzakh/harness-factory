@@ -40,6 +40,7 @@ def take() -> dict[str, Any]:
     from harness_factory import settings
     from harness_factory.env.faults import load_fault_profiles
     from harness_factory.env.mcp.servers import load_tool_catalog
+    from harness_factory.grading.base import default_pipeline
     from harness_factory.hashing import content_hash
     from harness_factory.recipes.model import default_prompt_sources, load_recipes
     from harness_factory.recipes.validate import validate_recipe
@@ -139,8 +140,13 @@ def take() -> dict[str, Any]:
         err("fault", "*", str(e))
 
     try:
-        out["tasks"] = {t.id: {"allowed_tools": list(t.allowed_tools), "split": t.split.value}
-                        for t in TaskRegistry().all(include_held_out=True)}
+        tasks = TaskRegistry().all(include_held_out=True)
+        out["tasks"] = {t.id: {"allowed_tools": list(t.allowed_tools), "split": t.split.value} for t in tasks}
+        graders = default_pipeline()
+        for t in tasks:                      # same rule as `hfx validate` and plan(): no unknown grader ids
+            unknown = graders.unknown(t)
+            if unknown:
+                err("task", t.id, f"unknown grader(s) {', '.join(unknown)}; known: {', '.join(sorted(graders.graders))}")
     except Exception as e:  # noqa: BLE001  (a finding, not a crash)
         err("task", "*", str(e))
 

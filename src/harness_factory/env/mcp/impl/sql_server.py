@@ -55,16 +55,20 @@ def query(sql: str) -> dict:
 @app.tool()
 def execute(sql: str) -> dict:
     """Run one INSERT, UPDATE, DELETE or REPLACE statement and commit it. Returns the number of rows changed."""
-    stmt = sql.strip().rstrip(";")
-    if ";" in stmt:
-        raise ToolError("execute runs exactly one statement")
+    stmt = sql.strip()
     if not stmt.lower().startswith(_WRITE_PREFIXES):
         raise ToolError("execute only runs INSERT, UPDATE, DELETE or REPLACE")
     try:
         with _connect(False) as c:
+            # sqlite3 itself refuses a second statement before running anything, and knows a ';' inside a
+            # string literal ('a;b@x.ae') from one that ends a statement.
             cur = c.execute(stmt)
             c.commit()
             return {"rows_changed": cur.rowcount}
+    except sqlite3.ProgrammingError as e:
+        if "one statement" in str(e):
+            raise ToolError("execute runs exactly one statement") from e
+        raise ToolError(f"SQLite error: {e}") from e
     except sqlite3.Error as e:
         raise ToolError(f"SQLite error: {e}") from e
 
