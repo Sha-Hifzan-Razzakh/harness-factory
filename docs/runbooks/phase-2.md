@@ -21,20 +21,20 @@ runs to policy-intel's MLflow once).
 
 ## 1. Stages
 
-Run each stage's command, then the same command with `--resume` after every daily reset (00:00 UTC, 04:00 in
-Dubai) until its projection shows nothing left. `--dry-run` first shows the projection: runs, tokens, how many
-fit today, days.
+Every command carries `--resume`: it runs what isn't done yet and skips scored runs, so the same command is
+right on the first day and after every daily reset (00:00 UTC, 04:00 in Dubai). Repeat it until the plan line
+shows `new 0`. Add `--dry-run` to see the projection first: runs, tokens, how many fit today, days.
 
 Stages are ordered so each one finishes a complete, paired comparison before the next starts.
 
 | Stage | What it answers | Command |
 |---|---|---|
-| A | Does a weaker model drop below the ceiling? Do retry-after-rejection and search help? | `uv run hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b --recipe v2-base,v2-recover,v2-search` |
-| B | Do the plan-check prompt, skills and the V3 shape help? | `uv run hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b --recipe v2-plan-check,v2-skills-on-demand,v3-staged` |
-| C | Robustness: who keeps their result when tools fail? | `uv run hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b --recipe v2-base,v2-recover --faults none,first-call-fails` |
+| A | Does a weaker model drop below the ceiling? Do retry-after-rejection and search help? | `uv run hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b --recipe v2-base,v2-recover,v2-search --resume` |
+| B | Do the plan-check prompt, skills and the V3 shape help? | `uv run hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b --recipe v2-plan-check,v2-skills-on-demand,v3-staged --resume` |
+| C | Robustness: who keeps their result when tools fail? | `uv run hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b --recipe v2-base,v2-recover --faults none,first-call-fails --resume` |
 | D | Does the selector beat the best single recipe? | `uv run hfx select show --model <m> --provider groq`, then `uv run hfx select evaluate --model <m> --provider groq` for each model |
 
-Stage C reuses stage A's clean runs (`none`), so only the faulted runs are new.
+Stage C's clean runs (`none`) are stage A's: `--resume` skips them, so only the faulted runs are new.
 
 ## 2. Report
 
