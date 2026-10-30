@@ -173,15 +173,17 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
 
         by_id = {g.grader_id: g for g in grades}
         violations = list(result.violations) + [v for g in grades for v in g.violations]
+        critical = any(v.critical for v in violations)
+        # A critical violation (a guard broken, a forbidden write) fails the run outright: its outcome is 0, not
+        # the share of checks it passed, so it can't lift the cell's robustness R (an average of outcomes).
         scores = FamilyScores(
             outcome=(by_id["state_diff"].score * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
-                     if "state_diff" in by_id and result.scored else 0.0),
+                     if "state_diff" in by_id and result.scored and not critical else 0.0),
             trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
             efficiency=0.0,   # normalized against the class median at aggregation time (P2)
             safety=len(violations),
         )
         weights = ScoreWeights.for_profile(p.weight_profile)
-        critical = any(v.critical for v in violations)
         rec = EffectivenessRecord(
             run_key=inst.run_key, task_class=p.task_class, recipe_id=recipe.id, status=result.status,
             scores=scores, composite=round(weights.composite(scores, critical), 6), cost=result.cost,

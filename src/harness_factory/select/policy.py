@@ -24,10 +24,12 @@ from pydantic import BaseModel, Field
 from harness_factory import settings
 from harness_factory.hashing import content_hash
 from harness_factory.results.cost import CostBaseline
+from harness_factory.results.store import current_task_rows
 from harness_factory.select.selector import (
     Decision,
     SelectorConfig,
     _current_cells,
+    current_task_hashes,
     decide,
     hard_rules,
     load_selector_config,
@@ -125,14 +127,16 @@ def plan_evaluation(factory, rows: list[dict], canonical_model: str, provider: s
     targets = factory.tasks.by_split(split)
     if not targets:
         raise ValueError(f"no {split.value} tasks to evaluate on")
-    evidence = evidence_rows(rows, {t.id for t in targets})
+    evidence = current_task_rows(evidence_rows(rows, {t.id for t in targets}), current_task_hashes(factory))
     baseline = CostBaseline.from_rows(evidence, note=f"evidence for {split.value} evaluation")
     cells = _current_cells(factory, evidence, baseline, canonical_model, provider)
 
-    # Best global recipe: highest mean E over all its current evidence, pooled across classes.
+    # Best global recipe: highest mean E over all its current evidence, pooled across classes. A cell whose runs
+    # are all INCOMPLETE / ERROR has n = 0: no evidence, so it takes no part (and can't divide by zero).
     pooled: dict[str, list[tuple[float, int]]] = defaultdict(list)
     for (_, rid), c in cells.items():
-        pooled[rid].append((c.e.mean, c.e.n))
+        if c.e.n:
+            pooled[rid].append((c.e.mean, c.e.n))
     global_best = max(pooled, key=lambda r: (sum(m * n for m, n in pooled[r]) / sum(n for _, n in pooled[r]), r),
                       default=config.hand_picked)
 
