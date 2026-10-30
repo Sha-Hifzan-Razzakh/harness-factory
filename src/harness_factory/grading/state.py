@@ -44,6 +44,11 @@ def _same(actual, expected: str) -> bool:
         return False
 
 
+def output_matches(pattern: str, output: str) -> bool:
+    """How an output_regex check reads the final answer: re.search with MULTILINE, so ^ and $ match at every line.
+    An answer pattern that must see the whole reply (no other candidate anywhere) anchors on \\A, not ^."""
+    return re.search(pattern, output, re.MULTILINE) is not None
+
 class StateDiffGrader:
     id = "state_diff"
 
@@ -81,7 +86,7 @@ class StateDiffGrader:
             return ok, "rows match" if ok else f"got {rows[:5]}"
         if c.kind == "output_regex":
             out = ctx.result.output if isinstance(ctx.result.output, str) else str(ctx.result.output or "")
-            ok = re.search(c.pattern or "", out, re.MULTILINE) is not None
+            ok = output_matches(c.pattern or "", out)
             return ok, "matched" if ok else f"output {out[:120]!r}"
         if c.kind == "tool_called":
             called = [s.name for s in ctx.spans if s.kind == SpanKind.tool_call and s.status != "error"]

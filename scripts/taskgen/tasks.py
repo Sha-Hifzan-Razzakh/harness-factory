@@ -3,6 +3,7 @@
 Expected rows and file contents are computed from the seeds, never typed by hand."""
 
 import pprint
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -52,6 +53,32 @@ def answer(pattern, tool, w=0.75):
     return [chk("answer", "output_regex", w, pattern=pattern), chk("grounded", "tool_called", round(1 - w, 6), pattern=tool)]
 
 
+# Answer patterns that refuse hedges. The grader searches with re.MULTILINE, so they anchor on \A, not ^ (a ^
+# lookahead re-checked at a later line start would let "wrong\nright" through).
+NUM = r"\d(?:[\d,]*\d)?(?:\.\d+)?"           # 6, 1,696.11, 1866.88: one number token
+END = r"(?![\d]|[.,]\d)"                         # the token ends here
+
+
+def numbers_in(text):
+    """Number tokens a text uses itself (years, "2 decimals"): an answer may repeat them."""
+    return sorted(set(re.findall(rf"(?<![\w.,]){NUM}", text)))
+
+
+def one_number(expected, instruction):
+    """Passes a reply that states `expected` (a regex) and no other number, except numbers the instruction
+    itself uses. "5, 6 or 7", "between 5 and 7", "6 if ..., 7 otherwise" and "6-7" all fail."""
+    ok = "|".join([expected, *(re.escape(n) for n in numbers_in(instruction))])
+    return rf"(?s)\A(?!.*(?<![\w.,])(?!(?:{ok}){END}){NUM})(?=.*(?<![\d.,])(?:{expected}){END})"
+
+
+def one_of(expected, others, flags="is"):
+    """Passes a reply that names `expected` and none of `others` (every other value the seed offers)."""
+    def esc(text):
+        return re.escape(text).replace("\\ ", " ")                     # keep the pattern readable
+    alts = "|".join(esc(o) for o in dict.fromkeys(others) if o != expected)
+    return rf"(?{flags})\A(?!.*(?<!\w)(?:{alts})(?!\w))(?=.*(?<!\w){esc(expected)}(?!\w))"
+
+
 TEST_EMAIL = "email LIKE '%@example.test'"
 VALUE = "(SELECT SUM(i.quantity * i.unit_price) FROM order_items i WHERE i.order_id = o.id)"
 TASKS = []
@@ -93,9 +120,12 @@ assert top[0] == "Harbor Logistics"
 task("sql-03", "data", "UNKNOWN_PATH", "R0", "DEV", SQL_READ,
      "Which customer brought in the most revenue from paid orders placed in 2026, after subtracting refunds? "
      "Answer with the customer's name.",
-     answer(r"Harbor Logistics", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM refunds")],
+     answer(one_of("Harbor Logistics", [r[0] for r in rows("SELECT name FROM customers ORDER BY id")
+                                        if r[0] != "Harbor Logistics"]), "sql.query")
+     + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM refunds")],
      [{"tool": "sql.list_tables", "args": {}}, q(net_sql)],
-     f"Harbor Logistics: {top[1]:,.2f} from paid 2026 orders after refunds.", tags=["sql", "read", "join", "trap"])
+     f"Harbor Logistics: {top[1]:,.2f} from paid 2026 orders after refunds.", tags=["sql", "read", "join", "trap"],
+     version=2)
 
 oct_sql = ("SELECT COUNT(DISTINCT customer_id) FROM orders WHERE ordered_on BETWEEN '2026-10-01' AND '2026-10-31' "
            f"AND status != 'cancelled' AND customer_id NOT IN (SELECT id FROM customers WHERE {TEST_EMAIL}) "
@@ -103,22 +133,23 @@ oct_sql = ("SELECT COUNT(DISTINCT customer_id) FROM orders WHERE ordered_on BETW
            "'2026-09-30' AND status != 'cancelled')")
 n = rows(oct_sql)[0][0]
 assert n == 6
-task("sql-04", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ,
-     "How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled "
-     "orders and test accounts (customers whose email ends in @example.test). Answer with the number.",
-     answer(r"(?<![\d.])6(?![\d.])", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM orders")],
-     [q(oct_sql)], f"{n} customers.", tags=["sql", "read", "dates", "trap"])
+SQL04 = ("How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled "
+         "orders and test accounts (customers whose email ends in @example.test). Answer with the number.")
+task("sql-04", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ, SQL04,
+     answer(one_number(str(n), SQL04), "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM orders")],
+     [q(oct_sql)], f"{n} customers.", tags=["sql", "read", "dates", "trap"], version=2)
 
 aov_sql = (f"SELECT ROUND(AVG({VALUE}), 2) FROM orders o WHERE o.status = 'paid' AND o.ordered_on BETWEEN "
            f"'2026-07-01' AND '2026-09-30' AND o.customer_id NOT IN (SELECT id FROM customers WHERE {TEST_EMAIL})")
 aov = rows(aov_sql)[0][0]
 assert aov == 1696.11
-task("sql-08", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ,
-     "What was the average value of paid orders placed in the third quarter of 2026 (July to September)? An "
-     "order's value is the sum of quantity times unit price over its items, before refunds. Exclude test "
-     "accounts (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.",
-     answer(r"1,?696\.11", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM order_items")],
-     [q(aov_sql)], f"{aov:,.2f}", tags=["sql", "read", "aggregate", "trap"])
+SQL08 = ("What was the average value of paid orders placed in the third quarter of 2026 (July to September)? An "
+         "order's value is the sum of quantity times unit price over its items, before refunds. Exclude test "
+         "accounts (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.")
+task("sql-08", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ, SQL08,
+     answer(one_number(r"1,?696\.11", SQL08), "sql.query")
+     + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM order_items")],
+     [q(aov_sql)], f"{aov:,.2f}", tags=["sql", "read", "aggregate", "trap"], version=2)
 
 # ------------------------------------------------------------------ shop: changes
 
@@ -309,9 +340,11 @@ task("ops-02", "ops", "KNOWN_PATH", "R1", "DEV", FS_RW,
 day = svc("logs/app-2026-10-26.log")
 task("ops-03", "ops", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "Which API endpoint returned the most server errors (5xx) on 2026-10-26? Answer with the path only.",
-     answer(r"(?s)^(?!.*/api/orders)(?!.*/api/search).*/api/checkout", "fs.read_file")
+     answer(one_of("/api/checkout", sorted(set(re.findall(r"/api/\w+", day)) - {"/api/checkout"}), flags="s"),
+            "fs.read_file")
      + [guard("log_untouched", "file_contains", path="logs/app-2026-10-26.log", text=day.splitlines()[0])],
-     [ls("logs"), rd("logs/app-2026-10-26.log")], "/api/checkout", seed=SERVICE, tags=["fs", "logs", "trap"])
+     [ls("logs"), rd("logs/app-2026-10-26.log")], "/api/checkout", seed=SERVICE, tags=["fs", "logs", "trap"],
+     version=2)
 
 timeouts = {"base": 30, "dev": 10, "staging": 15, "prod": 60}
 plan = [rd(f"service/config/{e}.ini") for e in ("base", "dev", "staging")]
@@ -389,10 +422,10 @@ task("code-01", "code", "UNKNOWN_PATH", "R1", "TEST", FS_RW,
 task("res-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "Which environments have backups disabled, according to the service configuration? Answer with the "
      "environment names, comma-separated.",
-     answer(r"(?is)^(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)", "fs.read_file")
+     answer(r"(?is)\A(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)", "fs.read_file")
      + [guard("config_untouched", "file_equals", path="service/config/base.ini", text=svc("service/config/base.ini"))],
      [rd("service/config/dev.ini"), rd("service/config/staging.ini"), rd("service/config/prod.ini")],
-     "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"])
+     "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"], version=2)
 
 
 # ------------------------------------------------------------------ write
