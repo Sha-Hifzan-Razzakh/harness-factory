@@ -69,3 +69,16 @@ def ensure_dirs() -> None:
 def allow_remote() -> bool:
     """Live calls to remote MCP servers are opt-in (ENV-02): HF_ALLOW_REMOTE=1. Read at call time."""
     return os.environ.get("HF_ALLOW_REMOTE") == "1"
+
+
+def remote_mode() -> str:
+    """How remote MCP servers are answered (EXT-08): live (default), record (live, and every answer saved) or
+    replay (from the recording: offline, no token, no opt-in needed). HF_REMOTE_MODE, read at call time."""
+    mode = os.environ.get("HF_REMOTE_MODE", "live")
+    if mode not in ("live", "record", "replay"):
+        raise ValueError(f"HF_REMOTE_MODE must be live, record or replay, not {mode!r}")
+    return mode
+
+
+def remote_recordings() -> Path:
+    return Path(os.environ.get("HF_REMOTE_RECORDINGS", VAR / "remote"))

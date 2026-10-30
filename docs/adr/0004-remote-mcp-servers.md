@@ -36,5 +36,19 @@ every run relies on: a clean starting state, no network in the sandbox, and grad
 
 - Tests run a stand-in server (`tests/remote_kb_server.py`) on 127.0.0.1 behind a bearer token: live call, token kept
   out of records, opt-in, missing and wrong token, mid-run failure, cancellation while opening, freeze skipping.
-- Not yet: test tenants (remote side effects), record and replay of remote answers (EXT-08), external agents as
-  tools (EXT-10). Record and replay is the next step, so live runs can be repeated offline.
+- Not yet: test tenants (remote side effects) and external agents as tools (EXT-10).
+
+## Addendum: record and replay (EXT-08)
+
+`HF_REMOTE_MODE` is `live` (default), `record` or `replay` (`mcp/recording.py`).
+
+- **Record** is a live call (it needs the opt-in) that also saves discovery and every answer under
+  `<HF_REMOTE_RECORDINGS>/<server>@<version>/`, one file per tool and argument hash, written atomically.
+- **Replay** opens no connection and needs no token or opt-in: tools and answers come from the recording. The
+  transport reads `REPLAY` and `snapshot.remote_mode` says `replay`, so replayed runs are marked. A call the live
+  run never made returns an error marked `infra: replay_miss`, excluded from Q like any environment failure.
+- **Same experiment.** Live and replayed runs of the same server version share a RunKey: the recording is that
+  version's answers, and remote tools are read-only. A new version has no recording until one is made.
+- **Nothing secret.** Recordings hold answers only, never request headers or the token.
+- `hfx tools freeze` checks remote servers in replay mode against their recorded schemas, so CI can verify them
+  without the network.

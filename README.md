@@ -149,6 +149,12 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
   reason (a missing token names its variable). One that fails mid-run turns that tool call into an error the model
   sees, marked `infra` and excluded from Q like an injected fault. Each session lives in its own task, so a dead
   server never cancels the run.
+- **Record once, replay offline** (EXT-08). `HF_REMOTE_MODE=record` (with the opt-in) saves every remote answer
+  under `var/remote/<server>@<version>/` (`HF_REMOTE_RECORDINGS` to put it elsewhere, e.g. a folder you commit).
+  `HF_REMOTE_MODE=replay` answers the same runs from that recording with no network, no token and no opt-in, so
+  they repeat exactly and can run in CI. Replayed runs show transport `REPLAY` and `snapshot.remote_mode: replay`;
+  a call the live run never made gets an error marked `infra: replay_miss` (the environment, excluded from Q). A
+  new server version needs a new recording. Recordings hold answers only, never request headers.
 
 ## Running in containers
 
