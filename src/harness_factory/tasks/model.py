@@ -29,7 +29,7 @@ class Split(str, Enum):
 
 
 CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent", "json_valid", "sql_rows",
-                    "output_regex", "tool_called"]
+                    "output_regex", "tool_called", "remote_equals"]
 
 
 class WeightedCheck(BaseModel):
@@ -37,8 +37,9 @@ class WeightedCheck(BaseModel):
     kind: CheckKind
     weight: float = Field(ge=0, le=1)  # 0 = guard check: earns nothing, but failing it is critical
     critical: bool = False
-    path: str | None = None          # file_* checks, relative to the workspace
-    text: str | None = None          # file_equals / file_contains
+    path: str | None = None          # file_* checks, relative to the workspace; remote_equals: "<server>:<JSON
+                                     # pointer>" into that server's test tenant after the run (EXT-07)
+    text: str | None = None          # file_equals / file_contains; remote_equals: the value (a string, or JSON)
     negate: bool = False             # file_contains / file_regex: must NOT match
     query: str | None = None         # sql_rows
     rows: list[list[Any]] | None = None
@@ -51,10 +52,16 @@ class WeightedCheck(BaseModel):
             raise ValueError(f"check {self.id}: a zero-weight check must be critical")
         needs = {"file_equals": ("path", "text"), "file_contains": ("path", "text"), "file_regex": ("path", "pattern"),
                  "file_absent": ("path",), "json_valid": ("path",), "sql_rows": ("query", "rows"),
-                 "output_regex": ("pattern",), "tool_called": ("pattern",)}[self.kind]
+                 "output_regex": ("pattern",), "tool_called": ("pattern",),
+                 "remote_equals": ("path", "text")}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
+        if self.kind == "remote_equals":
+            server, sep, pointer = (self.path or "").partition(":")
+            if not server or not sep or (pointer and not pointer.startswith("/")):
+                raise ValueError(f"check {self.id}: remote_equals path is '<server>:<JSON pointer>', e.g. "
+                                 f"'crm:/orders/ord-7/status'")
         if self.pattern is not None and self.kind in ("file_regex", "output_regex"):
             try:
                 re.compile(self.pattern)
@@ -78,7 +85,7 @@ class Oracle(BaseModel):
 class EnvSeed(BaseModel):
     files: str | None = None          # directory copied into the workspace (relative to the task dir)
     sqlite: str | None = None         # SQL script that builds the task database
-    mock_api_state: dict[str, Any] = Field(default_factory=dict)
+    mock_api_state: dict[str, Any] = Field(default_factory=dict)   # server id -> its test tenant's seed (EXT-07)
     memory_seed: list[dict[str, Any]] = Field(default_factory=list)
 
     def resolve(self, task_dir: Path) -> tuple[Path | None, Path | None]:

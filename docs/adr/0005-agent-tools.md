@@ -17,7 +17,7 @@ whose usage counts toward the run's budget.
    still a tool: risk, side effect, permission policy, faults, timeouts and record/replay apply unchanged. No new
    recipe dimension: whether a recipe may use an agent is its tool slice, and whether a task may is its allowance.
 2. **Remote only.** An agent calls a model, which nothing inside the sandbox can reach, so the catalog refuses agent
-   tools on stdio servers. With ADR 0004 that also makes them READ-only until test tenants exist.
+   tools on stdio servers. An agent that changes state needs a test tenant, like any remote tool (ADR 0006).
 3. **Usage is part of the answer.** The agent reports `_meta["harness-factory/usage"] = {tokens_in, tokens_out,
    usd?, model?}` on its result (the MCP `_meta` field; the key uses a prefix of our own, as the spec asks). The
    tokens go on the tool call's span, so `BudgetGuard.charge` counts them toward `max_tokens` and `CostLedger` adds

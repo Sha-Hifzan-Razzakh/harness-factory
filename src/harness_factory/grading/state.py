@@ -17,6 +17,33 @@ def _norm(s: str) -> str:
     return s.replace("\r\n", "\n").rstrip("\n")
 
 
+_MISSING = object()
+
+
+def _pointer(doc, pointer: str):
+    """RFC 6901 JSON pointer lookup; _MISSING when the path isn't there."""
+    if not pointer:
+        return doc
+    for raw in pointer[1:].split("/"):
+        key = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(doc, dict) and key in doc:
+            doc = doc[key]
+        elif isinstance(doc, list) and key.isdigit() and int(key) < len(doc):
+            doc = doc[int(key)]
+        else:
+            return _MISSING
+    return doc
+
+
+def _same(actual, expected: str) -> bool:
+    if isinstance(actual, str) and actual == expected:
+        return True
+    try:
+        return json.loads(expected) == actual
+    except ValueError:
+        return False
+
+
 class StateDiffGrader:
     id = "state_diff"
 
@@ -60,6 +87,15 @@ class StateDiffGrader:
             called = [s.name for s in ctx.spans if s.kind == SpanKind.tool_call and s.status != "error"]
             ok = any(fnmatch(n, c.pattern or "") for n in called)
             return ok, "grounded" if ok else f"no successful call matching {c.pattern}"
+        if c.kind == "remote_equals":
+            server, _, pointer = (c.path or "").partition(":")
+            if server not in ctx.remote:
+                return False, f"no test tenant state for {server!r}"
+            actual = _pointer(ctx.remote[server], pointer)
+            found = actual is not _MISSING and _same(actual, c.text or "")
+            ok = (not found) if c.negate else found
+            shown = "missing" if actual is _MISSING else json.dumps(actual, default=str)[:120]
+            return ok, ("equal" if found else f"got {shown}") + (" (negated)" if c.negate else "")
         return False, f"unknown check kind {c.kind}"
 
     def grade(self, ctx: GradeContext) -> Grade:

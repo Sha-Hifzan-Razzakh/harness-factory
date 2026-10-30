@@ -7,10 +7,12 @@ until then task_class() supplies the class key every result is filed under.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from fnmatch import fnmatch
+from typing import Any
 
 from harness_factory import settings
 from harness_factory.env.faults import FaultConfig, FaultInjector
@@ -136,6 +138,11 @@ class Provisioned:
     before: EnvState
     task_class: str
     weight_profile: str
+    pool: MCPSessionPool | None = None
+
+    async def export_tenants(self) -> tuple[dict[str, Any], str | None]:
+        """The run's test tenants after it (EXT-07): {server: state}, or the reason they can't be read."""
+        return await self.pool.export_tenants() if self.pool else ({}, None)
 
 
 @asynccontextmanager
@@ -177,7 +184,11 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
-        async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch) as pool:
+        # One test tenant per run (EXT-07): concurrent runs against the same remote server never see each other.
+        tenant = f"hf-{uuid.uuid4().hex[:16]}" if any(declared.server(s).tenant for s in recipe.tools.mcp_servers) \
+            else None
+        async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch, tenant=tenant,
+                                  tenant_seeds=task.env_seed.mock_api_state) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
                                  faults=FaultInjector(fault, seed) if fault else None)
             assembler = assembler or PromptAssembler()
@@ -195,9 +206,11 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                           "fault_profile": fault.id if fault else None,
                           **({"delegate": delegate.child.id} if delegate else {}),
                           **({"remote_servers": remote, "remote_mode": remote_mode} if remote else {}),  # ENV-02
+                          **({"tenant": tenant, "tenant_servers": pool.tenant_servers()} if tenant else {}),
                           **sandbox.describe()},
             )
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,
-                              task_class=task_class(task, declared), weight_profile=weight_profile(task, declared))
+                              task_class=task_class(task, declared), weight_profile=weight_profile(task, declared),
+                              pool=pool)
     finally:
         await _teardown(sandbox)

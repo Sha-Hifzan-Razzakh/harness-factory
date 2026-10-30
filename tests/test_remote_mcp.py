@@ -73,10 +73,10 @@ async def live_setup(factory, url):
 
 # ------------------------------------------------------------------ catalog rules
 
-def test_a_remote_server_needs_a_url_a_pinned_version_and_read_only_tools():
+def test_a_remote_server_needs_a_url_a_pinned_version_and_a_tenant_to_change_state():
     with pytest.raises(ValueError, match="needs `url` and a pinned `version`"):
         MCPServerSpec(id="x", transport="streamable_http", url="https://x.example/mcp")
-    with pytest.raises(ValueError, match="must be READ until test tenants exist"):
+    with pytest.raises(ValueError, match="need a test tenant"):
         MCPServerSpec(id="x", transport="streamable_http", url="https://x.example/mcp", version="2",
                       tools=[ToolSpec(name="send", side_effect=SideEffect.REVERSIBLE, risk="R1")])
     with pytest.raises(ValueError, match="stdio server needs `module`"):

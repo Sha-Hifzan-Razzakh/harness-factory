@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 from collections.abc import Callable
@@ -67,8 +68,13 @@ class ToolResult(BaseModel):
 class MCPClient:
     """Async context manager. Elicitation and sampling are refused in P0 (MCP-06, MCP-07 arrive in P3)."""
 
-    def __init__(self, spec: MCPServerSpec, env: dict[str, str], launcher: Launcher | None = None) -> None:
+    def __init__(self, spec: MCPServerSpec, env: dict[str, str], launcher: Launcher | None = None,
+                 tenant: str | None = None) -> None:
+        """tenant: this run's test tenant id, sent as the spec's tenant header (EXT-07)."""
         self.spec = spec
+        self.tenant = tenant
+        self._seen: dict[str, int] = {}      # recording key (n=0) -> calls made so far in this session
+        self._writes: list[str] = []         # recording keys of the calls that changed state, in order
         self.env = env
         self.launcher = launcher
         self.transport = Transport.STDIO
@@ -154,6 +160,8 @@ class MCPClient:
                 raise HarnessError(ErrorKind.PROVISION, f"remote MCP server {self.spec.id!r} needs "
                                                         f"{self.spec.auth_env} in .env or the environment")
             headers["Authorization"] = f"Bearer {token}"
+        if self.spec.tenant is not None and self.tenant:
+            headers[self.spec.tenant.header] = self.tenant
         self.transport = Transport.STREAMABLE_HTTP
         ready, self._closing = asyncio.Event(), asyncio.Event()
         box: dict[str, Any] = {}
@@ -198,28 +206,89 @@ class MCPClient:
             return [DiscoveredTool(server=self.spec.id, **t) for t in self.recording.load_tools()]
         assert self._session is not None
         res = await self._session.list_tools()
+        admin = self.spec.tenant.admin_tools() if self.spec.tenant else set()   # the factory's, never the model's
         tools = [DiscoveredTool(server=self.spec.id, name=t.name, description=t.description or "",
-                                input_schema=t.input_schema) for t in res.tools]
+                                input_schema=t.input_schema) for t in res.tools if t.name not in admin]
         if self.mode == "record":
             self.recording.save_tools([t.model_dump(exclude={"server"}) for t in tools])
         return tools
 
+    def _repeat(self, name: str, args: dict[str, Any]) -> int:
+        """How many identical calls this session made before this one (recordings key repeats apart)."""
+        from harness_factory.mcp.recording import Recording
+        k = Recording.key(name, args)
+        n = self._seen.get(k, 0)
+        self._seen[k] = n + 1
+        return n
+
+    def _changes_state(self, name: str) -> bool:
+        from harness_factory.env.mcp.servers import SideEffect
+        return any(t.name == name and t.side_effect != SideEffect.READ for t in self.spec.tools)
+
     async def call_tool(self, name: str, args: dict[str, Any]) -> ToolResult:
+        n = self._repeat(name, args) if self.recording is not None else 0
+        if self.recording is not None and self._changes_state(name):
+            self._writes.append(self.recording.key(name, args, n))
         if self.mode == "replay":
-            saved = self.recording.load_call(name, args)
+            saved = self.recording.load_call(name, args, n)
+            if saved is None and n and not self._changes_state(name):
+                saved = self.recording.load_call(name, args)     # a READ answer asked again: same answer
             if saved is None:                               # the run asked something the live run never did
                 return ToolResult(text=f"{self.spec.id}.{name} is unavailable right now (not in the recording).",
                                   is_error=True, infra="replay_miss")
             return ToolResult(text=saved["text"], is_error=saved["is_error"], structured=saved.get("structured"),
                               meta=saved.get("meta"))
+        result = await self._live_call(name, args)
+        if self.mode == "record":
+            self.recording.save_call(name, args, result.model_dump(exclude={"infra"}), n)
+        return result
+
+    async def _live_call(self, name: str, args: dict[str, Any]) -> ToolResult:
         assert self._session is not None
         res = await self._session.call_tool(name, args)
         texts = [c.text for c in res.content if getattr(c, "type", "") == "text"]
         text = "\n".join(texts)
         if not text and res.structured_content is not None:
             text = json.dumps(res.structured_content)
-        result = ToolResult(text=text, is_error=bool(res.is_error), structured=res.structured_content,
-                            meta=dict(res.meta) if res.meta else None)
-        if self.mode == "record":
-            self.recording.save_call(name, args, result.model_dump(exclude={"infra"}))
-        return result
+        return ToolResult(text=text, is_error=bool(res.is_error), structured=res.structured_content,
+                          meta=dict(res.meta) if res.meta else None)
+
+    # ------------------------------------------------------------------ test tenant (EXT-07): the factory's calls
+
+    async def tenant_reset(self, state: Any) -> ToolResult:
+        """Put this run's tenant in the task's seed state. Recorded and replayed like any call."""
+        assert self.spec.tenant is not None
+        return await self.call_tool(self.spec.tenant.reset, {"state": state})
+
+    async def tenant_export(self) -> tuple[Any, str | None]:
+        """The tenant's state after the run, or (None, reason). In replay, the recorded end state counts only when
+        this run changed state with exactly the calls the recorded run made (else `replay_diverged`)."""
+        assert self.spec.tenant is not None
+        name = self.spec.tenant.export
+        if self.mode == "replay":
+            saved = self.recording.load_call(name, {})
+            if saved is None:
+                return None, "replay_miss"
+            if saved.get("writes", []) != self._writes:
+                return None, "replay_diverged"
+            result = ToolResult(text=saved["text"], is_error=saved["is_error"], structured=saved.get("structured"))
+        else:
+            result = await self._live_call(name, {})
+            if self.mode == "record":
+                self.recording.save_call(name, {}, {**result.model_dump(exclude={"infra", "meta"}),
+                                                    "writes": list(self._writes)})
+        if result.is_error:
+            return None, f"export failed: {result.text[:200]}"
+        if isinstance(result.structured, dict) and set(result.structured) != {"result"}:
+            return result.structured, None
+        try:
+            return json.loads(result.text), None
+        except ValueError:
+            return None, f"export is not JSON: {result.text[:120]!r}"
+
+    async def tenant_drop(self) -> None:
+        """Best effort: the server may forget this run's tenant. Never recorded; nothing to do in replay."""
+        if self.spec.tenant is None or not self.spec.tenant.drop or self.mode == "replay" or self._session is None:
+            return
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(self._session.call_tool(self.spec.tenant.drop, {}), 10)

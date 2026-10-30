@@ -139,9 +139,9 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
 
 - **The sandbox stays offline.** The factory's MCP client connects from the factory process; the run's sandbox
   keeps `--network none`. The model reaches the server only through the tools the recipe and task allow.
-- **Read-only for now.** Remote tools must be `READ`: a remote side effect must land somewhere the factory can reset
-  before each run and grade afterwards (a test tenant, EXT-07), which isn't built yet. The catalog refuses anything
-  else.
+- **Changes only in a test tenant.** A remote tool that isn't `READ` must land its changes somewhere the factory can
+  reset before each run and grade afterwards, so the catalog refuses it unless the server declares `tenant:` (see
+  [Test tenants](#test-tenants)).
 - **Opt-in.** Live remote calls make a run depend on a service the factory doesn't control, so they need
   `HF_ALLOW_REMOTE=1`. Such runs record `snapshot.remote_servers` (url@version), and a new server version starts new
   cells. `hfx tools freeze` checks remote servers only with the opt-in and keeps their hashes otherwise.
@@ -184,9 +184,47 @@ ADR 0005):
   before working) charges nothing.
 - **Bounded.** Calls past `max_calls` in one run (delegated helpers included) are refused and count as invalid in Q.
 - **Remote only, read-only.** An agent calls a model, which the offline sandbox can't reach, so agent tools must be
-  on a remote server, and remote tools are `READ` until test tenants exist. Record and replay work as above, usage
+  on a remote server; one that changes state needs a test tenant, as below. Record and replay work as above, usage
   included, so a recorded agent's runs repeat offline at the same cost.
 - **Identity.** `max_calls` is part of `env_hash`; prices are not. Tools without `agent:` keep their hashes.
+
+### Test tenants
+
+A remote server whose tools change state (refund an order, file a ticket) declares a test tenant (EXT-07, ADR 0006):
+
+```yaml
+- id: orders
+  transport: streamable_http
+  url: https://orders.sandbox.example/mcp
+  version: "5.1"
+  tenant: {header: HF-Tenant, reset: _tenant_reset, export: _tenant_export, drop: _tenant_drop}   # the defaults
+  tools:
+  - {name: get_order, side_effect: READ, risk: R0}
+  - {name: refund_order, side_effect: REVERSIBLE, risk: R1}
+```
+
+- **One tenant per run.** Provisioning gives each run a fresh tenant id, sent as the `HF-Tenant` header on every
+  request (the model can't set or see it), and calls `_tenant_reset(state=…)` with the task's seed,
+  `env_seed.mock_api_state[<server>]`. Concurrent runs never see each other's changes, and each starts from the
+  seed. The session's close calls `_tenant_drop` (best effort).
+- **The server's side.** It keeps one state per tenant header and exposes the three admin tools. The factory hides
+  them from discovery and never declares them as tools, so the model can't call them. `tests/remote_tenant_server.py`
+  is an 80-line example.
+- **Graded on the tenant.** After the run, `_tenant_export()` returns the tenant's state as JSON. A `remote_equals`
+  check reads it with a JSON pointer:
+
+  ```yaml
+  - {id: refunded, kind: remote_equals, weight: 1.0, path: "orders:/orders/ord-7/status", text: refunded}
+  - {id: others_untouched, kind: remote_equals, weight: 0, critical: true,
+     path: "orders:/orders/ord-8", text: '{"status": "paid", "amount": 80}'}
+  ```
+
+  `text` is compared as a string, or as JSON when it parses. A run whose tenant can't be read afterwards is
+  `INCOMPLETE` (the environment), never scored. The end state is in `snapshot.tenant_state`.
+- **Replay.** Reset, calls and export are recorded. The n-th repeat of a call has its own answer, so a lookup before
+  and after a change replays correctly. The recorded end state counts only when the replay changed state with
+  exactly the calls the live run made; otherwise the run is `INCOMPLETE` (`replay_diverged`), so a replay that skips
+  the work can't inherit the live run's result.
 
 ## Running in containers
 

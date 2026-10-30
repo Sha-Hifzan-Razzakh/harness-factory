@@ -17,7 +17,8 @@ every run relies on: a clean starting state, no network in the sandbox, and grad
    from there and the sandbox keeps `--network none`. This is stronger than EXT-06 as first written (egress from the
    sandbox to declared hosts only): the sandbox needs no egress at all.
 3. **Read-only until test tenants exist** (EXT-07). A remote side effect can't be reset before a run or read by a
-   grader, so a remote tool that isn't `READ` is refused when the catalog loads.
+   grader, so a remote tool that isn't `READ` is refused when the catalog loads. (Superseded by ADR 0006: allowed
+   on a server that declares a test tenant.)
 4. **Identity.** `env_hash` includes `url@version` for every remote server a recipe opens, only when one is opened,
    so local-only hashes are unchanged. A new server version is a new experiment.
 5. **Opt-in and marked** (ENV-02). Provisioning refuses a recipe that opens a remote server unless
@@ -36,7 +37,7 @@ every run relies on: a clean starting state, no network in the sandbox, and grad
 
 - Tests run a stand-in server (`tests/remote_kb_server.py`) on 127.0.0.1 behind a bearer token: live call, token kept
   out of records, opt-in, missing and wrong token, mid-run failure, cancellation while opening, freeze skipping.
-- Not yet: test tenants (remote side effects). External agents as tools (EXT-10) build on this: ADR 0005.
+- Built on this: external agents as tools (EXT-10, ADR 0005) and test tenants (EXT-07, ADR 0006).
 
 ## Addendum: record and replay (EXT-08)
 
