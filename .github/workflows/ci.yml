@@ -17,7 +17,7 @@ jobs:
   test:
     name: test (py${{ matrix.python }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -51,42 +51,93 @@ jobs:
       - name: Reference solutions pass their oracles
         run: uv run --no-sync hfx reference
 
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traces-test-py${{ matrix.python }}
+          path: var/traces
+          if-no-files-found: ignore
+
+  # Offline gates: every shape and matrix recipe solves the visible tasks with the scripted model. They exercise
+  # the same code on any Python, so they run once, in parallel with the tests.
+  gates:
+    name: offline gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
+      COLUMNS: "160"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --extra inspect --python 3.13
+
       - name: P0 gate (offline, scripted model)
-        run: uv run --no-sync hfx smoke --models scripted/replay --strict
+        run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8
 
       - name: V3 workflow gate (offline, scripted model)
-        run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict
+        run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
-        run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand --models scripted/replay --strict
+        run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand --models scripted/replay --strict -j 8
 
       - name: Fault injection (clean runs gate; faulted runs feed R)
-        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict
+        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict -j 8
 
       - name: Inspect AI adapter (factory runs as an Inspect eval)
         run: |
           uv run --no-sync inspect eval src/harness_factory/integrations/inspect_task.py \
             --model mockllm/model -T recipe=v2-base --epochs 2 --log-dir var/inspect-logs --display plain
 
-      - name: Docker sandbox gate (references + smoke inside containers)
-        env:
-          HF_SANDBOX: docker
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traces-gates
+          path: var/traces
+          if-no-files-found: ignore
+
+  docker-gate:
+    name: docker sandbox gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
+      COLUMNS: "160"
+      HF_SANDBOX: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --python 3.13
+
+      - name: References and smoke inside containers
         run: |
           uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v3-staged --models scripted/replay --strict
+          uv run --no-sync hfx smoke --recipe v2-base,v3-staged --models scripted/replay --strict -j 8
 
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: traces-py${{ matrix.python }}
+          name: traces-docker
           path: var/traces
           if-no-files-found: ignore
 
   container:
     name: container (Dockerfile + compose)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       COLUMNS: "160"
     steps:
