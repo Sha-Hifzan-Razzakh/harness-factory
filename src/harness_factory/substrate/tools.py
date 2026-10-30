@@ -141,6 +141,9 @@ class ToolExecutor:
             span.error = ErrorKind.TOOL_ERROR.value          # a remote server failing in transit: environment,
             span.attributes["infra"] = type(e).__name__      # not the model, so excluded from Q like a fault
             return ToolResult(text=f"{ref} is unavailable right now ({type(e).__name__}).", is_error=True)
+        if result.infra:                                     # e.g. a replay with no recording of this call:
+            span.error = ErrorKind.TOOL_ERROR.value          # the environment, excluded from Q
+            span.attributes["infra"] = result.infra
         if fault == "garbled":                               # it really ran; the answer came back cut off
             result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
         if len(result.text) > MAX_INLINE_CHARS:

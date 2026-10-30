@@ -205,3 +205,75 @@ def test_tools_freeze_skips_remote_servers_without_the_opt_in(tmp_path, monkeypa
     out = CliRunner().invoke(cli.app, ["tools", "freeze", "--check"])
     assert out.exit_code == 0, out.output
     assert "skipped remote server(s) kb" in out.output and "up to date" in out.output
+
+
+# ------------------------------------------------------------------ record and replay (EXT-08)
+
+def tool_texts(rec):
+    t = json.loads(Path(rec.transcript_path).read_text())
+    return t, [m["content"] for m in t["messages"] if m["role"] == "tool"]
+
+
+@pytest.fixture
+def recorded(factory, kb_server, monkeypatch, tmp_path):
+    """One live run in record mode, then the server is gone and the token unset: only the recording is left."""
+    async def make(script):
+        monkeypatch.setenv("HF_TEST_KB_TOKEN", TOKEN)
+        monkeypatch.setenv("HF_ALLOW_REMOTE", "1")
+        monkeypatch.setenv("HF_REMOTE_RECORDINGS", str(tmp_path / "rec"))
+        f, recipe, task = await live_setup(factory, kb_server["url"])
+        monkeypatch.setenv("HF_REMOTE_MODE", "record")
+        live = await run_one(f, task, recipe, "scripted/replay", "scripted", backend=ScriptedBackend(script))
+        kb_server["proc"].kill()
+        kb_server["proc"].wait()
+        monkeypatch.delenv("HF_ALLOW_REMOTE")
+        monkeypatch.delenv("HF_TEST_KB_TOKEN")
+        monkeypatch.setenv("HF_REMOTE_MODE", "replay")
+        return f, recipe, task, live
+    return make
+
+
+async def test_a_recorded_run_replays_offline_with_the_same_answers(recorded, tmp_path):
+    script = [LOOKUP, {"content": "Harbor Logistics"}]
+    f, recipe, task, live = await recorded(script)
+    rep = await run_one(f, task, recipe, "scripted/replay", "scripted", backend=ScriptedBackend(script))
+    (t_live, live_tools), (t_rep, rep_tools) = tool_texts(live), tool_texts(rep)
+    assert rep_tools == live_tools == ["Paid order value minus refunds."]
+    assert t_live["snapshot"]["remote_mode"] == "record" and t_rep["snapshot"]["remote_mode"] == "replay"
+    assert t_rep["snapshot"]["mcp_transports"]["kb"] == "REPLAY"                      # a replayed run is marked
+    assert rep.run_key == live.run_key                                                # same server version
+    for p in (tmp_path / "rec").rglob("*.json"):
+        assert TOKEN not in p.read_text()                                             # answers only, never headers
+
+
+async def test_a_call_missing_from_the_recording_is_the_environment_not_the_model(recorded):
+    f, recipe, task, _ = await recorded([LOOKUP, {"content": "ok"}])
+    other = {"tool_calls": [{"name": "kb__lookup", "arguments": {"term": "test account"}}]}
+    rep = await run_one(f, task, recipe, "scripted/replay", "scripted", backend=ScriptedBackend([other, {"content": "ok"}]))
+    spans = [json.loads(line) for line in Path(rep.trace_path).read_text().splitlines()]
+    (call,) = [s for s in spans if s["name"] == "kb.lookup"]
+    assert call["status"] == "error" and call["attributes"]["infra"] == "replay_miss"
+    assert rep.scores.trajectory == 1.0
+
+
+async def test_replay_needs_a_recording_of_that_server_version(recorded):
+    f, recipe, task, _ = await recorded([LOOKUP, {"content": "ok"}])
+    kb = next(s for s in f.declared.servers if s.id == "kb")
+    newer = f.declared.model_copy(update={"servers": [s if s.id != "kb" else kb.model_copy(update={"version": "1.1"})
+                                                      for s in f.declared.servers]})
+    with pytest.raises(HarnessError, match="no recording of remote MCP server 'kb'.*HF_REMOTE_MODE=record"):
+        await run_one(dataclasses.replace(f, declared=newer), task, recipe, "scripted/replay", "scripted",
+                      backend=ScriptedBackend([LOOKUP]))
+
+
+async def test_recording_is_a_live_call_so_it_needs_the_opt_in(factory, kb_server, monkeypatch, tmp_path):
+    monkeypatch.setenv("HF_TEST_KB_TOKEN", TOKEN)
+    monkeypatch.setenv("HF_ALLOW_REMOTE", "1")
+    f, recipe, task = await live_setup(factory, kb_server["url"])
+    monkeypatch.delenv("HF_ALLOW_REMOTE")
+    monkeypatch.setenv("HF_REMOTE_MODE", "record")
+    with pytest.raises(HarnessError, match="opt-in"):
+        await run_one(f, task, recipe, "scripted/replay", "scripted", backend=ScriptedBackend([LOOKUP]))
+    monkeypatch.setenv("HF_REMOTE_MODE", "sometimes")
+    with pytest.raises(ValueError, match="HF_REMOTE_MODE must be"):
+        await run_one(f, task, recipe, "scripted/replay", "scripted", backend=ScriptedBackend([LOOKUP]))

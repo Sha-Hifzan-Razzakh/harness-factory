@@ -32,7 +32,8 @@ Launcher = Callable[[MCPServerSpec], tuple[str, list[str], dict[str, str]]]
 
 class Transport(str, Enum):
     STDIO = "STDIO"                      # server inside the sandbox
-    STREAMABLE_HTTP = "STREAMABLE_HTTP"  # shared server on the internal network (P1)
+    STREAMABLE_HTTP = "STREAMABLE_HTTP"  # remote server, called live (EXT-05)
+    REPLAY = "REPLAY"                    # remote server answered from its recording (EXT-08)
 
 
 class CapabilitySet(BaseModel):
@@ -59,6 +60,7 @@ class ToolResult(BaseModel):
     text: str
     is_error: bool = False
     structured: Any = None
+    infra: str | None = None             # set when the environment failed, not the model (e.g. replay_miss)
 
 
 class MCPClient:
@@ -76,6 +78,8 @@ class MCPClient:
         self.close_error: str | None = None
         self._owner: asyncio.Task | None = None
         self._closing: asyncio.Event | None = None
+        self.mode = "live"
+        self.recording = None                # mcp.recording.Recording, for remote servers in record/replay mode
 
     async def __aenter__(self) -> MCPClient:
         # Python never calls __aexit__ for a failed __aenter__: if anything below fails or is cancelled (Ctrl-C
@@ -91,6 +95,13 @@ class MCPClient:
 
     async def _open(self) -> MCPClient:
         if self.spec.remote:
+            from harness_factory import settings
+            from harness_factory.mcp.recording import Recording
+            self.mode = settings.remote_mode()
+            if self.mode != "live":
+                self.recording = Recording(settings.remote_recordings(), self.spec)
+            if self.mode == "replay":
+                return self._open_replay()
             init = await self._open_remote()
         else:
             if self.launcher is not None:                   # the sandbox decides how the server process starts
@@ -109,6 +120,17 @@ class MCPClient:
             prompts=False,
             list_changed=bool(caps.tools and getattr(caps.tools, "list_changed", False)),
         )
+        return self
+
+    def _open_replay(self) -> MCPClient:
+        """No network, no token: tools and answers come from the recording of this server version."""
+        from harness_factory.substrate.errors import ErrorKind, HarnessError
+        if not self.recording.exists():
+            raise HarnessError(ErrorKind.PROVISION, f"no recording of remote MCP server {self.spec.id!r} "
+                                                    f"({self.spec.url}@{self.spec.version}) in {self.recording.dir}: "
+                                                    f"record one with HF_REMOTE_MODE=record")
+        self.transport = Transport.REPLAY
+        self.capabilities = CapabilitySet(tools=True)
         return self
 
     async def _open_remote(self):
@@ -171,16 +193,30 @@ class MCPClient:
             self.close_error = f"{type(res).__name__}: {str(res)[:200]}"
 
     async def list_tools(self) -> list[DiscoveredTool]:
+        if self.mode == "replay":
+            return [DiscoveredTool(server=self.spec.id, **t) for t in self.recording.load_tools()]
         assert self._session is not None
         res = await self._session.list_tools()
-        return [DiscoveredTool(server=self.spec.id, name=t.name, description=t.description or "",
-                               input_schema=t.input_schema) for t in res.tools]
+        tools = [DiscoveredTool(server=self.spec.id, name=t.name, description=t.description or "",
+                                input_schema=t.input_schema) for t in res.tools]
+        if self.mode == "record":
+            self.recording.save_tools([t.model_dump(exclude={"server"}) for t in tools])
+        return tools
 
     async def call_tool(self, name: str, args: dict[str, Any]) -> ToolResult:
+        if self.mode == "replay":
+            saved = self.recording.load_call(name, args)
+            if saved is None:                               # the run asked something the live run never did
+                return ToolResult(text=f"{self.spec.id}.{name} is unavailable right now (not in the recording).",
+                                  is_error=True, infra="replay_miss")
+            return ToolResult(text=saved["text"], is_error=saved["is_error"], structured=saved.get("structured"))
         assert self._session is not None
         res = await self._session.call_tool(name, args)
         texts = [c.text for c in res.content if getattr(c, "type", "") == "text"]
         text = "\n".join(texts)
         if not text and res.structured_content is not None:
             text = json.dumps(res.structured_content)
-        return ToolResult(text=text, is_error=bool(res.is_error), structured=res.structured_content)
+        result = ToolResult(text=text, is_error=bool(res.is_error), structured=res.structured_content)
+        if self.mode == "record":
+            self.recording.save_call(name, args, result.model_dump(exclude={"infra"}))
+        return result
