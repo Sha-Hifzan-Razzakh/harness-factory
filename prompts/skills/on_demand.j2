@@ -1,0 +1,5 @@
+Skills: how-to notes you can read before you start. Read a skill with skills__load (give its name) when its
+description fits the task; don't load ones that don't.
+{% for s in skills -%}
+- {{ s.id }}: {{ s.description }}
+{% endfor %}

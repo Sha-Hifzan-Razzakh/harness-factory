@@ -1,0 +1,25 @@
+# Base V5 recipe: the planner writes a numbered plan from the task and the workers' tools; each step goes to a
+# worker (v2-base, as a delegate call) with a fresh conversation holding only the task, earlier workers' reports and
+# its part; a blocked or stopped worker sends the remaining work back to the planner once.
+id: v5-orchestrator
+version: 1
+variant: V5_ORCHESTRATOR
+headless: true
+tier: T2
+model_slots:
+  planner: {role: planner, temperature: 0.0, max_output_tokens: 1024}
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 2048}
+tools:
+  tool_ids: ["fs.*", "sql.*"]
+  mcp_servers: [fs, sql]
+prompts: {system: system/default, task: task/default}
+# Workers' model calls, tool calls and tokens are charged to the run, so these are the whole team's limits. Each
+# worker gets its own config (v2-base) capped by what is left.
+config: {max_steps: 40, max_tool_calls: 40, max_tokens: 200000, wall_time_s: 600}
+policies:
+  permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}
+planning:
+  max_plan_steps: 8
+  max_replans: 1
+  worker_prompt: plan/worker
+delegation: {recipe: v2-base, max_calls: 16, max_depth: 1}
