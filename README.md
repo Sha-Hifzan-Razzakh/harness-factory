@@ -280,6 +280,19 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | prompt | `v2-plan-check` | System prompt asks for a numbered plan with the first tool call and a check before the final answer (`prompts/system/plan_check.j2`) |
 | config | `v2-recover` | When the provider rejects a reply as malformed (a call to a tool that doesn't exist, Phase 1's `code-01`), re-ask with the error and the real tool list, at most twice per run (`config.recover_malformed`) |
 | tools | `v2-search` | Adds the `search` server: `search.find` (files by name) and `search.grep` (contents, `path:line: text`). Phase 1's `code-01` model reached for a search tool that wasn't there |
+| skills | `v2-skills-upfront` | Every skill's how-to appended to the system prompt (about 5k characters) |
+| skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
+
+**Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
+general how-tos so far: `sql-analysis`, `sql-changes`, `editing-files`, `file-exports`,
+`requests-and-policies`. A skill's full text is part of the recipe hash. On demand, the provisioner installs
+the recipe's skills in the run's state folder, outside the workspace: the model reads them only through
+`skills.load` and can't change them. `skills.load` is granted to every task (`granted_by: []`) because it reads
+harness material, nothing from the task's world.
+
+> **Caveat:** these skills were written by the same author as the tasks, held-out ones included. Skill gains on
+> this catalog are an upper bound. Tasks written later, by an author who hasn't seen the skills, give the honest
+> estimate.
 
 **New tools without task edits.** A task's `allowed_tools` decides what a run may call, and editing every task
 would change every task hash. A READ tool that reveals nothing beyond other tools declares them instead:

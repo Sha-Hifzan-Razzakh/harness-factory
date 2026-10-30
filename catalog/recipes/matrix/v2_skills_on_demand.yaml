@@ -1,0 +1,11 @@
+# Matrix (skills): v2-base with one change, a skills index in the system prompt and a skills.load tool to read
+# the ones that fit. Fewer tokens than upfront, if the model loads only what it needs.
+id: v2-skills-on-demand
+version: 1
+base: v2-base
+skills:
+  skill_ids: [sql-analysis, sql-changes, editing-files, file-exports, requests-and-policies]
+  loading: on_demand
+tools:
+  tool_ids: ["fs.*", "sql.*", "skills.*"]
+  mcp_servers: [fs, sql, skills]

@@ -28,7 +28,8 @@ class ToolSpec(BaseModel):
     timeout_s: float = 30.0
     schema_hash: str | None = None   # declared hash; drift against discovery fails provisioning
     # A READ tool that reveals nothing beyond these tools: a task allowing all of them allows this one too, so a
-    # new capability (e.g. search) needs no edit to every task's allowance (and no task hash change).
+    # new capability (e.g. search) needs no edit to every task's allowance (and no task hash change). [] = every
+    # task: the tool reads only harness material, nothing from the task's world (e.g. skills.load).
     granted_by: list[str] | None = None
 
     def ref(self, server: str) -> str:

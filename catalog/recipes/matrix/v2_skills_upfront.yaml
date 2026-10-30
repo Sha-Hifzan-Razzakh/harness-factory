@@ -1,0 +1,7 @@
+# Matrix (skills): v2-base with one change, every skill's how-to appended to the system prompt.
+id: v2-skills-upfront
+version: 1
+base: v2-base
+skills:
+  skill_ids: [sql-analysis, sql-changes, editing-files, file-exports, requests-and-policies]
+  loading: upfront
