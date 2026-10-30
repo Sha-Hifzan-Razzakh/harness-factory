@@ -72,6 +72,8 @@ class EffectivenessRecord(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     grades: list[dict] = Field(default_factory=list)
     trace_path: str | None = None
+    output: str | None = None                                       # the run's final answer text
+    messages: list[dict] = Field(default_factory=list, repr=False)  # full transcript; not written to the store
 
 
 class CellAggregate(BaseModel):

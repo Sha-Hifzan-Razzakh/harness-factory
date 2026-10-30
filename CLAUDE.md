@@ -26,6 +26,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New shape (V1, V3...) | `src/harness_factory/shapes/<v>.py` with `@ShapeRegistry.register(Variant.X)` | import it in `shapes/builtin.py`; never in `shapes/__init__.py` (import cycle) |
 | New recipe | `catalog/recipes/**.yaml`, model slot left empty | `hfx validate` passes; V3 recipes declare `workflow:` stages with prompts under `prompts/stage/` |
 | New provider/model | `catalog/providers.yaml` | verify model ids and limits against the provider's live docs |
+| Inspect AI | `src/harness_factory/integrations/inspect_task.py` (optional extra `inspect`) | outer shell only; never move tasks or grading into Inspect (`docs/adr/0001-inspect-ai.md`) |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
 
 ## Rules that protect the measurements
