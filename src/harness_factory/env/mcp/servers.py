@@ -19,6 +19,21 @@ class SideEffect(str, Enum):
 
 RISK_TO_TIER = {"R0": "T1", "R1": "T2", "R2": "T2", "R3": "T3"}
 TIER_ORDER = ["T1", "T2", "T3", "T4"]
+USAGE_META = "harness-factory/usage"    # the `_meta` key an agent tool reports its usage under (EXT-10)
+
+
+class AgentTool(BaseModel):
+    """A tool that is another agent (EXT-10): it runs its own model calls and reports what they used.
+
+    Its answer must carry `_meta["harness-factory/usage"] = {tokens_in, tokens_out, usd?, model?}`; the tokens
+    count toward the run's token budget and cost, so a harness that hands work to an agent pays for it. A missing
+    `usd` is priced at the reference rates below (per million tokens), as free models are. Prices are not hashed."""
+    max_calls: int = Field(default=3, ge=1)     # per run; calls past it are refused and count as invalid in Q
+    price_in: float = Field(default=0.0, ge=0)
+    price_out: float = Field(default=0.0, ge=0)
+
+    def usd(self, tokens_in: int, tokens_out: int) -> float:
+        return (tokens_in * self.price_in + tokens_out * self.price_out) / 1e6
 
 
 class ToolSpec(BaseModel):
@@ -31,6 +46,15 @@ class ToolSpec(BaseModel):
     # new capability (e.g. search) needs no edit to every task's allowance (and no task hash change). [] = every
     # task: the tool reads only harness material, nothing from the task's world (e.g. skills.load).
     granted_by: list[str] | None = None
+    agent: AgentTool | None = None   # set when the tool is another agent (EXT-10)
+
+    def hashed(self) -> dict:
+        """What of this spec is part of env_hash: unset optional fields are left out (so adding one keeps every
+        existing hash), and so are prices."""
+        data = self.model_dump(mode="json", exclude={k for k in ("granted_by", "agent") if getattr(self, k) is None})
+        if self.agent is not None:
+            data["agent"] = {"max_calls": self.agent.max_calls}
+        return data
 
     def ref(self, server: str) -> str:
         return f"{server}.{self.name}"
@@ -61,6 +85,11 @@ class MCPServerSpec(BaseModel):
             if writes:
                 raise ValueError(f"server {self.id!r}: remote tools must be READ until test tenants exist "
                                  f"(EXT-07); not READ: {', '.join(writes)}")
+        agents = [t.name for t in self.tools if t.agent is not None]
+        if agents and self.transport == "stdio":
+            # An agent calls a model, and nothing in the sandbox can reach one (it has no network).
+            raise ValueError(f"server {self.id!r}: agent tools need a remote server (EXT-10); "
+                             f"agent on stdio: {', '.join(agents)}")
         return self
 
     @property
@@ -93,8 +122,7 @@ class ToolCatalogFile(BaseModel):
     def env_hash(self, server_ids: list[str], provider_model_id: str) -> str:
         """Identity of the tool environment a run sees, plus the concrete provider model. Part of RunKey."""
         from harness_factory.hashing import content_hash
-        specs = {t.ref(s.id): t.model_dump(mode="json", exclude={"granted_by"} if t.granted_by is None else None)
-                 for s in self.servers if s.id in server_ids for t in s.tools}
+        specs = {t.ref(s.id): t.hashed() for s in self.servers if s.id in server_ids for t in s.tools}
         data = {"tools": specs, "provider_model_id": provider_model_id}
         remote = {s.id: f"{s.url}@{s.version}" for s in self.servers if s.id in server_ids and s.remote}
         if remote:                                   # only then, so local-only environments keep their hash

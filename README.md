@@ -156,6 +156,38 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
   a call the live run never made gets an error marked `infra: replay_miss` (the environment, excluded from Q). A
   new server version needs a new recording. Recordings hold answers only, never request headers.
 
+### Other agents as tools
+
+Another team's agent, exposed as a remote MCP server, is a tool like any other, with `agent:` on its spec (EXT-10,
+ADR 0005):
+
+```yaml
+- id: analyst
+  transport: streamable_http
+  url: https://analyst.internal.example/mcp
+  version: "3.2"
+  auth_env: ANALYST_MCP_TOKEN
+  tools:
+  - name: ask
+    side_effect: READ
+    risk: R1                      # declared like any tool: the policy and tier rules apply unchanged
+    timeout_s: 120
+    agent: {max_calls: 3, price_in: 0.5, price_out: 1.5}   # calls per run; reference USD per million tokens
+```
+
+- **It pays for what it uses.** Each answer must report the agent's own model usage in its result metadata:
+  `_meta["harness-factory/usage"] = {tokens_in, tokens_out, usd?, model?}`. The tokens go on the tool call's span
+  and count toward the run's `max_tokens` and its cost; `usd` (or, when absent, the reference rates) counts toward
+  C. `rec.cost.agent_calls / agent_tokens / agent_usd` say how much of the run's total was the agent's.
+- **No usage, no answer.** An answer without usage would be free work, so it is withheld and the call is marked
+  `infra: agent_usage_missing` (the environment, excluded from Q). An error without usage (the agent refused
+  before working) charges nothing.
+- **Bounded.** Calls past `max_calls` in one run (delegated helpers included) are refused and count as invalid in Q.
+- **Remote only, read-only.** An agent calls a model, which the offline sandbox can't reach, so agent tools must be
+  on a remote server, and remote tools are `READ` until test tenants exist. Record and replay work as above, usage
+  included, so a recorded agent's runs repeat offline at the same cost.
+- **Identity.** `max_calls` is part of `env_hash`; prices are not. Tools without `agent:` keep their hashes.
+
 ## Running in containers
 
 Two images, two Dockerfiles:

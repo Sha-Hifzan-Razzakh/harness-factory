@@ -13,7 +13,7 @@ from typing import Any
 import anyio
 
 from harness_factory.env.faults import FaultInjector
-from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
+from harness_factory.env.mcp.servers import USAGE_META, AgentTool, SideEffect, ToolCatalogFile
 from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import ToolResult
 from harness_factory.mcp.pool import MCPSessionPool
@@ -39,8 +39,12 @@ def tool_ref(model_tool_name: str) -> str:
 
 class ToolExecutor:
     def __init__(self, pool: MCPSessionPool, declared: ToolCatalogFile, allowed: set[str], policy: PolicySet,
-                 budget: BudgetGuard, tracer: Tracer, run_key: str, faults: FaultInjector | None = None) -> None:
+                 budget: BudgetGuard, tracer: Tracer, run_key: str, faults: FaultInjector | None = None,
+                 agent_calls: dict[str, int] | None = None) -> None:
+        """agent_calls: calls made so far to each agent tool. Shared with delegated helpers, so an agent tool's
+        max_calls is per run, not per helper."""
         self.faults = faults
+        self.agent_calls = agent_calls if agent_calls is not None else {}
         self.pool = pool
         self.declared = declared
         self.allowed = allowed
@@ -118,6 +122,10 @@ class ToolExecutor:
             self.violations.append(Violation(kind="policy_denied", detail=f"{ref} ({spec.side_effect.value})"))
             return ToolResult(text=f"Permission denied: {ref} is {spec.side_effect.value} and needs approval.",
                               is_error=True)
+        if spec.agent is not None and self.agent_calls.get(ref, 0) >= spec.agent.max_calls:
+            span.error = ErrorKind.TOOL_ERROR.value          # the harness's choice: counts as invalid in Q
+            return ToolResult(text=f"{ref} limit reached: at most {spec.agent.max_calls} calls per run.",
+                              is_error=True)
         if spec.side_effect != SideEffect.READ:
             span.attributes["idempotency_key"] = self.idempotency_key(ref, args)
         # Faults fire only on calls that passed every check above, so a refused call is never a "fault".
@@ -129,6 +137,9 @@ class ToolExecutor:
             return ToolResult(text=FaultInjector.message(fault, ref), is_error=True)
         if fault == "empty":
             return ToolResult(text="")
+        if spec.agent is not None:
+            self.agent_calls[ref] = self.agent_calls.get(ref, 0) + 1
+            span.attributes["agent_call"] = self.agent_calls[ref]
         try:
             with anyio.fail_after(spec.timeout_s):
                 result = await self.pool.call(ref, args)
@@ -144,9 +155,34 @@ class ToolExecutor:
         if result.infra:                                     # e.g. a replay with no recording of this call:
             span.error = ErrorKind.TOOL_ERROR.value          # the environment, excluded from Q
             span.attributes["infra"] = result.infra
+        elif spec.agent is not None:
+            result = self._meter(ref, spec.agent, result, span)
         if fault == "garbled":                               # it really ran; the answer came back cut off
             result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
         if len(result.text) > MAX_INLINE_CHARS:
             span.attributes["truncated_from"] = len(result.text)
             result = result.model_copy(update={"text": result.text[:MAX_INLINE_CHARS] + "\n[truncated]"})
+        return result
+
+    @staticmethod
+    def _meter(ref: str, agent: AgentTool, result: ToolResult, span) -> ToolResult:
+        """An agent tool's usage goes on its span: the tokens count toward the run's token budget and cost
+        (BudgetGuard.charge, CostLedger.add), the usd toward C. An answer without usage would be free work, so it is
+        withheld and marked as the environment's failure; an error without usage (a refusal before any work, e.g. a
+        ToolError) charges nothing."""
+        usage = (result.meta or {}).get(USAGE_META)
+        try:
+            tin, tout = int(usage["tokens_in"]), int(usage["tokens_out"])
+            if tin < 0 or tout < 0:
+                raise ValueError("negative token count")
+            usd = float(usage["usd"]) if usage.get("usd") is not None else agent.usd(tin, tout)
+        except (TypeError, KeyError, ValueError):
+            if result.is_error:
+                return result
+            span.error = ErrorKind.TOOL_ERROR.value
+            span.attributes["infra"] = "agent_usage_missing"
+            return ToolResult(text=f"{ref} answered without reporting its usage, so its answer can't be used.",
+                              is_error=True, infra="agent_usage_missing")
+        span.tokens_in, span.tokens_out = tin, tout
+        span.attributes.update(agent=True, usd=round(usd, 6), agent_model=str(usage.get("model") or "unknown"))
         return result

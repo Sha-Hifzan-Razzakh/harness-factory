@@ -36,7 +36,7 @@ every run relies on: a clean starting state, no network in the sandbox, and grad
 
 - Tests run a stand-in server (`tests/remote_kb_server.py`) on 127.0.0.1 behind a bearer token: live call, token kept
   out of records, opt-in, missing and wrong token, mid-run failure, cancellation while opening, freeze skipping.
-- Not yet: test tenants (remote side effects) and external agents as tools (EXT-10).
+- Not yet: test tenants (remote side effects). External agents as tools (EXT-10) build on this: ADR 0005.
 
 ## Addendum: record and replay (EXT-08)
 

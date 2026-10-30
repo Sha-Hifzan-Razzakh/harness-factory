@@ -61,6 +61,7 @@ class ToolResult(BaseModel):
     is_error: bool = False
     structured: Any = None
     infra: str | None = None             # set when the environment failed, not the model (e.g. replay_miss)
+    meta: dict[str, Any] | None = None   # the result's `_meta` (an agent tool reports its usage there, EXT-10)
 
 
 class MCPClient:
@@ -209,14 +210,16 @@ class MCPClient:
             if saved is None:                               # the run asked something the live run never did
                 return ToolResult(text=f"{self.spec.id}.{name} is unavailable right now (not in the recording).",
                                   is_error=True, infra="replay_miss")
-            return ToolResult(text=saved["text"], is_error=saved["is_error"], structured=saved.get("structured"))
+            return ToolResult(text=saved["text"], is_error=saved["is_error"], structured=saved.get("structured"),
+                              meta=saved.get("meta"))
         assert self._session is not None
         res = await self._session.call_tool(name, args)
         texts = [c.text for c in res.content if getattr(c, "type", "") == "text"]
         text = "\n".join(texts)
         if not text and res.structured_content is not None:
             text = json.dumps(res.structured_content)
-        result = ToolResult(text=text, is_error=bool(res.is_error), structured=res.structured_content)
+        result = ToolResult(text=text, is_error=bool(res.is_error), structured=res.structured_content,
+                            meta=dict(res.meta) if res.meta else None)
         if self.mode == "record":
             self.recording.save_call(name, args, result.model_dump(exclude={"infra"}))
         return result
