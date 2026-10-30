@@ -48,6 +48,16 @@ def _print_sinks(f) -> None:
         console.print(f"[yellow]mlflow   off: {t.disabled_reason}")
 
 
+def _projection_table(projection) -> Table:
+    t = Table("bucket", "runs", "requests", "tokens", "list $", "today", "days", "pacing", "estimated from",
+              title="projection (MOD-05): from history where it exists")
+    for p in projection:
+        src = ", ".join(f"{k} {v}" for k, v in sorted(p.sources.items(), key=lambda kv: -kv[1]))
+        t.add_row(p.bucket, str(p.runs), f"{p.requests:,}", f"{p.tokens:,}", f"{p.usd:.2f}",
+                  f"{p.runs_today}/{p.runs}", str(p.days), f"{p.pacing_min:.0f} min", src)
+    return t
+
+
 def _records_table(recs) -> Table:
     t = Table("task", "class", "recipe", "model", "faults", "status", "O", "Q", "E", "calls", "tools", "tokens")
     for r in recs:
@@ -181,6 +191,10 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
           faults: str | None = typer.Option(None, "--faults",
                                             help="fault profiles to add, comma-separated; 'none' = clean "
                                                  "(R needs both, e.g. none,first-call-fails)"),
+          deadline_days: int | None = typer.Option(None, "--deadline-days",
+                                                   help="refuse if the projection needs more days than this"),
+          budget_usd: float | None = typer.Option(None, "--budget-usd",
+                                                  help="refuse if the projected list-price cost exceeds this"),
           strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
     """Every task x recipe x model x seed on one provider, run in parallel and paced to the provider's limits.
     One recipe is the P0 gate; several compare shapes. Interrupted (Ctrl-C, quota)? Run it again with --resume."""
@@ -196,29 +210,33 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
         console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
                       f"{len(status.retry)}   new {len(status.new)}"
                       + ("" if resume else "   (without --resume every run executes again)"))
-    # Budget preflight (MOD-06): worst case = every remaining run uses every step, per quota bucket (the provider,
-    # or provider|model when its limits are per model). Refuse if any bucket cannot fit today.
-    worst: dict[str, int] = {}
-    for s in todo:
-        b = f.providers.bucket(s.provider, s.canonical_model)
-        worst[b] = worst.get(b, 0) + f.recipes[s.recipe_id].config.max_steps
+    # Preflight (MOD-05): project requests, tokens, dollars and days per quota bucket from history. A plan longer
+    # than today's quota is normal on free tiers; refuse only what can't work: a bucket already spent today, or a
+    # plan that misses the deadline or the budget.
+    from harness_factory.runner.projection import project
+    projection = project(f, todo)
+    console.print(_projection_table(projection))
     problems = []
-    for b, need in sorted(worst.items()):
-        left = f.ledger.remaining(b)["rpd"]
-        if dry_run:
-            console.print(f"preflight {b}: worst case {need} requests, {'no daily limit' if left is None else f'{left} left today'}")
-        if f.ledger.exhausted(b):
-            problems.append(f"{b}: today's quota is already spent (ledger: {settings.QUOTA_STATE.name})")
-        elif left is not None and need > left:
-            problems.append(f"{b}: worst case {need} requests > {left} left today")
+    for p in projection:
+        if f.ledger.exhausted(p.bucket):
+            problems.append(f"{p.bucket}: today's quota is already spent (ledger: {settings.QUOTA_STATE.name}); "
+                            f"run again with --resume after the reset (00:00 UTC)")
+        elif deadline_days is not None and p.days > deadline_days:
+            problems.append(f"{p.bucket}: needs about {p.days} days > --deadline-days {deadline_days}")
+    total_usd = sum(p.usd for p in projection)
+    if budget_usd is not None and total_usd > budget_usd:
+        problems.append(f"projected ${total_usd:.2f} at list prices > --budget-usd {budget_usd}")
     if dry_run:
         return
     if problems:
-        for p in problems:
-            console.print(f"[yellow]preflight: {p}")
-        console.print("[yellow]lower --seeds, pass fewer --models, or lower max_steps; or run what fits and --resume "
-                      "after the daily reset")
+        for msg in problems:
+            console.print(f"[yellow]preflight: {msg}")
         raise typer.Exit(code=2)
+    longer = [p for p in projection if p.days > 1]
+    if longer:
+        console.print("[yellow]" + "; ".join(f"{p.bucket}: today covers about {p.runs_today} of {p.runs} runs"
+                                             for p in longer)
+                      + ". The rest end INCOMPLETE; run the same command with --resume after the reset (00:00 UTC).")
     result = asyncio.run(run_campaign(f, specs, concurrency, resume=resume))
     recs = result.records
     if recs:

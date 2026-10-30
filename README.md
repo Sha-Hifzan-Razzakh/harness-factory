@@ -51,9 +51,17 @@ Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quo
   5xx errors, timeouts, connection errors and 429s are retried with backoff (honouring `Retry-After`, at most
   60 s; timeouts once). If they persist, the run ends INCOMPLETE. Time lost to quota waits, backoff and failed
   attempts is not charged to the run's wall-time budget.
-- **Preflight.** `smoke` refuses to start when the worst case (every run using every step) exceeds today's
-  remaining request limit in any bucket; `--dry-run` prints the worst case per bucket. On Groq, tokens per day
-  (200k per model) usually run out before requests: a V2 run on the 20 tasks averaged about 5k tokens in Phase 1.
+- **Projection and preflight (MOD-05).** Before a campaign, `smoke` prints a projection for each bucket:
+  requests, tokens, list-price dollars, how many runs today's quota covers, the days the plan needs, and the
+  minutes of pacing the per-minute limits impose.
+  - **Estimates come from history,** most specific first: same model, recipe and task; then same model and
+    recipe; then the same recipe on any model of the same provider kind; then a default per shape. Scripted
+    runs never stand in for real models. The "estimated from" column says which level was used.
+  - **A plan longer than today is normal** on free tiers: runs past today's quota end INCOMPLETE, and `--resume`
+    finishes them after the reset (00:00 UTC).
+  - **It refuses only what can't work:** a bucket already spent today, a plan needing more than
+    `--deadline-days`, or a cost above `--budget-usd`. `--dry-run` prints the projection and stops.
+  - **On Groq, tokens per day** (200k per model) run out before requests.
 - **Order.** Results come back in plan order, whatever the concurrency. A run that errors is reported with its
   spec and does not stop the others.
 
