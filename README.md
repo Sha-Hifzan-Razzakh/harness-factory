@@ -329,7 +329,19 @@ hfx select show     --model gpt-oss-120b --provider groq     # the pick per task
 hfx select freeze   --model gpt-oss-120b --provider groq     # content-addressed policy in var/policy/<id>.json
 hfx provision --task code-01 --model gpt-oss-120b --provider groq [--policy <id>]   # select, log, run
 hfx select evaluate --model gpt-oss-120b --provider groq     # held-out: selector vs global vs rules vs hand-picked
+hfx report --out docs/reports/phase-2.md                     # markdown report from the store (paired deltas)
 ```
+
+**Reports.** `hfx report` writes a markdown campaign report from the store. It has six sections:
+1. scope;
+2. status per recipe and model;
+3. each matrix recipe against its base, paired by task and model (mean ΔE, wins/losses/ties, bootstrap 95%
+   interval, and a verdict only when the interval excludes 0);
+4. the selector's picks;
+5. scored runs short of SUCCESS, grouped by how they failed;
+6. runs that weren't scored, by cause.
+
+The Phase 2 plan is in `docs/runbooks/phase-2.md`.
 
 How a decision is made, for one task class, model and provider:
 

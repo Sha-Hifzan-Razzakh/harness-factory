@@ -513,3 +513,24 @@ def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option
         console.print(_records_table(result.records))
     for e in result.errors:
         console.print(f"[red]error[/] {e.spec.recipe_id}: {e.error}")
+
+
+@app.command()
+def report(out: str | None = typer.Option(None, "--out", help="write markdown here (default: print)"),
+           models: str | None = typer.Option(None, "--models", help="comma-separated models (default: all)"),
+           baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id"),
+           title: str = typer.Option("Campaign report", "--title")) -> None:
+    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, selector picks,
+    failures and unscored runs."""
+    from pathlib import Path
+
+    from harness_factory.results.report import build_report
+    f = _factory()
+    rows, b = _evidence(f, baseline)
+    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None)
+    if out:
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        Path(out).write_text(text + "\n")
+        console.print(f"wrote {out}")
+    else:
+        print(text)
