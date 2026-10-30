@@ -543,3 +543,8 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
         console.print(f"wrote {out}")
     else:
         print(text)
+
+
+from harness_factory.cli.authoring import register as _register_authoring  # hfx new, hfx catalog
+
+_register_authoring(app)
