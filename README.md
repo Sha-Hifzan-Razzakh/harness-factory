@@ -688,6 +688,12 @@ Oracle checks, with weights summing to 1:
   `output_regex`. Regexes run with `re.MULTILINE`; add `(?s)` to match across lines. A check is refused at load
   time if it lacks the fields its kind needs or its regex doesn't compile.
 - `tool_called`: the answer must be grounded in a successful call.
+- **An answer check must refuse a hedge.** "It is 2, 3 or 4" must not pass a check for 3. Anchor the pattern on
+  `\A`, not `^`: with `re.MULTILINE`, a `^` lookahead is tried again at every line start, so "wrong\nright"
+  slips through. `scripts/taskgen/tasks.py` has the builders: `one_number` passes one number and no other,
+  except numbers the instruction uses; `one_of` passes one value and none of the others the seed offers.
+  `tests/test_task_traps.py` hedges every `output_regex` check's reference answer with each wrong answer from
+  the trap scripts, so a task with an answer check needs at least one wrong-answer trap.
 
 A check with `weight: 0, critical: true` is a **guard**: it earns nothing, but failing it zeroes the run. Use
 guards for "don't touch anything else", so a run that does nothing can't collect preservation credit.

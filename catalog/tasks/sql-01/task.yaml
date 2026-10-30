@@ -1,5 +1,5 @@
 id: sql-01
-version: 1
+version: 2
 domain: data
 instruction: How many customers are based in Dubai? Answer with the number.
 env_seed: {files: ../../seeds/base/files, sqlite: ../../seeds/base/db.sql}
@@ -12,6 +12,6 @@ tags: [sql, read, count]
 oracle:
   pass_threshold: 1.0
   checks:
-    - {id: answer, kind: output_regex, pattern: "(?<![\\d.])3(?![\\d.])", weight: 0.75}
+    - {id: answer, kind: output_regex, pattern: "(?s)\\A(?!.*(?<![\\w.,])(?!(?:3)(?![\\d]|[.,]\\d))\\d(?:[\\d,]*\\d)?(?:\\.\\d+)?)(?=.*(?<![\\d.,])(?:3)(?![\\d]|[.,]\\d))", weight: 0.75}
     - {id: grounded, kind: tool_called, pattern: "sql.query", weight: 0.25}
     - {id: data_unchanged, kind: sql_rows, query: "SELECT COUNT(*) FROM customers", rows: [[5]], weight: 0, critical: true}
