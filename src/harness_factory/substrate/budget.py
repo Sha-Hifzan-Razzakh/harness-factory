@@ -23,8 +23,13 @@ class BudgetGuard:
         elif span.kind == SpanKind.tool_call:
             self.used_tool_calls += 1
 
-    def exceeded_by(self) -> str | None:
-        if self.used_steps >= self.limits.max_steps:
+    def exceeded_by(self, before: str = "model_call") -> str | None:
+        """Which limit stops the next action, or None. `before` is "model_call" or "tool_call".
+
+        max_steps counts model calls, so it gates only the next model call: the tool calls a step asked for
+        still run. (Otherwise a step-capped run, e.g. V1 with max_steps 1, could never act on its last step.)
+        """
+        if before == "model_call" and self.used_steps >= self.limits.max_steps:
             return f"max_steps {self.limits.max_steps}"
         if self.used_tool_calls >= self.limits.max_tool_calls:
             return f"max_tool_calls {self.limits.max_tool_calls}"

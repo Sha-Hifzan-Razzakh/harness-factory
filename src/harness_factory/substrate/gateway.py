@@ -35,7 +35,7 @@ class Backend(Protocol):
                        provider: ProviderEntry, served: ServedModel) -> Completion: ...
 
 
-def _approx_tokens(obj: Any) -> int:
+def approx_tokens(obj: Any) -> int:
     return max(1, len(json.dumps(obj, default=str)) // 4)
 
 
@@ -56,7 +56,7 @@ class ScriptedBackend:
             msg = {"role": "assistant", "content": None, "tool_calls": calls}
         else:
             msg = {"role": "assistant", "content": turn["content"]}
-        return Completion(message=msg, tokens_in=_approx_tokens(messages), tokens_out=_approx_tokens(msg))
+        return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
 
 
 class LiteLLMBackend:

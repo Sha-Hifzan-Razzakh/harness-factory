@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
-from harness_factory.env.sandbox import LocalSandbox
+from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.observability.tracer import Tracer
@@ -24,11 +24,11 @@ from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import HarnessInstance
 from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind, HarnessError
-from harness_factory.substrate.gateway import Backend, ModelGateway, ScriptedBackend
+from harness_factory.substrate.gateway import Backend, ModelGateway
 from harness_factory.substrate.prompts import PromptAssembler
 from harness_factory.substrate.tools import ToolExecutor, model_name
 from harness_factory.tasks.model import Task
-from harness_factory.tasks.reference import load_reference, scripted_turns
+from harness_factory.tasks.reference import PlanBackend, load_reference
 
 _SE_ORDER = [SideEffect.READ, SideEffect.REVERSIBLE, SideEffect.IRREVERSIBLE]
 
@@ -61,7 +61,7 @@ def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend
     if provider_kind != "scripted":
         return None
     style = canonical_model.split("/", 1)[-1]
-    return ScriptedBackend(scripted_turns(load_reference(task), style))
+    return PlanBackend(load_reference(task), style)
 
 
 @dataclass
@@ -95,21 +95,25 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                            backend=backend or backend_for(provider.kind, canonical_model, task),
                            retries=recipe.config.retries, backoff_s=recipe.config.backoff_s)
 
-    sandbox = LocalSandbox(label=task.id)
+    sandbox = make_sandbox(label=task.id)
     try:
         sandbox.reset(task)
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
-        async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env()) as pool:
+        async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str())
-            messages = (assembler or PromptAssembler()).assemble(recipe, task, sorted(model_name(r) for r in allowed))
+            assembler = assembler or PromptAssembler()
+            messages = assembler.assemble(recipe, task, sorted(model_name(r) for r in allowed))
+            stage_prompts = assembler.stage_prompts(recipe, task)
             instance = HarnessInstance(
                 run_key=run_key, recipe=recipe, task=task, gateway=gateway, tools=tools, budget=budget,
-                tracer=tracer, messages=messages,
-                snapshot={"prompt_hash": PromptAssembler.prompt_hash(messages),
+                tracer=tracer, messages=messages, stage_prompts=stage_prompts,
+                snapshot={"prompt_hash": PromptAssembler.prompt_hash(
+                              messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,
-                          "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed)},
+                          "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
+                          **sandbox.describe()},
             )
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,
                               task_class=task_class(task, declared), weight_profile=weight_profile(task, declared))

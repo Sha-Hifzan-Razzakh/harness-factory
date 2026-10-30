@@ -1,0 +1,31 @@
+# Base V3 recipe: inspect (read-only) -> act -> verify (read-only), with one retry from verify back to act.
+id: v3-staged
+version: 1
+variant: V3_WORKFLOW_GRAPH
+headless: true
+tier: T2
+model_slots:
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 2048}
+tools:
+  tool_ids: ["fs.*", "sql.*"]
+  mcp_servers: [fs, sql]
+prompts: {system: system/default, task: task/default}
+config: {max_steps: 20, max_tool_calls: 25, max_tokens: 160000, wall_time_s: 400}
+policies:
+  permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}
+workflow:
+  stages:
+    - id: inspect
+      prompt: stage/inspect
+      tools: [fs.list_dir, fs.read_file, sql.list_tables, sql.describe_table, sql.query]
+      max_steps: 4
+    - id: act
+      prompt: stage/act
+      tools: ["*"]
+      max_steps: 6
+    - id: verify
+      prompt: stage/verify
+      tools: [fs.list_dir, fs.read_file, sql.list_tables, sql.describe_table, sql.query]
+      max_steps: 3
+  retry_from: act
+  max_retries: 1

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import harness_factory.shapes.builtin  # noqa: F401
 from harness_factory import settings
 from harness_factory.env.mcp.servers import ToolCatalogFile, load_tool_catalog
-from harness_factory.env.sandbox import LocalSandbox
+from harness_factory.env.sandbox import make_sandbox
 from harness_factory.env.state import StateInspector
 from harness_factory.grading.base import Grade, GradeContext, GradingPipeline, default_pipeline
 from harness_factory.mcp.pool import MCPSessionPool
@@ -135,12 +135,12 @@ async def run_reference(f: Factory, task: Task) -> Grade:
     """TSK-04: the reference plan must pass the task's own oracle."""
     ref = load_reference(task)
     servers = sorted({step["tool"].split(".")[0] for step in ref.plan}) or ["fs"]
-    with LocalSandbox(label=f"ref-{task.id}") as sb:
+    with make_sandbox(label=f"ref-{task.id}") as sb:
         sb.reset(task)
         insp = StateInspector(sb.workspace, sb.db_path)
         before = insp.capture()
         tracer = Tracer(f"reference|{task.key()}")
-        async with MCPSessionPool(f.declared, servers, sb.env()) as pool:
+        async with MCPSessionPool(f.declared, servers, sb.env(), sb.launch) as pool:
             for step in ref.plan:
                 with tracer.span(SpanKind.tool_call, step["tool"]) as span:
                     res = await pool.call(step["tool"], step["args"])
@@ -156,13 +156,15 @@ async def run_reference(f: Factory, task: Task) -> Grade:
         return f.graders.graders["state_diff"].grade(ctx)
 
 
-async def smoke(f: Factory, recipe_id: str, provider_id: str, models: list[str] | None = None,
+async def smoke(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
                 seeds: int = 1) -> list[EffectivenessRecord]:
-    recipe = f.recipes[recipe_id]
+    """Every task x recipe x model x seed. Several recipes make this a like-for-like shape comparison."""
+    recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     out = []
     for task in f.tasks.all():
-        for m in models:
-            for seed in range(seeds):
-                out.append(await run_one(f, task, recipe, m, provider_id, seed=seed))
+        for rid in recipe_ids:
+            for m in models:
+                for seed in range(seeds):
+                    out.append(await run_one(f, task, f.recipes[rid], m, provider_id, seed=seed))
     return out

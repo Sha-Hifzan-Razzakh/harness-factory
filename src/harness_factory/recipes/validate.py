@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from fnmatch import fnmatch
+
 from pydantic import BaseModel
 
 from harness_factory.env.mcp.servers import RISK_TO_TIER, TIER_ORDER, ToolCatalogFile
@@ -41,6 +43,21 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))
 
+    wf = recipe.workflow
+    if recipe.variant == Variant.V3_WORKFLOW_GRAPH and wf is None:
+        issues.append(ValidationIssue(rule="workflow_required", detail="V3_WORKFLOW_GRAPH needs a workflow"))
+    if recipe.variant != Variant.V3_WORKFLOW_GRAPH and wf is not None:
+        issues.append(ValidationIssue(rule="workflow_unused", detail=f"{recipe.variant.value} ignores workflow"))
+    if wf is not None:
+        reach = reachable_tools(recipe, declared)
+        for st in wf.stages:
+            if not prompts.exists(st.prompt):
+                issues.append(ValidationIssue(rule="prompt_exists", detail=f"stage {st.id}: prompt {st.prompt!r}"))
+            for pat in st.tools:
+                if not any(fnmatch(r, pat) for r in reach):
+                    issues.append(ValidationIssue(rule="stage_tool_resolves",
+                                                  detail=f"stage {st.id}: {pat!r} matches no reachable tool"))
+
     for ref in (recipe.prompts.system, recipe.prompts.task, recipe.prompts.operator):
         if ref and not prompts.exists(ref):
             issues.append(ValidationIssue(rule="prompt_exists", detail=f"prompt {ref!r} not found"))
@@ -51,7 +68,6 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
             issues.append(ValidationIssue(rule="server_declared", detail=f"MCP server {sid!r} not in tools.yaml"))
     refs = [t.ref(s.id) for s in declared.servers if s.id in recipe.tools.mcp_servers for t in s.tools]
     for pat in recipe.tools.tool_ids:
-        from fnmatch import fnmatch
         if not any(fnmatch(r, pat) for r in refs):
             issues.append(ValidationIssue(rule="tool_resolves", detail=f"pattern {pat!r} matches no declared tool"))
 

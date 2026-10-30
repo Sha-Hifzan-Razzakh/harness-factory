@@ -25,6 +25,7 @@ jobs:
     env:
       HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
       COLUMNS: "160"
+      HF_REQUIRE_DOCKER: "1"        # Docker isolation tests fail instead of skipping
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +50,16 @@ jobs:
 
       - name: P0 gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --models scripted/replay --strict
+
+      - name: V3 workflow gate (offline, scripted model)
+        run: uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict
+
+      - name: Docker sandbox gate (references + smoke inside containers)
+        env:
+          HF_SANDBOX: docker
+        run: |
+          uv run --no-sync hfx reference
+          uv run --no-sync hfx smoke --recipe v2-base,v3-staged --models scripted/replay --strict
 
       - name: Upload traces on failure
         if: failure()
