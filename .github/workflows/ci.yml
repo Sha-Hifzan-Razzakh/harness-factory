@@ -34,7 +34,7 @@ jobs:
           enable-cache: true
 
       - name: Install (locked)
-        run: uv sync --locked --extra dev --extra inspect --extra api --python ${{ matrix.python }}
+        run: uv sync --locked --extra dev --extra inspect --extra api --extra ui --python ${{ matrix.python }}
 
       - name: Lint
         run: uv run --no-sync ruff check src tests
