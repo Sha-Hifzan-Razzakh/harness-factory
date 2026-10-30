@@ -28,16 +28,40 @@ def _records_table(recs) -> Table:
     return t
 
 
+def _cells_table(baseline, cells, by_class: bool = True) -> Table:
+    cols = (["task class"] if by_class else []) + ["recipe", "model", "n", "success", "E0", "C", "E", "ci95 (E)",
+                                                     "tokens"]
+    t = Table(*cols, title=f"cost baseline {baseline.id} ({baseline.basis}, {baseline.note or 'saved'})")
+    for c in cells:
+        row = ([c.task_class] if by_class else []) + [
+            c.recipe_id, c.canonical_model, str(c.e.n), f"{c.e.pass_rate:.0%}", f"{c.mean_e0:.3f}",
+            f"{c.mean_c:.2f}", f"{c.e.mean:.3f}", f"[{c.e.ci95[0]:.3f}, {c.e.ci95[1]:.3f}]", str(c.tokens)]
+        t.add_row(*row)
+    return t
+
+
 def _summary_table(recs) -> Table:
-    """One row per recipe x model: the comparison the factory exists to make."""
-    groups: dict[tuple[str, str], list] = {}
-    for r in recs:
-        groups.setdefault((r.recipe_id, r.run_key.canonical_model), []).append(r)
-    t = Table("recipe", "model", "success", "mean E", "model calls", "tokens")
+    """One row per recipe x model, cost-adjusted against these runs: the comparison the factory exists to make.
+
+    Each run is scored against its own task's median (and its own class's weights), then pooled across tasks.
+    """
+    from harness_factory.results.cost import CostBaseline
+    from harness_factory.results.store import record_row
+
+    rows = [record_row(r) for r in recs]
+    baseline = CostBaseline.from_rows(rows, note="these runs")
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["recipe_id"], r["canonical_model"]), []).append(r)
+    t = Table("recipe", "model", "success", "E0", "C", "E", "model calls", "tokens",
+              title=f"cost-adjusted against these runs ({baseline.basis})")
     for (rid, m), rs in groups.items():
-        ok = sum(r.status.value == "SUCCESS" for r in rs)
-        t.add_row(rid, m, f"{ok}/{len(rs)}", f"{sum(r.composite for r in rs) / len(rs):.3f}",
-                  str(sum(r.cost.model_calls for r in rs)), str(sum(r.cost.tokens_in + r.cost.tokens_out for r in rs)))
+        n = len(rs)
+        t.add_row(rid, m, f"{sum(r['status'] == 'SUCCESS' for r in rs)}/{n}",
+                  f"{sum(r['composite'] for r in rs) / n:.3f}",
+                  f"{sum(baseline.c(r) or 0.0 for r in rs) / n:.2f}",
+                  f"{sum(baseline.adjusted(r) for r in rs) / n:.3f}",
+                  str(sum(r["model_calls"] for r in rs)), str(sum(r["tokens_in"] + r["tokens_out"] for r in rs)))
     return t
 
 
@@ -124,21 +148,62 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
 
 
 @app.command()
-def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option(False, "--cells")) -> None:
-    """Show recent runs, or per-cell aggregates with --cells."""
+def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option(False, "--cells"),
+            baseline: str | None = typer.Option(None, "--baseline",
+                                                help="saved baseline id, or 'latest'; default: live")) -> None:
+    """Show recent runs, or per-cell cost-adjusted aggregates with --cells."""
     from harness_factory.results.store import ResultsStore
     store = ResultsStore()
     if cells:
-        t = Table("recipe", "model", "task class", "n", "mean E", "ci95", "pass rate")
-        for rid, m, a in store.aggregate():
-            t.add_row(rid, m, a.cell_id.rsplit("|", 2)[0], str(a.n), f"{a.mean:.3f}",
-                      f"[{a.ci95[0]:.3f}, {a.ci95[1]:.3f}]", f"{a.pass_rate:.0%}")
-        console.print(t)
+        chosen = None
+        if baseline == "latest":
+            saved = store.list_baselines()
+            if not saved:
+                console.print("[red]no saved baseline; run `hfx baseline save` first")
+                raise typer.Exit(code=1)
+            chosen = saved[-1]
+        elif baseline:
+            chosen = store.get_baseline(baseline)
+            if chosen is None:
+                console.print(f"[red]no baseline {baseline!r}")
+                raise typer.Exit(code=1)
+        used, result = store.aggregate(chosen)
+        console.print(_cells_table(used, result))
+        missing = sorted({r["task_version"] for r in store.rows()} - set(used.medians))
+        if missing:
+            console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
         return
-    t = Table("id", "task", "model", "status", "E", "tools", "created")
+    t = Table("id", "task", "recipe", "model", "status", "E0", "tools", "created")
     for r in store.recent(limit):
-        t.add_row(str(r["id"]), r["task_version"], r["canonical_model"], r["status"], f"{r['composite']:.3f}",
-                  str(r["tool_calls"]), r["created_at"].strftime("%H:%M:%S"))
+        t.add_row(str(r["id"]), r["task_version"], r["recipe_id"], r["canonical_model"], r["status"],
+                  f"{r['composite']:.3f}", str(r["tool_calls"]), r["created_at"].strftime("%H:%M:%S"))
+    console.print(t)
+
+
+baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")
+app.add_typer(baseline_app, name="baseline")
+
+
+@baseline_app.command("save")
+def baseline_save(note: str = typer.Option("", "--note")) -> None:
+    """Freeze the live baseline (current per-task medians) so later runs are scored against fixed numbers."""
+    from harness_factory.results.store import ResultsStore
+    store = ResultsStore()
+    b = store.live_baseline()
+    b.note = note
+    if not b.medians:
+        console.print("[red]no runs in the store yet")
+        raise typer.Exit(code=1)
+    console.print(f"saved baseline {store.save_baseline(b)} ({b.basis}, {len(b.medians)} tasks)")
+
+
+@baseline_app.command("list")
+def baseline_list() -> None:
+    """Saved baselines, oldest first."""
+    from harness_factory.results.store import ResultsStore
+    t = Table("id", "basis", "tasks", "note", "created")
+    for b in ResultsStore().list_baselines():
+        t.add_row(b.id, b.basis, str(len(b.medians)), b.note, b.created_at.strftime("%Y-%m-%d %H:%M"))
     console.print(t)
 
 

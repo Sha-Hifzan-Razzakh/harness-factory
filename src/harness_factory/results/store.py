@@ -6,6 +6,7 @@ import json
 from collections import defaultdict
 from datetime import UTC, datetime
 
+from pydantic import BaseModel
 from sqlalchemy import (
     JSON,
     Column,
@@ -21,6 +22,7 @@ from sqlalchemy import (
 )
 
 from harness_factory import settings
+from harness_factory.results.cost import CostBaseline
 from harness_factory.results.model import CellAggregate, EffectivenessRecord
 from harness_factory.shapes.result import RunStatus
 
@@ -54,6 +56,62 @@ runs = Table(
     Column("created_at", DateTime, nullable=False),
 )
 
+cost_baselines = Table(
+    "cost_baselines", metadata,
+    Column("id", String(12), primary_key=True),          # content hash of basis + medians
+    Column("basis", String, nullable=False),
+    Column("medians", JSON, nullable=False),
+    Column("counts", JSON, nullable=False),
+    Column("note", String, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+)
+
+
+def record_row(rec: EffectivenessRecord) -> dict:
+    """One EffectivenessRecord as a results-store row. `composite` is E0: the score before cost."""
+    k = rec.run_key
+    return dict(
+        run_key=k.as_str(), run_short=k.short(), task_version=k.task_version, task_class=rec.task_class,
+        recipe_id=rec.recipe_id, recipe_hash=k.recipe_hash, canonical_model=k.canonical_model,
+        provider=k.provider, seed=k.seed, status=rec.status.value, outcome=rec.scores.outcome,
+        trajectory=rec.scores.trajectory, composite=rec.composite, tokens_in=rec.cost.tokens_in,
+        tokens_out=rec.cost.tokens_out, model_calls=rec.cost.model_calls, tool_calls=rec.cost.tool_calls,
+        wall_s=rec.cost.wall_s, usd=rec.cost.usd,
+        violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
+        grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
+        created_at=datetime.now(UTC),
+    )
+
+
+class CellResult(BaseModel):
+    """One cell (task class x recipe x model), scored against a cost baseline."""
+    task_class: str
+    recipe_id: str
+    recipe_hash: str
+    canonical_model: str
+    e: CellAggregate                  # cost-adjusted E: mean, spread, ci95, pass rate
+    mean_e0: float                    # before cost
+    mean_c: float                     # efficiency penalty input, 0..1
+    tokens: int
+    usd: float
+
+
+def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
+    groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    for r in rows:
+        groups[(r["task_class"], r["recipe_hash"], r["canonical_model"])].append(r)
+    out = []
+    for (tc, rh, m), rs in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2])):
+        adjusted = [baseline.adjusted(r) for r in rs]
+        out.append(CellResult(
+            task_class=tc, recipe_id=rs[0]["recipe_id"], recipe_hash=rh, canonical_model=m,
+            e=CellAggregate.from_values(f"{tc}|{rh}|{m}", adjusted, [r["status"] == RunStatus.SUCCESS.value
+                                                                      for r in rs]),
+            mean_e0=sum(r["composite"] for r in rs) / len(rs),
+            mean_c=sum(baseline.c(r) or 0.0 for r in rs) / len(rs),
+            tokens=sum(r["tokens_in"] + r["tokens_out"] for r in rs), usd=sum(r["usd"] for r in rs)))
+    return out
+
 
 class ResultsStore:
     def __init__(self, url: str | None = None) -> None:
@@ -62,35 +120,46 @@ class ResultsStore:
         metadata.create_all(self.engine)
 
     def add(self, rec: EffectivenessRecord) -> int:
-        k = rec.run_key
-        row = dict(
-            run_key=k.as_str(), run_short=k.short(), task_version=k.task_version, task_class=rec.task_class,
-            recipe_id=rec.recipe_id, recipe_hash=k.recipe_hash, canonical_model=k.canonical_model,
-            provider=k.provider, seed=k.seed, status=rec.status.value, outcome=rec.scores.outcome,
-            trajectory=rec.scores.trajectory, composite=rec.composite, tokens_in=rec.cost.tokens_in,
-            tokens_out=rec.cost.tokens_out, model_calls=rec.cost.model_calls, tool_calls=rec.cost.tool_calls,
-            wall_s=rec.cost.wall_s, usd=rec.cost.usd,
-            violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
-            grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
-            created_at=datetime.now(UTC),
-        )
         with self.engine.begin() as c:
-            return c.execute(insert(runs).values(**row)).inserted_primary_key[0]
+            return c.execute(insert(runs).values(**record_row(rec))).inserted_primary_key[0]
 
     def recent(self, limit: int = 50) -> list[dict]:
         with self.engine.connect() as c:
             rows = c.execute(select(runs).order_by(runs.c.id.desc()).limit(limit)).mappings().all()
         return [dict(r) for r in rows]
 
-    def aggregate(self) -> list[tuple[str, str, CellAggregate]]:
-        """Per cell (task class x recipe x model): mean composite, spread, bootstrap CI, pass rate."""
-        groups: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    def rows(self) -> list[dict]:
         with self.engine.connect() as c:
-            for r in c.execute(select(runs)).mappings():
-                groups[(r["task_class"], r["recipe_hash"], r["canonical_model"])].append(dict(r))
-        out = []
-        for (tc, rh, m), rows in sorted(groups.items()):
-            agg = CellAggregate.from_values(f"{tc}|{rh}|{m}", [r["composite"] for r in rows],
-                                            [r["status"] == RunStatus.SUCCESS.value for r in rows])
-            out.append((rows[0]["recipe_id"], m, agg))
-        return out
+            return [dict(r) for r in c.execute(select(runs).order_by(runs.c.id)).mappings()]
+
+    def live_baseline(self) -> CostBaseline:
+        return CostBaseline.from_rows(self.rows(), note="live")
+
+    def save_baseline(self, baseline: CostBaseline) -> str:
+        """Freeze a baseline. Idempotent: the id is a content hash, so saving the same medians twice is a no-op."""
+        if self.get_baseline(baseline.id) is None:
+            with self.engine.begin() as c:
+                c.execute(insert(cost_baselines).values(
+                    id=baseline.id, basis=baseline.basis, medians=baseline.medians, counts=baseline.counts,
+                    note=baseline.note, created_at=baseline.created_at))
+        return baseline.id
+
+    def get_baseline(self, baseline_id: str) -> CostBaseline | None:
+        with self.engine.connect() as c:
+            r = c.execute(select(cost_baselines).where(cost_baselines.c.id == baseline_id)).mappings().first()
+        if r is None:
+            return None
+        return CostBaseline(basis=r["basis"], medians=r["medians"], counts=r["counts"], note=r["note"],
+                            created_at=r["created_at"])
+
+    def list_baselines(self) -> list[CostBaseline]:
+        with self.engine.connect() as c:
+            rs = c.execute(select(cost_baselines).order_by(cost_baselines.c.created_at)).mappings().all()
+        return [CostBaseline(basis=r["basis"], medians=r["medians"], counts=r["counts"], note=r["note"],
+                             created_at=r["created_at"]) for r in rs]
+
+    def aggregate(self, baseline: CostBaseline | None = None) -> tuple[CostBaseline, list[CellResult]]:
+        """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used."""
+        rows = self.rows()
+        baseline = baseline or CostBaseline.from_rows(rows, note="live")
+        return baseline, aggregate_rows(rows, baseline)

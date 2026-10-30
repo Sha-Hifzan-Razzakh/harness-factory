@@ -36,7 +36,9 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   comparisons with older results, so call it out in the PR. A new optional recipe field goes in
   `_HASH_OMIT_WHEN_NONE` (`recipes/model.py`) so existing recipe hashes do not change.
 - **Scoring.** Changes to `ScoreWeights.composite`, oracle semantics or run status logic change every number in
-  the results store. Call them out in the PR and update the requirements doc.
+  the results store. Call them out in the PR and update the requirements doc. The store's `composite` column is
+  E₀ (before cost). The final E is computed at aggregation against a cost baseline (`results/cost.py`); never
+  bake C into a stored run, because it is relative to other runs.
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **Isolation.** Every run gets a fresh sandbox. Nothing may read or write outside `HF_WORKSPACE` / `HF_DB`.

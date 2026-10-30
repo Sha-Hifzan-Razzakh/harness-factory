@@ -38,12 +38,12 @@ def test_factory_runs_as_inspect_eval(tmp_path, monkeypatch):
                          epochs=2, log_dir=str(tmp_path / "logs"), display="none")
     assert log.status == "success" and len(log.samples) == 4
     metrics = {s.name: {k: v.value for k, v in s.metrics.items()} for s in log.results.scores}
-    assert metrics["composite"]["mean"] == pytest.approx(1.0)
+    assert metrics["e0"]["mean"] == pytest.approx(1.0)
     assert metrics["success"]["mean"] == pytest.approx(1.0)
 
     sample = next(s for s in log.samples if s.id == "fs-02" and s.epoch == 2)
     score = sample.scores["effectiveness"]
-    assert score.answer == "SUCCESS" and score.value["composite"] == 1.0
+    assert score.answer == "SUCCESS" and score.value["e0"] == 1.0
     assert score.metadata["run_key"]["seed"] == 1                   # epoch 2 -> seed 1
     called = [c.function for m in sample.messages for c in (getattr(m, "tool_calls", None) or [])]
     assert called == ["fs.read_file", "fs.write_file"]              # full transcript in the Inspect log

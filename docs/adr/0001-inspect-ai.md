@@ -22,8 +22,8 @@ inspect view
 | Check | Result |
 |---|---|
 | Dependency compatibility | `inspect-ai 0.3.285` and `mcp 2.3.0` resolve together; no conflict |
-| Runs end to end | `v3-staged`, 5 tasks × 2 epochs: 10/10 samples, composite mean 1.00; Inspect's own model called 0 times |
-| Grades preserved | Each sample's score is the factory's EffectivenessRecord (composite, O, Q, status, failed checks, violations); nothing is re-graded |
+| Runs end to end | `v3-staged`, 5 tasks × 2 epochs: 10/10 samples, E₀ mean 1.00; Inspect's own model called 0 times |
+| Grades preserved | Each sample's score is the factory's EffectivenessRecord (E₀, O, Q, status, failed checks, violations); nothing is re-graded. Cost-adjusted E needs a baseline across runs, so it stays in `hfx results --cells` |
 | Transcripts | The full transcript (stage prompts, tool calls with arguments, tool results) appears in the Inspect log and viewer |
 | Seeds | Inspect epoch *n* maps to factory seed *n − 1*; RunKeys and results-store rows are correct |
 | Results store | Still authoritative: all 10 runs written with their RunKeys |
