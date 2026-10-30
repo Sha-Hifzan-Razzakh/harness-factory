@@ -88,3 +88,9 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 ## Git
 
 Branch from `main` (`feat/…`, `fix/…`, `ci/…`), one concern per PR, CI green before merge.
+
+## Parallel sessions
+
+More than one session may be working on this repo. Before opening a PR, claiming an ADR number or editing a
+shared file, read `docs/coordination/sessions.md` and follow its rules: claim PR numbers with a draft PR and a
+ledger row, label PRs `session:<name>`, and never touch another session's branch or PR.
