@@ -31,11 +31,12 @@ UPDATE = typer.Option(False, "--update", help="replace an existing item instead 
 
 
 def register(app: typer.Typer) -> None:
-    """hfx new, hfx catalog and hfx serve (the API over the same service)."""
-    from harness_factory.cli.serve import serve
+    """hfx new, hfx catalog, hfx serve (the API over the same service) and hfx ui (the UI over the API)."""
+    from harness_factory.cli.serve import serve, ui
     app.add_typer(new_app, name="new")
     app.add_typer(catalog_app, name="catalog")
     app.command("serve")(serve)
+    app.command("ui")(ui)
 
 
 def _service() -> AuthoringService:
