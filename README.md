@@ -4,7 +4,7 @@ Builds agent harnesses from declarative recipes, runs them against versioned tas
 environment, and records an effectiveness score per (task class × recipe × model). Requirements: *Harness Factory —
 Requirements v1*. Design: *Harness Factory UML*.
 
-Status: **P0 done, P1 in progress.** Four harness shapes (V1 single call, V2 tool loop, V3 workflow graph, V4 planner) run
+Status: **P0 done, P1 in progress.** Five harness shapes (V1 single call, V2 tool loop, V3 workflow graph, V4 planner, V5 orchestrator) run
 end to end over real MCP servers, and every run is graded, traced and stored.
 
 ## Quickstart
@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 23 tasks and their class keys (3 held out)
+hfx tasks                 # 31 tasks and their class keys (6 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -334,7 +334,7 @@ src/harness_factory/
   env/                    LocalSandbox, StateInspector, MCP servers (impl/)         (B1, B11)
   recipes/                HarnessRecipe, validator                                  (B2)
   substrate/              ModelGateway, ToolExecutor, BudgetGuard, prompts          (B3)
-  shapes/                 Harness protocol, ShapeRegistry, V1 / V2 / V3 / V4 shapes (B4)
+  shapes/                 Harness protocol, ShapeRegistry, V1 to V5 shapes          (B4)
   provision/              Provisioner, task class key                               (B5)
   providers/              ProviderCatalog, QuotaLedger                              (B6)
   runner/                 RunKey, CostLedger, run_one / run_reference / smoke       (B7)
@@ -356,6 +356,7 @@ differ only in control flow.
 | V1 single call | `v1-base` | One model response; its tool calls run; nothing follows | single-step writes, cheaply | anything that must read before acting or answering |
 | V2 tool loop | `v2-base` | Model calls tools until it answers (LangGraph `call_model ⇄ run_tools`) | general tasks | over-spending on easy tasks |
 | V3 workflow graph | `v3-staged` | Stages from the recipe, each a bounded tool loop with its own tools: inspect (read-only), act, verify (read-only); verify can reply `RETRY:` to go back to act once | tasks where acting before inspecting is costly | cost: more model calls per task |
+| V5 orchestrator | `v5-orchestrator` | V4's plan and replan, but each step goes to a worker agent (a delegate call to `v2-base`) that starts from a fresh conversation holding only the task, earlier workers' reports and its part; the orchestrator calls no tools | long tasks whose steps don't need each other's details; keeps each context small | steps that need what an earlier step saw, not just its one-line report |
 | V4 planner | `v4-planner` | The planner slot writes a numbered plan from the task and the tool list (no tool calls); the executor runs it one step at a time, each step a bounded tool loop; a step that replies `BLOCKED:` sends the remaining work back to the planner once | long known-path tasks a model loses track of | tasks whose path only shows up while working; cost: the plan and step prompts |
 
 V3 stage tools are enforced: a write attempted in a read-only stage is refused and recorded as a
@@ -369,17 +370,27 @@ each step's result are in `snapshot.plans` and `snapshot.plan_trail`. A plan lon
 tail merged into the last step, an unnumbered plan becomes one step (`plan_unparsed`), and a step past its cap is
 ended like a V3 stage (`step_cap`). See ADR 0007.
 
-Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks, cost baseline over these four recipes):
+A V5 recipe declares `planning:` with a `worker_prompt` (`prompts/plan/worker.j2`) and a `delegation:` (the worker
+recipe, with `max_calls` covering every step of every plan). Workers are the delegate machinery: same sandbox, same
+gateway, a grant that is a subset of the orchestrator's, a budget capped by what the run has left and charged back
+to it. A worker that replies `BLOCKED:` or stops early triggers the replan. Each worker is a `delegate.run` span with
+scope `step:<n>`; its conversation is in `snapshot.delegations`. See ADR 0008.
+
+Offline comparison (`scripted/replay`, the 25 DEV + TEST tasks, cost baseline over these five recipes; tokens are
+the total over all 25 runs):
 
 | Recipe | Success | E₀ | C | E | Tokens |
 |---|---|---|---|---|---|
-| `v1-base` | 1/20 (fs-01 only) | 0.100 | 0.051 | 0.095 | ~4,500 |
-| `v2-base` | 20/20 | 1.000 | 0.236 | 0.958 | ~28,000 |
-| `v3-staged` | 20/20 | 1.000 | 0.568 | 0.896 | ~62,000 |
-| `v4-planner` | 20/20 | 1.000 | 0.644 | 0.888 | ~81,000 |
+| `v1-base` | 1/25 (fs-01 only) | 0.090 | 0.052 | 0.085 | ~5,700 |
+| `v2-base` | 25/25 | 1.000 | 0.263 | 0.954 | ~41,000 |
+| `v3-staged` | 25/25 | 1.000 | 0.611 | 0.889 | ~86,000 |
+| `v4-planner` | 25/25 | 1.000 | 0.720 | 0.876 | ~120,000 |
+| `v5-orchestrator` | 25/25 | 1.000 | 0.445 | 0.920 | ~64,000 |
 
-V2, V3 and V4 tie on E₀; efficiency C separates them (see *Cost and efficiency*). Offline, the scripted model never
-loses track, so planning can only cost; whether it pays with real models on longer tasks is a Phase 2 question.
+V2 to V5 tie on E₀; efficiency C separates them (see *Cost and efficiency*). V5 costs less than V4 with the same
+plan because each worker starts from a short conversation, where V4's executor carries every step's history.
+Offline, the scripted model never loses track, so planning can only cost; whether it pays with real models on longer
+tasks is a Phase 2 question.
 
 ## Recipe matrix
 
@@ -413,9 +424,10 @@ the recipe's skills in the run's state folder, outside the workspace: the model 
 `skills.load` and can't change them. `skills.load` is granted to every task (`granted_by: []`) because it reads
 harness material, nothing from the task's world.
 
-> **Caveat:** these skills were written by the same author as the tasks, held-out ones included. Skill gains on
-> this catalog are an upper bound. Tasks written later, by an author who hasn't seen the skills, give the honest
-> estimate.
+> **Caveat:** these skills were written by the same author as task batches 1 and 2, held-out ones included, so
+> skill gains on those tasks are an upper bound. Batch 3 (`b3-*`, tag `batch-3`) was written by an author who never
+> saw the skills, recipes, prompts or shapes; measure skills on it for the honest estimate, in a store of its own:
+> `HF_VAR=var/batch3 hfx smoke --tag batch-3 --recipe v2-base,v2-skills-upfront,v2-skills-on-demand --models <m>`.
 
 **New tools without task edits.** A task's `allowed_tools` decides what a run may call, and editing every task
 would change every task hash. A READ tool that reveals nothing beyond other tools declares them instead:
@@ -641,7 +653,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-23 tasks over three seeds. The first five are the P0 smoke set. The other eighteen each hide a trap that a
+31 tasks over four seeds. The first five are the P0 smoke set. The other twenty-six each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -665,6 +677,18 @@ careless harness falls into: the right answer and the plausible wrong one differ
 | `docs-02` | unknown path, reversible, R1 | HELD_OUT | The new port is prod's, not the base default or staging's |
 | `code-01` | unknown path, reversible, R1 | TEST | Version bump; a dependency is pinned at the same version number |
 | `res-01` | unknown path, read, R0 | TEST | Backups per environment: env files override the base default |
+| `b3-01` | known path, read, R0 | TEST | Cash collected in October: failed attempts, an Oct 31 evening payment, the internal tenant, invoice month vs payment date |
+| `b3-02` | unknown path, read, R0 | HELD_OUT | Accounts over their seat allowance: add-on seats, the month's peak, "at" vs "over", a suspended account |
+| `b3-03` | known path, reversible, R2 | TEST | Mark past-due invoices overdue: credit notes, failed payments, due today, drafts and voids |
+| `b3-04` | unknown path, reversible, R2 | TEST | A ticket asks for a downgrade now and a refund; the billing policy says schedule it and no credit note |
+| `b3-05` | unknown path, reversible, R1 | HELD_OUT | Add an EU dunning retry: the EU file has its own list, and `max_attempts` must match |
+| `b3-06` | unknown path, reversible, R1 | TEST | Sync the API doc with the routes: a commented-out route, an internal one, a method that changed |
+| `b3-07` | known path, reversible, R1 | TEST | Raise the late fee; the early-payment discount has the same number, and the floor test changes too |
+| `b3-08` | known path, reversible, R2 | HELD_OUT | Outage credit notes: one account already credited by hand, a draft invoice, a suspended account |
+
+**Batch 3** (`b3-*`, seed `billing`: a B2B SaaS billing world dated 2026-11-02) was written by an independent author
+who did not see the skills, recipes, prompts or shapes, so it is the fair set for judging them. The batch has 31 trap
+scripts in `tests/test_task_traps.py`. `--tag batch-3` restricts `hfx smoke` to it.
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
@@ -713,7 +737,6 @@ These prove the factory measures differences before any API budget is spent.
 
 ## Not in P0
 
-- **P1:** V5 orchestrator shape (a delegate tool for any shape exists: `delegation`; V4 is built).
 - **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis);
   cross-provider equivalence calibration (then cells can pool providers).
 - **Known limits:**

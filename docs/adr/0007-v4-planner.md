@@ -43,4 +43,4 @@ flow.
   planning can only cost.
 - The scripted models plan from the reference when called in the planner slot and run one plan step per V4 step
   (`tasks/reference.py`), so every scripted style exercises V4 without a real model.
-- V5 can reuse the step loop: an orchestrator is a planner whose steps are delegate calls.
+- V5 reuses the planner (`shapes.v4.Planner`): an orchestrator is a planner whose steps are delegate calls (ADR 0008).

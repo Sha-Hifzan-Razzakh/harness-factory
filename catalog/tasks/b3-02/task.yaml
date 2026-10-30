@@ -1,0 +1,43 @@
+id: b3-02
+version: 1
+domain: research
+instruction: Which accounts were over their seat allowance in October 2026, according to our seat policy in docs/?
+  Answer with the account names only, comma-separated.
+env_seed:
+  files: ../../seeds/billing/files
+  sqlite: ../../seeds/billing/db.sql
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- batch-3
+- sql
+- fs
+- read
+- policy
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: '(?is)^(?=.*\bTidewater Retail\b)(?=.*\bCopperleaf Studio\b)(?!.*\b(?:Qasr|Bluefin|Northgate|Saffron|Ironbridge|Mirage|Atlas|Juniper|Helix|Ledgerline|Sales Demo|Palmyra)\b)'
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: sql.query
+  - id: usage_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM seat_usage
+    rows:
+    - - 69

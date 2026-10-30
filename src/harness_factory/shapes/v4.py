@@ -48,6 +48,51 @@ def planner_slot(inst: HarnessInstance) -> ModelSlot:
     return planner.model_copy(update={"canonical_model": executor.canonical_model, "seed": executor.seed})
 
 
+class Planner:
+    """The planner side of V4 and V5: one system prompt (the task's tools, by name and description), a plan call and
+    replan calls, each a model turn of the planner slot with no tools offered."""
+
+    def __init__(self, inst: HarnessInstance, tools: list[dict[str, Any]]) -> None:
+        self.inst = inst
+        self.pl = inst.recipe.planning
+        self.slot = planner_slot(inst)
+        self.system = inst.prompts.render(self.pl.planner_prompt, max_steps=self.pl.max_plan_steps,
+                                          tools=[{"name": t["function"]["name"],
+                                                  "description": t["function"]["description"]} for t in tools])
+        self.task_messages = [m for m in inst.messages if m.get("role") != "system"]
+        inst.snapshot["planner_prompt_hash"] = content_hash([self.system])
+        inst.snapshot["plans"] = []
+
+    async def plan(self) -> tuple[list[str] | None, dict]:
+        return await self._ask([], "plan")
+
+    async def replan(self, done: list[dict[str, str]], blocked: dict[str, str]) -> tuple[list[str] | None, dict]:
+        text = self.inst.prompts.render(self.pl.replan_prompt, done=done, blocked=blocked,
+                                        max_steps=self.pl.max_plan_steps)
+        return await self._ask([{"role": "user", "content": text}], "replan")
+
+    def current(self) -> list[str]:
+        return self.inst.snapshot["plans"][-1]["steps"]
+
+    async def _ask(self, extra: list[dict[str, Any]], kind: str) -> tuple[list[str] | None, dict]:
+        """Returns (steps, state update); steps is None when the run stops."""
+        inst = self.inst
+        with inst.tracer.span(SpanKind.handoff, kind, slot=self.slot.role):
+            pass
+        turn = await model_turn(inst, self.slot, [{"role": "system", "content": self.system}, *self.task_messages,
+                                                  *extra], [])
+        if turn.stop:
+            return None, {"stop": turn.stop, "error": turn.error}
+        text = (turn.message or {}).get("content") or ""
+        steps = parse_plan(text, self.pl.max_plan_steps)
+        if not steps:
+            # Nothing numbered: carry on with the whole task as one step, and record it.
+            inst.tools.violations.append(Violation(kind="plan_unparsed", detail=text[:200]))
+            steps = ["Complete the task."]
+        inst.snapshot["plans"].append({"kind": kind, "steps": steps})
+        return steps, {}
+
+
 class PlanState(TypedDict):
     messages: list[dict[str, Any]]     # the executor's conversation
     steps: list[str]                   # the current plan's steps not yet run (the head is running)
@@ -70,34 +115,13 @@ class PlannerShape:
         pl = inst.recipe.planning
         assert pl is not None, "V4 recipe without planning (the validator should have refused it)"
         assert inst.prompts is not None, "V4 needs the prompt registry on the instance"
-        executor, planner = inst.recipe.model_slots["executor"], planner_slot(inst)
+        executor = inst.recipe.model_slots["executor"]
         tools = offered_tools(inst)
         names = [t["function"]["name"] for t in tools]
-        system = inst.prompts.render(pl.planner_prompt, max_steps=pl.max_plan_steps,
-                                     tools=[{"name": t["function"]["name"], "description": t["function"]["description"]}
-                                            for t in tools])
-        task_messages = [m for m in inst.messages if m.get("role") != "system"]
-        inst.snapshot["planner_prompt_hash"] = content_hash([system])
-        inst.snapshot["plans"] = []
-
-        async def ask_planner(extra: list[dict[str, Any]], kind: str) -> tuple[list[str] | None, dict]:
-            """One planner call. Returns (steps, state update); steps is None when the run stops."""
-            with inst.tracer.span(SpanKind.handoff, kind, slot=planner.role):
-                pass
-            turn = await model_turn(inst, planner, [{"role": "system", "content": system}, *task_messages, *extra], [])
-            if turn.stop:
-                return None, {"stop": turn.stop, "error": turn.error}
-            text = (turn.message or {}).get("content") or ""
-            steps = parse_plan(text, pl.max_plan_steps)
-            if not steps:
-                # Nothing numbered: carry on with the whole task as one step, and record it.
-                inst.tools.violations.append(Violation(kind="plan_unparsed", detail=text[:200]))
-                steps = ["Complete the task."]
-            inst.snapshot["plans"].append({"kind": kind, "steps": steps})
-            return steps, {}
+        planner = Planner(inst, tools)
 
         async def plan(state: PlanState) -> dict:
-            steps, update = await ask_planner([], "plan")
+            steps, update = await planner.plan()
             return update if steps is None else {"steps": steps, "shown": False}
 
         def enter_step(state: PlanState) -> dict:
@@ -105,9 +129,9 @@ class PlannerShape:
             remaining = state["steps"]
             with inst.tracer.span(SpanKind.handoff, f"step:{no}", step=no, replans=state["replans"]):
                 pass
-            index = len(inst.snapshot["plans"][-1]["steps"]) - len(remaining) + 1
-            total = len(inst.snapshot["plans"][-1]["steps"])
-            prompt = inst.prompts.render(pl.step_prompt, plan=[] if state["shown"] else inst.snapshot["plans"][-1]["steps"],
+            total = len(planner.current())
+            index = total - len(remaining) + 1
+            prompt = inst.prompts.render(pl.step_prompt, plan=[] if state["shown"] else planner.current(),
                                          index=index, total=total, step=remaining[0], last=len(remaining) == 1,
                                          tools=names)
             return {"messages": state["messages"] + [{"role": "user", "content": prompt}], "step_no": no,
@@ -137,9 +161,7 @@ class PlannerShape:
             done = state["done"] + [{"step": current, "result": reply[:300]}]
             blocked = reply.lstrip().upper().startswith(BLOCKED_PREFIX)
             if blocked and state["replans"] < pl.max_replans:
-                extra = [{"role": "user", "content": inst.prompts.render(
-                    pl.replan_prompt, done=state["done"], blocked=done[-1], max_steps=pl.max_plan_steps)}]
-                steps, update = await ask_planner(extra, "replan")
+                steps, update = await planner.replan(state["done"], done[-1])
                 if steps is None:
                     return {**update, "done": done}
                 return {"steps": steps, "shown": False, "replans": state["replans"] + 1, "done": done}
