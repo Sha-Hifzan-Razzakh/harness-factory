@@ -2,7 +2,7 @@
 
 Sections:
   1. Scope            what the numbers cover: runs, models, recipes, tasks, cost baseline
-  2. Recipes x models status counts, mean E0 and E, tokens per run
+  2. Recipes x models status counts, mean E0 and E (with the cell's R once faults were injected), tokens/run
   3. Matrix vs base   each matrix recipe against the recipe it extends, paired by task and model: mean delta E,
                       wins / losses / ties, a bootstrap 95% interval. Pairing removes the task-to-task spread
                       that would otherwise swamp a dimension's effect.
@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
 from harness_factory.results.cost import CostBaseline, is_clean
-from harness_factory.results.store import UNSCORED
+from harness_factory.results.store import UNSCORED, e0_by_run
 
 STATUSES = ("SUCCESS", "PARTIAL", "FAIL", "INCOMPLETE", "ERROR")
 
@@ -71,7 +71,10 @@ def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "C
                  models: list[str] | None = None, with_selector: bool = True) -> str:
     clean = [r for r in rows if is_clean(r) and (not models or r["canonical_model"] in models)]
     scored = [r for r in clean if r["status"] not in UNSCORED]
-    e_of = {r["run_key"]: baseline.adjusted(r) for r in scored}
+    # The same E as `hfx results --cells` and the selector: E0 with the cell's R once it has faulted runs, then
+    # cost-adjusted. R comes from every row, faulted ones included, of the models in scope.
+    e0 = e0_by_run([r for r in rows if not models or r["canonical_model"] in models])
+    e_of = {r["run_key"]: baseline.adjusted(r, e0[r["run_key"]]) for r in scored}
     lines = [f"# {title}", "", (f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by `hfx report` from the results "
                                 f"store. Cost baseline `{baseline.id}` ({baseline.basis})."), ""]
 
@@ -100,11 +103,11 @@ def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "C
     for (rid, m), rs in sorted(groups.items()):
         st = Counter(r["status"] for r in rs)
         sc = [r for r in rs if r["status"] not in UNSCORED]
-        e0 = statistics.fmean(r["composite"] for r in sc) if sc else None
+        mean_e0 = statistics.fmean(e0[r["run_key"]] for r in sc) if sc else None
         e = statistics.fmean(e_of[r["run_key"]] for r in sc) if sc else None
         tok = statistics.fmean(r["tokens_in"] + r["tokens_out"] for r in sc) if sc else None
         body.append([f"`{rid}`", f"`{m}`", *(str(st.get(s, 0)) for s in STATUSES),
-                     "-" if e0 is None else f"{e0:.3f}", "-" if e is None else f"{e:.3f}",
+                     "-" if mean_e0 is None else f"{mean_e0:.3f}", "-" if e is None else f"{e:.3f}",
                      "-" if tok is None else f"{tok:,.0f}"])
     lines += ["## 2. Recipes × models", "", _table(["recipe", "model", *STATUSES, "E0", "E", "tokens/run"], body), ""]
 

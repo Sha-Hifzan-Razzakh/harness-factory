@@ -47,8 +47,10 @@ class ScoreWeights(BaseModel):
     def composite(self, s: FamilyScores, critical_violation: bool) -> float:
         """E = sum(w_i * x_i) / sum(w_i) over measured positive families, minus w_c * C; 0 on a critical violation.
 
-        Two rules keep a run that achieved nothing at E = 0:
+        Three rules keep a run that achieved nothing at E = 0:
           - trajectory counts as Q * O: a clean path to a wrong end earns nothing;
+          - robustness counts as R * O: R belongs to the cell (how well its recipe holds up under faults), so on
+            its own it would credit a run of that cell that did nothing;
           - an unmeasured family (R on clean runs) is left out and the rest renormalized,
             rather than defaulting to 1.0 and handing out free credit.
         """
@@ -56,7 +58,7 @@ class ScoreWeights(BaseModel):
             return 0.0
         parts = [(self.w_o, s.outcome), (self.w_q, s.trajectory * s.outcome)]
         if s.robustness is not None:
-            parts.append((self.w_r, s.robustness))
+            parts.append((self.w_r, s.robustness * s.outcome))
         positive = sum(w * x for w, x in parts) / sum(w for w, _ in parts)
         return positive - self.w_c * s.efficiency
 

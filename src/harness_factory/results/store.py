@@ -25,7 +25,7 @@ from sqlalchemy import (
 )
 
 from harness_factory import settings
-from harness_factory.results.cost import CostBaseline, is_clean, weight_profile_of
+from harness_factory.results.cost import UNSCORED_STATUSES, CostBaseline, is_clean, weight_profile_of
 from harness_factory.results.model import CellAggregate, EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.shapes.result import RunStatus
 
@@ -90,6 +90,19 @@ def record_row(rec: EffectivenessRecord) -> dict:
     )
 
 
+def task_hash_of(row: dict) -> str:
+    """task_hash from a stored run key (second field)."""
+    parts = str(row.get("run_key", "")).split("|")
+    return parts[1] if len(parts) > 1 else ""
+
+
+def current_task_rows(rows: list[dict], task_hashes: dict[str, str]) -> list[dict]:
+    """Rows of the current definition of each task: a row whose task_version is in `task_hashes` but whose
+    task_hash differs comes from an edited task (same id and version, different content) and is a different
+    experiment. Tasks missing from `task_hashes` (no longer in the catalog) are kept: nothing to compare with."""
+    return [r for r in rows if task_hashes.get(r["task_version"], task_hash_of(r)) == task_hash_of(r)]
+
+
 def env_of(row: dict) -> str:
     """env_hash from a stored run key (rows written before env_hash existed have 7 fields)."""
     parts = str(row.get("run_key", "")).split("|")
@@ -121,7 +134,7 @@ class CellResult(BaseModel):
 
 # Runs that say nothing about the harness: provider down or out of quota (INCOMPLETE), or a setup problem / crash
 # (ERROR). They are reported per cell, never averaged in as zeros.
-UNSCORED = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
+UNSCORED = UNSCORED_STATUSES
 
 
 def _cell_key(r: dict) -> tuple[str, str, str, str, str]:
@@ -151,18 +164,39 @@ def _e0_with_r(r: dict, rob: float | None) -> float:
                              critical)
 
 
-def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
-    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged."""
+def _groups(rows: list[dict]) -> tuple[dict, dict]:
     clean_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     faulted_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
         (clean_groups if is_clean(r) else faulted_groups)[_cell_key(r)].append(r)
+    return clean_groups, faulted_groups
+
+
+def _scored(rs: list[dict]) -> list[dict]:
+    return [r for r in rs if r["status"] not in UNSCORED]
+
+
+def e0_by_run(rows: list[dict]) -> dict[str, float]:
+    """E0 of every scored clean run, with its cell's R folded in once the cell has faulted runs. The one place
+    that turns stored composites into the E0 every view (cells, report, selector) averages."""
+    clean_groups, faulted_groups = _groups(rows)
+    out = {}
+    for key, all_rs in clean_groups.items():
+        rs = _scored(all_rs)
+        rob = robustness(rs, _scored(faulted_groups.get(key, [])))
+        out.update({r["run_key"]: _e0_with_r(r, rob) for r in rs})
+    return out
+
+
+def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
+    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged."""
+    clean_groups, faulted_groups = _groups(rows)
     out = []
     for key, all_rs in sorted(clean_groups.items(),
                               key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
         tc, rh, m, prov, env = key
-        rs = [r for r in all_rs if r["status"] not in UNSCORED]
-        faulted = [r for r in faulted_groups.get(key, []) if r["status"] not in UNSCORED]
+        rs = _scored(all_rs)
+        faulted = _scored(faulted_groups.get(key, []))
         rob = robustness(rs, faulted)
         e0s = [_e0_with_r(r, rob) for r in rs]
         n = len(rs) or 1
@@ -215,17 +249,23 @@ class ResultsStore:
         return [dict(r) for r in rows]
 
     def rows(self, latest: bool = True) -> list[dict]:
-        """Stored runs, oldest first. latest=True keeps only the newest row per RunKey: a rerun (resume, or the
-        same campaign run twice) replaces its earlier result instead of being counted twice."""
+        """Stored runs, oldest first. latest=True keeps one row per RunKey: the newest scored one, or the newest
+        row when none is scored. A scored rerun (resume, or the same campaign run twice) replaces its earlier
+        result instead of being counted twice; an INCOMPLETE / ERROR rerun (quota, provider down) never hides a
+        result the store already has."""
         with self.engine.connect() as c:
             all_rows = [dict(r) for r in c.execute(select(runs).order_by(runs.c.id)).mappings()]
         if not latest:
             return all_rows
-        newest = {r["run_key"]: r for r in all_rows}
-        return [r for r in all_rows if newest[r["run_key"]] is r]
+        keep: dict[str, dict] = {}
+        for r in all_rows:                                # oldest first: later rows win within each kind
+            held = keep.get(r["run_key"])
+            if held is None or r["status"] not in UNSCORED or held["status"] in UNSCORED:
+                keep[r["run_key"]] = r
+        return [r for r in all_rows if keep[r["run_key"]] is r]
 
     def scored_keys(self) -> set[str]:
-        """RunKeys whose newest result is scored (anything but INCOMPLETE / ERROR): done, skip on resume."""
+        """RunKeys with a scored result (anything but INCOMPLETE / ERROR): done, skip on resume."""
         return {r["run_key"] for r in self.rows() if r["status"] not in UNSCORED}
 
     def live_baseline(self) -> CostBaseline:
@@ -264,8 +304,12 @@ class ResultsStore:
             hashes[r["task_version"]].add(str(r["run_key"]).split("|")[1])
         return {t: len(h) for t, h in sorted(hashes.items()) if len(h) > 1}
 
-    def aggregate(self, baseline: CostBaseline | None = None) -> tuple[CostBaseline, list[CellResult]]:
-        """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used."""
+    def aggregate(self, baseline: CostBaseline | None = None,
+                  task_hashes: dict[str, str] | None = None) -> tuple[CostBaseline, list[CellResult]]:
+        """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used.
+        task_hashes (task_version -> current task hash) leaves out rows of edited task definitions."""
         rows = self.rows()
+        if task_hashes is not None:
+            rows = current_task_rows(rows, task_hashes)
         baseline = baseline or CostBaseline.from_rows(rows, note="live")
         return baseline, aggregate_rows(rows, baseline)
