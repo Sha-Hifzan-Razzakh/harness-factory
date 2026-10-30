@@ -97,12 +97,53 @@ they fail rather than skip.
 
 The image (`hf-sandbox:<content hash>`) builds itself on first use. It contains only Python, the `mcp` package
 closure and the server modules. Dependencies are resolved on the host for the image's Python and CPU, pinned to
-the versions in your environment (from `uv.lock`), and copied in. The Dockerfile has no `RUN` step, so the build
+the versions in your environment (from `uv.lock`), and copied in. Its Dockerfile
+(`src/harness_factory/env/sandbox.Dockerfile`) has no `RUN` step, so the build
 needs no network inside containers. Any base image that provides Python works; set `HF_SANDBOX_BASE_IMAGE` and
 `HF_SANDBOX_PYTHON` to match it.
 
 Graders read the host-side directories, so a run grades identically in either sandbox. The sandbox kind and
 image tag are recorded in each run's snapshot.
+
+## Running in containers
+
+Two images, two Dockerfiles:
+
+| File | Image | What it is |
+|---|---|---|
+| `Dockerfile` | `harness-factory` | The factory: `hfx` with its locked dependencies, the catalog and the prompts. Non-root, no secrets |
+| `src/harness_factory/env/sandbox.Dockerfile` | `hf-sandbox:<hash>` | One run's sandbox (see *Sandboxes*). The factory builds it on first use; you never build it by hand |
+
+```bash
+docker build -t harness-factory .                       # EXTRAS="postgres" by default: --build-arg EXTRAS="postgres mlops"
+docker run --rm harness-factory smoke --models scripted/replay --strict
+```
+
+With compose, the factory is on demand (profile `factory`); `docker compose up -d` still starts only the
+supporting services:
+
+```bash
+mkdir -p var                                             # else Docker creates it, owned by root
+docker compose run --rm factory smoke --models scripted/replay --strict          # sandboxes: local
+docker compose run --rm factory-docker smoke --models llama-3.3-70b --provider groq   # sandboxes: Docker
+```
+
+- **Settings come from `.env`** (`env_file`), never from the image. Set `HF_UID`/`HF_GID` (`id -u`, `id -g`) so
+  results, traces and sandbox files under `./var` stay yours.
+- **`factory-docker` starts sandbox containers on the host's Docker** through the mounted socket, which gives it
+  control of the host's Docker. That's why only this service has the socket. Set `DOCKER_GID`
+  (`stat -c %g /var/run/docker.sock`).
+- **`./var` is mounted at its own absolute path.** The host daemon bind-mounts each sandbox's directories by
+  path, so a path must mean the same thing inside the factory container and on the host.
+- **Inside the container, `localhost` is the container.** Point `HF_RESULTS_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`
+  and `MLFLOW_TRACKING_URI` at the service names (`postgres`, `otel-collector`, `mlflow`).
+- `./catalog` and `./prompts` are mounted read-only, so editing a task or a recipe needs no rebuild. Runs are
+  content-addressed either way.
+- Every base image is a build argument (`PYTHON_IMAGE`, `UV_IMAGE`, `DOCKER_CLI_IMAGE`), so a mirror can stand
+  in for Docker Hub and GHCR.
+
+CI builds the image, runs `validate`, `reference` and the smoke gate inside it without network, and runs both
+compose services, including Docker sandboxes started from inside the factory container.
 
 ## Inspect AI (optional)
 
@@ -165,6 +206,8 @@ catalog/                  data, versioned with the code
   tasks/<id>/             task.yaml (instruction, allowance, oracle) + reference.py (PLAN, FINAL)
 prompts/                  Jinja2 prompt layers (system/, task/)
 observability/            OTel collector config
+Dockerfile                the factory image (compose.yaml runs it: services factory, factory-docker)
+compose.yaml              supporting services + the factory on demand
 src/harness_factory/
   tasks/                  Task, Oracle, registry, reference loader                  (B1)
   env/                    LocalSandbox, StateInspector, MCP servers (impl/)         (B1, B11)
