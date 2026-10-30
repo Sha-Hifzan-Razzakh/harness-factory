@@ -1,0 +1,93 @@
+id: ops-04
+version: 1
+domain: ops
+instruction: Rename the setting db_timeout to db_timeout_s in every config file under service/config, keeping each
+  value. Nothing else should change.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: KNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- fs
+- config
+- multi-file
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: base_renamed
+    kind: file_regex
+    weight: 0.2
+    path: service/config/base.ini
+    pattern: ^db_timeout_s\s*=\s*30\s*$
+  - id: dev_renamed
+    kind: file_regex
+    weight: 0.2
+    path: service/config/dev.ini
+    pattern: ^db_timeout_s\s*=\s*10\s*$
+  - id: staging_renamed
+    kind: file_regex
+    weight: 0.2
+    path: service/config/staging.ini
+    pattern: ^db_timeout_s\s*=\s*15\s*$
+  - id: prod_renamed
+    kind: file_regex
+    weight: 0.2
+    path: service/config/prod.ini
+    pattern: ^db_timeout_s\s*=\s*60\s*$
+  - id: base_old_gone
+    kind: file_regex
+    weight: 0.05
+    path: service/config/base.ini
+    pattern: ^db_timeout\s*=
+    negate: true
+  - id: dev_old_gone
+    kind: file_regex
+    weight: 0.05
+    path: service/config/dev.ini
+    pattern: ^db_timeout\s*=
+    negate: true
+  - id: staging_old_gone
+    kind: file_regex
+    weight: 0.05
+    path: service/config/staging.ini
+    pattern: ^db_timeout\s*=
+    negate: true
+  - id: prod_old_gone
+    kind: file_regex
+    weight: 0.05
+    path: service/config/prod.ini
+    pattern: ^db_timeout\s*=
+    negate: true
+  - id: runbook_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: docs/runbook.md
+    text: |
+      # Runbook
+
+      The service listens on port 8080.
+
+      ## Health check
+          curl http://localhost:8080/health
+
+      ## Is it listening?
+          ss -ltnp | grep 8080
+
+      ## Restart
+          sudo systemctl restart shop-service
+
+      ## Slow queries
+      If requests time out, check db_timeout in the environment's config file before restarting.
+  - id: base_port_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: service/config/base.ini
+    pattern: ^port\s*=\s*8000\s*$

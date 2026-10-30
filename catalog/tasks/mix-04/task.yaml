@@ -1,0 +1,117 @@
+id: mix-04
+version: 1
+domain: data
+instruction: Import data/new_customers.csv into the customers table, with created_on set to 2026-10-28. Skip any
+  row whose email is already in the table; emails are case-insensitive.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- sql.*
+risk: R2
+expected_depth: KNOWN_PATH
+split: TEST
+status: verified
+tags:
+- sql
+- fs
+- import
+- dedupe
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: new_rows
+    kind: sql_rows
+    weight: 0.7
+    query: SELECT name, email, city, created_on FROM customers WHERE created_on = '2026-10-28' ORDER BY email
+    rows:
+    - - Zenith Legal
+      - contact@zenithlegal.ae
+      - Abu Dhabi
+      - '2026-10-28'
+    - - Coral Dental
+      - frontdesk@coraldental.ae
+      - Sharjah
+      - '2026-10-28'
+    - - Sandbar Studios
+      - info@sandbar.ae
+      - Dubai
+      - '2026-10-28'
+  - id: no_duplicates
+    kind: sql_rows
+    weight: 0.3
+    query: SELECT lower(email), COUNT(*) FROM customers GROUP BY lower(email) HAVING COUNT(*) > 1
+    rows: []
+  - id: existing_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT id, name, email, city, created_on FROM customers WHERE id <= 13 ORDER BY id
+    rows:
+    - - 1
+      - Al Noor Trading
+      - accounts@alnoor.ae
+      - Dubai
+      - '2024-02-11'
+    - - 2
+      - Harbor Logistics
+      - finance@harborlog.ae
+      - Abu Dhabi
+      - '2024-05-03'
+    - - 3
+      - Falcon Systems
+      - billing@falconsys.ae
+      - Dubai
+      - '2025-03-02'
+    - - 4
+      - Oasis Foods
+      - ap@oasisfoods.ae
+      - Sharjah
+      - '2024-09-19'
+    - - 5
+      - Creek Analytics
+      - hello@creekanalytics.ae
+      - Dubai
+      - '2025-01-27'
+    - - 6
+      - Desert Rose Interiors
+      - orders@desertrose.ae
+      - Ajman
+      - '2025-06-08'
+    - - 7
+      - Marina Fitness
+      - admin@marinafit.ae
+      - Dubai
+      - '2025-07-21'
+    - - 8
+      - Palm Pharmacy
+      - purchasing@palmpharmacy.ae
+      - Abu Dhabi
+      - '2025-10-02'
+    - - 9
+      - Gulf Print House
+      - jobs@gulfprint.ae
+      - Sharjah
+      - '2026-01-15'
+    - - 10
+      - Sandstone Cafe
+      - owner@sandstonecafe.ae
+      - Dubai
+      - '2026-03-09'
+    - - 11
+      - Falcon Systems
+      - accounts@falconsys.ae
+      - Dubai
+      - '2026-08-14'
+    - - 12
+      - QA Test Account
+      - qa1@example.test
+      - Dubai
+      - '2026-02-01'
+    - - 13
+      - Load Test Bot
+      - load@example.test
+      - Dubai
+      - '2026-02-01'

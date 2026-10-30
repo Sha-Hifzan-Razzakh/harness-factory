@@ -1,0 +1,39 @@
+id: sql-03
+version: 1
+domain: data
+instruction: Which customer brought in the most revenue from paid orders placed in 2026, after subtracting refunds?
+  Answer with the customer's name.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: DEV
+status: verified
+tags:
+- sql
+- read
+- join
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: Harbor Logistics
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: sql.query
+  - id: data_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM refunds
+    rows:
+    - - 3

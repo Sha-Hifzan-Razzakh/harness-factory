@@ -1,0 +1,69 @@
+id: sql-06
+version: 1
+domain: data
+instruction: 'Falcon Systems exists twice in the customers table. Keep the older record: move every order of the
+  newer duplicate to it, then delete the duplicate customer.'
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- sql.*
+risk: R2
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- sql
+- update
+- delete
+- integrity
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: orders_moved
+    kind: sql_rows
+    weight: 0.6
+    query: SELECT id FROM orders WHERE customer_id = 3 ORDER BY id
+    rows:
+    - - 2003
+    - - 2018
+    - - 2021
+    - - 2027
+    - - 2034
+    - - 2037
+  - id: duplicate_gone
+    kind: sql_rows
+    weight: 0.4
+    query: SELECT COUNT(*) FROM customers WHERE id = 11
+    rows:
+    - - 0
+  - id: no_orphans
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM orders WHERE customer_id NOT IN (SELECT id FROM customers)
+    rows:
+    - - 0
+  - id: original_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT name, email FROM customers WHERE id = 3
+    rows:
+    - - Falcon Systems
+      - billing@falconsys.ae
+  - id: other_orders_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(customer_id) FROM orders WHERE customer_id NOT IN (3, 11)
+    rows:
+    - - 31
+      - 190
+  - id: other_customers_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM customers
+    rows:
+    - - 12

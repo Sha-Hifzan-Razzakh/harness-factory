@@ -1,0 +1,61 @@
+id: ops-02
+version: 1
+domain: ops
+instruction: In service/feature_flags.json, turn on new_checkout for staging only. Keep every other flag as it is.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- fs
+- json
+- config
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: json_valid
+    kind: json_valid
+    weight: 0.2
+    critical: true
+    path: service/feature_flags.json
+  - id: staging_on
+    kind: file_regex
+    weight: 0.8
+    path: service/feature_flags.json
+    pattern: (?s)"staging"\s*:\s*\{[^}]*"new_checkout"\s*:\s*true\b
+  - id: prod_new_checkout_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: service/feature_flags.json
+    pattern: (?s)"prod"\s*:\s*\{[^}]*"new_checkout"\s*:\s*false\b
+  - id: dev_new_checkout_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: service/feature_flags.json
+    pattern: (?s)"dev"\s*:\s*\{[^}]*"new_checkout"\s*:\s*true\b
+  - id: staging_bulk_export_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: service/feature_flags.json
+    pattern: (?s)"staging"\s*:\s*\{[^}]*"bulk_export"\s*:\s*false\b
+  - id: staging_dark_mode_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: service/feature_flags.json
+    pattern: (?s)"staging"\s*:\s*\{[^}]*"dark_mode"\s*:\s*true\b
+  - id: prod_dark_mode_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: service/feature_flags.json
+    pattern: (?s)"prod"\s*:\s*\{[^}]*"dark_mode"\s*:\s*false\b

@@ -1,0 +1,73 @@
+id: docs-01
+version: 1
+domain: docs
+instruction: Add the 2.4.0 release, dated 2026-10-28, to CHANGELOG.md from docs/merged_prs.txt, following the file's
+  existing format. feat PRs go under Added and fix PRs under Fixed; leave chores out.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- fs
+- docs
+- format
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: heading
+    kind: file_regex
+    weight: 0.15
+    path: CHANGELOG.md
+    pattern: ^## \[2\.4\.0\] - 2026-10-28\s*$
+  - id: newest_first
+    kind: file_regex
+    weight: 0.15
+    path: CHANGELOG.md
+    pattern: (?s)## \[2\.4\.0\].*## \[2\.3\.1\]
+  - id: added_saved_carts
+    kind: file_regex
+    weight: 0.15
+    path: CHANGELOG.md
+    pattern: (?i)^## \[2\.4\.0\][^\n]*\n+### Added\n(?:- [^\n]*\n)*?- [^\n]*saved cart
+  - id: added_dark_mode
+    kind: file_regex
+    weight: 0.15
+    path: CHANGELOG.md
+    pattern: (?i)^## \[2\.4\.0\][^\n]*\n+### Added\n(?:- [^\n]*\n)*?- [^\n]*dark mode
+  - id: fixed_vat
+    kind: file_regex
+    weight: 0.15
+    path: CHANGELOG.md
+    pattern: (?is)## \[2\.4\.0\](?:(?!## \[2\.3\.1\]).)*### Fixed(?:(?!## \[2\.3\.1\]).)*VAT
+  - id: fixed_search
+    kind: file_regex
+    weight: 0.15
+    path: CHANGELOG.md
+    pattern: (?is)## \[2\.4\.0\](?:(?!## \[2\.3\.1\]).)*### Fixed(?:(?!## \[2\.3\.1\]).)*search
+  - id: no_chores
+    kind: file_regex
+    weight: 0.1
+    path: CHANGELOG.md
+    pattern: (?i)pytest
+    negate: true
+  - id: history_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: CHANGELOG.md
+    text: |-
+      ## [2.3.1] - 2026-09-30
+      ### Fixed
+      - Checkout no longer double-charges when the payment page is refreshed.
+
+      ## [2.3.0] - 2026-09-02
+      ### Added
+      - Bulk export of orders to CSV.
+      ### Fixed
+      - Search results now respect the selected city filter.
