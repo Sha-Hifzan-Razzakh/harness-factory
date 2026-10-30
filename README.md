@@ -311,6 +311,48 @@ Rules for a dimension:
   a tool that doesn't exist. On the 20 visible tasks, `v2-base` passes 0/20 with it and `v2-recover` passes
   20/20, at E₀ 0.930 rather than 1.0.
 
+## Selector
+
+The payoff: given a task, which recipe? `catalog/selector.yaml` holds the rules; `src/harness_factory/select/`
+implements SEL-01 to SEL-06 from the requirements.
+
+```bash
+hfx select show     --model gpt-oss-120b --provider groq     # the pick per task class, with its evidence
+hfx select freeze   --model gpt-oss-120b --provider groq     # content-addressed policy in var/policy/<id>.json
+hfx provision --task code-01 --model gpt-oss-120b --provider groq [--policy <id>]   # select, log, run
+hfx select evaluate --model gpt-oss-120b --provider groq     # held-out: selector vs global vs rules vs hand-picked
+```
+
+How a decision is made, for one task class, model and provider:
+
+1. **Hard rules prune (SEL-01).** A recipe is dropped if any of these fails:
+   - its tier covers the class's risk;
+   - its shape fits the step depth (V1 only for single steps);
+   - the model can do what the shape needs;
+   - the recipe validates;
+   - given a task, it reaches every tool the task allows.
+2. **Measured E ranks (SEL-02).** The survivors are ranked by cost-adjusted E (with R once faulted runs exist),
+   with a bootstrap 95% interval. Only cells with at least `min_runs` scored runs (default 3) are ranked; the
+   rest are reported as "below min".
+3. **Only current evidence counts.** A cell is used only if its recipe hash and environment hash are the
+   recipe's current ones. Results from an older version of a recipe never choose for the new one.
+4. **Cold start (SEL-03).** With nothing ranked, the first matching rule-based default that survives the hard
+   rules is used: `UNKNOWN_PATH` → `v3-staged`, otherwise `v2-base`. If a model can't call tools, that leaves V1.
+5. **Close call (SEL-04).** When the top two intervals overlap, both are chosen, `provision` runs both, and
+   their results update the table.
+6. **Logged (SEL-05).** Every decision used to provision a run goes to `var/decisions/` with its rule, the
+   ranked and pruned recipes, every number used, the baseline and the selector config hash.
+
+**Held-out evaluation (SEL-06).** `hfx select evaluate` picks a recipe for each held-out task four ways:
+- the selector;
+- the single best global recipe;
+- rules only;
+- `hand_picked` from `selector.yaml`.
+
+Held-out runs are never used as evidence. Strategies that agree share a run, done runs are reused, and every
+strategy is scored against one cost baseline that includes the evaluation runs. So a strategy that solves a task
+more cheaply scores higher. v1 is done when the selector beats the best single recipe here.
+
 ## How a run works
 
 1. **Provision.** The recipe gets the cell's model and is validated (shape registered, prompts exist, tools resolve, tier ≥

@@ -32,6 +32,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New fault profile | `catalog/faults/<id>.yaml` (rules: tools, kind, rate, nth, max_per_run) | faults fire only in `ToolExecutor`; never tell the model a failure was injected; `none` is reserved for clean runs |
 | New recipe dimension | the field in `recipes/model.py` (optional, in `_HASH_OMIT_WHEN_NONE`), behaviour in `shapes/common.py` | every shape gets it the same way; an offline scripted test that it changes behaviour; a recovery or retry is never free (rejected replies count as invalid calls in Q); add the matrix recipe to the CI matrix gate |
 | New skill | `catalog/skills/<id>/SKILL.md` (header: name, description) | general how-to, never a task's answer; its text is in the recipe hash of every recipe using it; tasks used to judge skills should be written by someone who hasn't seen them |
+| Selector rule | `catalog/selector.yaml` (min_runs, defaults, depth_shapes, hand_picked), `src/harness_factory/select/` | evidence is only cells whose recipe hash and env hash are current; held-out runs never inform a held-out pick; every provisioning decision is logged (`var/decisions/`) |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
 
 ## Rules that protect the measurements
