@@ -67,9 +67,9 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | ADR | Session | Subject |
 |---|---|---|
 | 0008 | `…JZLSKyEhjaA4sxi9R` | V5 orchestrator (in #28) |
+| 0009 | `…JtRe49bgfAAmdaB6W` | Authoring layer: one service behind CLI, API and UI |
 | 0010 | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (in #35) |
 | 0011 | `…JZLSKyEhjaA4sxi9R` | Allocation planner (in #36) |
-| 0009 | `…JtRe49bgfAAmdaB6W` | Authoring layer: one service behind CLI, API and UI |
 | 0016 | `…JZLSKyEhjaA4sxi9R` | Runner axis (in #53) |
 | 0017 | `…JZLSKyEhjaA4sxi9R` | Retrieval on LlamaIndex (in #57) |
 
