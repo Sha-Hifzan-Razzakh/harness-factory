@@ -1,5 +1,5 @@
 id: ops-02
-version: 1
+version: 2
 domain: ops
 instruction: In service/feature_flags.json, turn on new_checkout for staging only. Keep every other flag as it is.
 env_seed:
@@ -21,12 +21,12 @@ oracle:
   checks:
   - id: json_valid
     kind: json_valid
-    weight: 0.2
+    weight: 0
     critical: true
     path: service/feature_flags.json
   - id: staging_on
     kind: file_regex
-    weight: 0.8
+    weight: 1.0
     path: service/feature_flags.json
     pattern: (?s)"staging"\s*:\s*\{[^}]*"new_checkout"\s*:\s*true\b
   - id: prod_new_checkout_kept

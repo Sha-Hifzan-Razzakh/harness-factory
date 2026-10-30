@@ -1,5 +1,5 @@
 id: docs-01
-version: 1
+version: 2
 domain: docs
 instruction: Add the 2.4.0 release, dated 2026-10-28, to CHANGELOG.md from docs/merged_prs.txt, following the file's
   existing format. feat PRs go under Added and fix PRs under Fixed; leave chores out.
@@ -54,8 +54,7 @@ oracle:
     kind: file_regex
     weight: 0.1
     path: CHANGELOG.md
-    pattern: (?i)pytest
-    negate: true
+    pattern: (?is)## \[2\.4\.0\](?:(?!## \[2\.3\.1\]|pytest).)*## \[2\.3\.1\]
   - id: history_kept
     kind: file_contains
     weight: 0

@@ -22,7 +22,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 
 | Change | Location | Also do |
 |---|---|---|
-| New task | `catalog/tasks/<id>/task.yaml` + `reference.py` | `hfx reference <id>` passes; add a guard check (`weight: 0, critical: true`) for "don't touch anything else"; the reference fits V3 caps (≤3 reads before the first write, ≤5 calls after); each trap gets a wrong-answer script in `tests/test_task_traps.py`; editing a seed changes the hash of every task using it |
+| New task | `catalog/tasks/<id>/task.yaml` + `reference.py` | `hfx reference <id>` passes; add a guard check (`weight: 0, critical: true`) for "don't touch anything else"; the reference fits V3 caps (≤3 reads before the first write, ≤5 calls after); each trap gets a wrong-answer script in `tests/test_task_traps.py`; a do-nothing run must score 0 (the same file checks every task: a check that passes on the untouched seed is a guard); editing a seed changes the hash of every task using it |
 | New tool | MCP server in `src/harness_factory/env/mcp/impl/`, declare in `catalog/tools.yaml` | side effect + risk are mandatory; raise `ToolError`, never `ValueError` (MCP 2.x hides other exception messages from the model) |
 | New shape (V1, V3...) | `src/harness_factory/shapes/<v>.py` with `@ShapeRegistry.register(Variant.X)` | import it in `shapes/builtin.py`; never in `shapes/__init__.py` (import cycle) |
 | New recipe | `catalog/recipes/**.yaml`, model slot left empty | `hfx validate` passes; V3 recipes declare `workflow:` stages with prompts under `prompts/stage/`; a matrix recipe is `base: <id>` plus the one dimension it changes (`catalog/recipes/matrix/`) |
