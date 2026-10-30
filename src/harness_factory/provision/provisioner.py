@@ -66,6 +66,23 @@ def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend
     return PlanBackend(load_reference(task), style)
 
 
+def run_key_for(task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str, seed: int, *,
+                declared: ToolCatalogFile, providers: ProviderCatalog) -> RunKey:
+    """The RunKey a run will have, computed without running it. The provisioner uses this same function, so a
+    campaign can tell which planned runs already have results (resume) and the two can never disagree."""
+    recipe = recipe.with_model(canonical_model)
+    served = providers.served(provider_id, canonical_model)
+    return RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe.content_hash(),
+                  canonical_model=canonical_model, provider=provider_id, seed=seed,
+                  env_hash=declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id))
+
+
+async def _teardown(sandbox: LocalSandbox) -> None:
+    """Tear down in a worker thread, shielded: once requested it always completes. A cancelled to_thread() can be
+    dropped before its thread starts, and a second cancellation must not interrupt the cleanup itself."""
+    await asyncio.shield(asyncio.to_thread(sandbox.teardown))
+
+
 async def _start_sandbox(task: Task) -> LocalSandbox:
     """Create and seed the sandbox in a worker thread. Threads cannot be cancelled, so if the run is cancelled
     meanwhile (Ctrl-C), wait for the thread to finish and tear down what it made rather than leak it."""
@@ -86,7 +103,7 @@ async def _start_sandbox(task: Task) -> LocalSandbox:
             sb = await job
         except Exception:  # noqa: BLE001  (creation failed: nothing to clean up)
             raise asyncio.CancelledError from None
-        await asyncio.to_thread(sb.teardown)
+        await _teardown(sb)
         raise
 
 
@@ -109,14 +126,9 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     issues = validate_recipe(recipe, declared, providers=providers, provider_id=provider_id)
     if issues:
         raise HarnessError(ErrorKind.PROVISION, "; ".join(f"{i.rule}: {i.detail}" for i in issues))
-    recipe_hash = recipe.content_hash()                  # before the seed is applied: seed is a RunKey axis
+    run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers)
     for slot in recipe.model_slots.values():
         slot.seed = seed if slot.seed is None else slot.seed
-
-    served = providers.served(provider_id, canonical_model)
-    run_key = RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe_hash,
-                     canonical_model=canonical_model, provider=provider_id, seed=seed,
-                     env_hash=declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id))
     tracer = Tracer(run_key.as_str())
     budget = BudgetGuard(recipe.config)
     provider = providers.get(provider_id)
@@ -150,4 +162,4 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
             yield Provisioned(instance=instance, sandbox=sandbox, inspector=inspector, before=before,
                               task_class=task_class(task, declared), weight_profile=weight_profile(task, declared))
     finally:
-        await asyncio.to_thread(sandbox.teardown)
+        await _teardown(sandbox)

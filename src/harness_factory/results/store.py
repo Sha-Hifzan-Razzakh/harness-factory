@@ -176,9 +176,19 @@ class ResultsStore:
             rows = c.execute(select(runs).order_by(runs.c.id.desc()).limit(limit)).mappings().all()
         return [dict(r) for r in rows]
 
-    def rows(self) -> list[dict]:
+    def rows(self, latest: bool = True) -> list[dict]:
+        """Stored runs, oldest first. latest=True keeps only the newest row per RunKey: a rerun (resume, or the
+        same campaign run twice) replaces its earlier result instead of being counted twice."""
         with self.engine.connect() as c:
-            return [dict(r) for r in c.execute(select(runs).order_by(runs.c.id)).mappings()]
+            all_rows = [dict(r) for r in c.execute(select(runs).order_by(runs.c.id)).mappings()]
+        if not latest:
+            return all_rows
+        newest = {r["run_key"]: r for r in all_rows}
+        return [r for r in all_rows if newest[r["run_key"]] is r]
+
+    def scored_keys(self) -> set[str]:
+        """RunKeys whose newest result is scored (anything but INCOMPLETE / ERROR): done, skip on resume."""
+        return {r["run_key"] for r in self.rows() if r["status"] not in UNSCORED}
 
     def live_baseline(self) -> CostBaseline:
         return CostBaseline.from_rows(self.rows(), note="live")

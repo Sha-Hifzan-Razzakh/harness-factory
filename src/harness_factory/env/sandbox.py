@@ -95,8 +95,9 @@ class DockerSandbox(LocalSandbox):
     def __init__(self, label: str = "run", image: str | None = None) -> None:
         from harness_factory.env.sandbox_image import ensure_image
 
-        super().__init__(label)
+        # Image first: if Docker is down or the build fails, nothing has been created yet, so nothing can leak.
         self.image = image or ensure_image()
+        super().__init__(label)
         self.container = f"hf-{self.root.name}".lower()
         self.started = False
 

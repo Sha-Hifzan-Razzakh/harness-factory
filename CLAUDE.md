@@ -64,6 +64,11 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   (tracer, budget, backend, sandbox); only the Factory's QuotaLedger and ResultsStore are shared. Never add
   module-level mutable state that a run writes to. Model calls go through `ModelGateway`, which takes a ledger
   slot first, so new code must not call providers directly.
+- **Cleanup on cancel.** A failed or cancelled `__aenter__` gets no `__aexit__`: async context managers that
+  open processes (MCP clients, the session pool) close what they opened in `__aenter__` itself. Teardown runs
+  shielded (`provisioner._teardown`), and a cancelled campaign waits for in-flight runs to finish cleaning up.
+  Anything that creates resources must not do so before a step that can fail (e.g. `DockerSandbox` resolves
+  its image before creating directories).
 - **Offline first.** Every feature must be testable with the `scripted` provider. Real-provider tests mock
   `litellm.acompletion` (see `tests/test_gateway_litellm.py`).
 

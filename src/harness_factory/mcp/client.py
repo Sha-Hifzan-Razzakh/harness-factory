@@ -74,6 +74,15 @@ class MCPClient:
         self._session: ClientSession | None = None
 
     async def __aenter__(self) -> MCPClient:
+        # Python never calls __aexit__ for a failed __aenter__: if anything below fails or is cancelled (Ctrl-C
+        # mid-campaign), close what was already opened here, or the server process outlives the run.
+        try:
+            return await self._open()
+        except BaseException:
+            await self._stack.aclose()
+            raise
+
+    async def _open(self) -> MCPClient:
         if self.launcher is not None:                       # the sandbox decides how the server process starts
             cmd, args, extra = self.launcher(self.spec)
         else:

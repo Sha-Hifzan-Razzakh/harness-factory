@@ -23,6 +23,15 @@ class MCPSessionPool:
         self._stack = AsyncExitStack()
 
     async def __aenter__(self) -> MCPSessionPool:
+        # A failed or cancelled __aenter__ gets no __aexit__: close every session already opened, or their
+        # server processes outlive the run (and an interrupted campaign cannot exit).
+        try:
+            return await self._open()
+        except BaseException:
+            await self._stack.aclose()
+            raise
+
+    async def _open(self) -> MCPSessionPool:
         discovered = []
         for sid in self.servers:
             client = await self._stack.enter_async_context(MCPClient(self.declared.server(sid), self.env, self.launcher))
@@ -31,7 +40,6 @@ class MCPSessionPool:
         self.catalog = ToolCatalog.build(discovered, self.declared, self.servers)
         drift = self.catalog.drift()
         if drift:
-            await self._stack.aclose()
             raise HarnessError(ErrorKind.PROVISION, f"tool catalog drift: {[d.model_dump() for d in drift]}")
         return self
 

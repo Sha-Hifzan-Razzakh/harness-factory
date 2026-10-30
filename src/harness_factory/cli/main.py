@@ -139,32 +139,61 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
           models: str | None = typer.Option(None, "--models", help="comma-separated canonical models"),
           seeds: int = typer.Option(1, "--seeds"),
           concurrency: int = typer.Option(4, "--concurrency", "-j", help="runs in flight at once"),
+          resume: bool = typer.Option(False, "--resume",
+                                      help="skip runs that already have a scored result; rerun INCOMPLETE/ERROR"),
+          dry_run: bool = typer.Option(False, "--dry-run", help="show what would be skipped and run, then stop"),
           strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
     """Every task x recipe x model x seed on one provider, run in parallel and paced to the provider's limits.
-    One recipe is the P0 gate; several compare shapes."""
-    from harness_factory.runner.runner import plan, run_campaign
+    One recipe is the P0 gate; several compare shapes. Interrupted (Ctrl-C, quota)? Run it again with --resume."""
+    from harness_factory.provision.provisioner import run_key_for
+    from harness_factory.runner.runner import plan, plan_status, run_campaign
     f = _factory()
     specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds)
-    # Budget preflight (MOD-06): worst case = every run uses every step. Refuse if it cannot fit today's quota.
-    worst = sum(f.recipes[s.recipe_id].config.max_steps for s in specs)
+    status = plan_status(f, specs)
+    todo = status.retry + status.new if resume else specs
+    if dry_run or resume:
+        console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
+                      f"{len(status.retry)}   new {len(status.new)}"
+                      + ("" if resume else "   (without --resume every run executes again)"))
+    if dry_run:
+        return
+    # Budget preflight (MOD-06): worst case = every remaining run uses every step. Refuse if it cannot fit today.
+    worst = sum(f.recipes[s.recipe_id].config.max_steps for s in todo)
     left = f.ledger.remaining(provider)["rpd"]
+    if f.ledger.exhausted(provider):
+        console.print(f"[yellow]{provider}: today's quota is already spent (ledger: {settings.QUOTA_STATE.name}); "
+                      f"run again with --resume after the daily reset")
+        raise typer.Exit(code=2)
     if left is not None and worst > left:
         console.print(f"[yellow]preflight: worst case {worst} requests > {left} left today on {provider}; "
-                      f"lower --seeds, pass fewer --models, or lower max_steps")
+                      f"lower --seeds, pass fewer --models, or lower max_steps (or run, then --resume tomorrow)")
         raise typer.Exit(code=2)
-    result = asyncio.run(run_campaign(f, specs, concurrency))
+    result = asyncio.run(run_campaign(f, specs, concurrency, resume=resume))
     recs = result.records
-    console.print(_records_table(recs))
-    if len(set(recipe.split(","))) > 1 or not models or "," in models:
-        console.print(_summary_table(recs))
+    if recs:
+        console.print(_records_table(recs))
+        if len(set(recipe.split(","))) > 1 or not models or "," in models:
+            console.print(_summary_table(recs))
     ok = sum(r.status.value == "SUCCESS" for r in recs)
     waits = ", ".join(f"{p} {w:.1f}s" for p, w in result.quota_wait_s.items()) or "none"
-    console.print(f"{ok}/{len(specs)} SUCCESS   {len(specs)} runs in {result.wall_s:.1f}s at concurrency "
-                  f"{result.concurrency}   quota waits: {waits}")
+    console.print(f"{ok}/{len(recs)} SUCCESS   {len(recs)} runs in {result.wall_s:.1f}s at concurrency "
+                  f"{result.concurrency}   quota waits: {waits}"
+                  + (f"   skipped {len(result.skipped)} done, reran {result.reruns}" if resume else ""))
+    incomplete = sum(r.status.value == "INCOMPLETE" for r in recs)
+    if incomplete:
+        console.print(f"[yellow]{incomplete} run(s) INCOMPLETE (provider or quota); run the same command with "
+                      f"--resume to finish them")
     for e in result.errors:
         console.print(f"[red]error[/] {e.spec.task_id} {e.spec.recipe_id} {e.spec.canonical_model} "
                       f"seed {e.spec.seed}: {e.error}")
-    if result.errors or (strict and ok != len(specs)):
+    if strict:
+        # The gate is about the whole plan, including runs a resume skipped.
+        latest = {r["run_key"]: r["status"] for r in f.store.rows()} if f.store else {}
+        keys = [run_key_for(f.tasks.get(s.task_id), f.recipes[s.recipe_id], s.canonical_model, s.provider, s.seed,
+                            declared=f.declared, providers=f.providers).as_str() for s in specs]
+        if result.errors or any(latest.get(k) != "SUCCESS" for k in keys):
+            raise typer.Exit(code=1)
+    elif result.errors:
         raise typer.Exit(code=1)
 
 

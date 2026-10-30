@@ -53,3 +53,28 @@ def test_tool_servers_do_not_inherit_api_keys(monkeypatch):
     env = process_env({"HF_WORKSPACE": "/w"})
     assert "GROQ_API_KEY" not in env and "OPENROUTER_API_KEY" not in env
     assert env["HF_WORKSPACE"] == "/w" and "PATH" in env
+
+
+def _child_servers() -> list[str]:
+    import os
+    import subprocess
+    out = subprocess.run(["ps", "-o", "args=", "--ppid", str(os.getpid())], capture_output=True, text=True,
+                         check=False).stdout
+    return [line for line in out.splitlines() if "env.mcp.impl" in line]
+
+
+async def test_cancelling_while_sessions_open_leaves_no_server_running(factory, sandbox):
+    """Ctrl-C mid-campaign lands while a pool is still opening sessions: no tool server may outlive it."""
+    import asyncio
+
+    pool = MCPSessionPool(factory.declared, ["fs", "sql"], sandbox.env())
+    job = asyncio.ensure_future(pool.__aenter__())
+    await asyncio.sleep(0.3)                                     # first server up, second still starting
+    job.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await job
+    for _ in range(40):
+        if not _child_servers():
+            break
+        await asyncio.sleep(0.05)
+    assert _child_servers() == []
