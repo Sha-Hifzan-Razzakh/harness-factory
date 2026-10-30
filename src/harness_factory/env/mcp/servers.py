@@ -36,6 +36,21 @@ class AgentTool(BaseModel):
         return (tokens_in * self.price_in + tokens_out * self.price_out) / 1e6
 
 
+class TenantSpec(BaseModel):
+    """A remote server's test tenant (EXT-07): state the factory can reset before a run and read back after it.
+
+    Each run gets its own tenant id, sent as a request header the model can't set; the server keeps one state per
+    tenant. The three admin tools are called by the factory only: they are never declared as tools, never offered to
+    the model, and left out of discovery."""
+    header: str = "HF-Tenant"
+    reset: str = "_tenant_reset"     # (state: the task's seed) -> anything; the tenant now holds exactly that state
+    export: str = "_tenant_export"   # () -> the tenant's state as JSON (structured content or JSON text)
+    drop: str | None = "_tenant_drop"  # () -> anything; best effort when the run's session closes
+
+    def admin_tools(self) -> set[str]:
+        return {self.reset, self.export} | ({self.drop} if self.drop else set())
+
+
 class ToolSpec(BaseModel):
     name: str
     side_effect: SideEffect
@@ -70,6 +85,7 @@ class MCPServerSpec(BaseModel):
     url: str | None = None           # streamable_http: the server endpoint
     version: str | None = None       # streamable_http: the pinned server version; part of env_hash
     auth_env: str | None = None      # streamable_http: env var holding a bearer token (from .env, never a file)
+    tenant: TenantSpec | None = None  # streamable_http: per-run test tenants; required for tools that change state
     tools: list[ToolSpec] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -79,12 +95,19 @@ class MCPServerSpec(BaseModel):
         if self.transport == "streamable_http":
             if not self.url or not self.version:
                 raise ValueError(f"server {self.id!r}: a remote server needs `url` and a pinned `version`")
-            # EXT-07: a remote side effect must land somewhere the factory can reset and grade (a test tenant).
-            # Until test tenants exist, remote servers are read-only.
+            # EXT-07: a remote side effect must land somewhere the factory can reset and grade: a test tenant.
             writes = [t.name for t in self.tools if t.side_effect != SideEffect.READ]
-            if writes:
-                raise ValueError(f"server {self.id!r}: remote tools must be READ until test tenants exist "
-                                 f"(EXT-07); not READ: {', '.join(writes)}")
+            if writes and self.tenant is None:
+                raise ValueError(f"server {self.id!r}: remote tools that change state need a test tenant "
+                                 f"(`tenant:`, EXT-07); not READ: {', '.join(writes)}")
+        if self.tenant is not None:
+            if self.transport == "stdio":
+                raise ValueError(f"server {self.id!r}: `tenant` is for remote servers (a local one is reset with "
+                                 f"its sandbox)")
+            clash = self.tenant.admin_tools() & {t.name for t in self.tools}
+            if clash:
+                raise ValueError(f"server {self.id!r}: tenant admin tools are the factory's, never declared as "
+                                 f"tools: {', '.join(sorted(clash))}")
         agents = [t.name for t in self.tools if t.agent is not None]
         if agents and self.transport == "stdio":
             # An agent calls a model, and nothing in the sandbox can reach one (it has no network).

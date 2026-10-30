@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,7 @@ class GradeContext:
     db_path: Path
     spans: list[Span]
     max_steps: int
+    remote: dict[str, Any] = field(default_factory=dict)   # server -> its test tenant's state after the run
 
 
 class CheckResult(BaseModel):

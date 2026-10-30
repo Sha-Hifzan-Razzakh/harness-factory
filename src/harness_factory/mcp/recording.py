@@ -8,9 +8,12 @@ tool and arguments:
     <HF_REMOTE_RECORDINGS>/<server>@<version>/_tools.json            discovery (tool names and schemas)
     <HF_REMOTE_RECORDINGS>/<server>@<version>/<tool>/<args hash>.json one answer: text, error flag, structured
 
-Remote tools are READ-only (EXT-07), so the same call returning the same answer is a fair stand-in. A call that was
-never recorded is answered with an error marked as the environment's (`replay_miss`), never the model's.
-Nothing secret is written: answers only, never request headers.
+The n-th repeat of the same call in a run is recorded under its own key (n > 0), so a call made before and after a
+change gets the answer it got live; a READ call repeated more often than recorded falls back to the first answer.
+A call that was never recorded is answered with an error marked as the environment's (`replay_miss`), never the
+model's. A test tenant's export (EXT-07) is recorded with the calls that changed state before it, and a replay that
+made different ones is told so (`replay_diverged`): the recorded end state is not its end state.
+Nothing secret is written: answers only, never request headers (tenant ids included).
 """
 
 from __future__ import annotations
@@ -30,8 +33,9 @@ class Recording:
         self.dir = root / f"{spec.id}@{spec.version}"
 
     @staticmethod
-    def key(tool: str, args: dict[str, Any]) -> str:
-        return content_hash({"tool": tool, "args": args}, 16)
+    def key(tool: str, args: dict[str, Any], n: int = 0) -> str:
+        """n: earlier identical calls in the same session. 0 keeps the key recordings had before repeats counted."""
+        return content_hash({"tool": tool, "args": args, **({"n": n} if n else {})}, 16)
 
     def exists(self) -> bool:
         return (self.dir / "_tools.json").is_file()
@@ -42,11 +46,11 @@ class Recording:
     def load_tools(self) -> list[dict[str, Any]]:
         return json.loads((self.dir / "_tools.json").read_text())
 
-    def save_call(self, tool: str, args: dict[str, Any], answer: dict[str, Any]) -> None:
-        _write(self.dir / tool / f"{self.key(tool, args)}.json", {"tool": tool, "args": args, **answer})
+    def save_call(self, tool: str, args: dict[str, Any], answer: dict[str, Any], n: int = 0) -> None:
+        _write(self.dir / tool / f"{self.key(tool, args, n)}.json", {"tool": tool, "args": args, **answer})
 
-    def load_call(self, tool: str, args: dict[str, Any]) -> dict[str, Any] | None:
-        path = self.dir / tool / f"{self.key(tool, args)}.json"
+    def load_call(self, tool: str, args: dict[str, Any], n: int = 0) -> dict[str, Any] | None:
+        path = self.dir / tool / f"{self.key(tool, args, n)}.json"
         return json.loads(path.read_text()) if path.is_file() else None
 
 

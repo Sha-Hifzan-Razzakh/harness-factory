@@ -149,13 +149,21 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                 result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
                                    error=f"crash: {type(e).__name__}: {str(e)[:500]}",
                                    violations=list(inst.tools.violations))
+            remote, unreadable = await p.export_tenants()
+            if unreadable and result.scored:
+                # The end state of a remote test tenant is part of the environment: without it the run can't be
+                # graded, and it isn't the harness's doing.
+                result.status, result.scored = RunStatus.INCOMPLETE, False
+                result.error = f"infra: {unreadable}"
+            if remote:
+                inst.snapshot["tenant_state"] = remote
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
             with inst.tracer.span(SpanKind.grade, "pipeline"):
                 grades = f.graders.run(GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
                                                     workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
                                                     spans=list(inst.tracer.spans),
-                                                    max_steps=recipe.config.max_steps))
+                                                    max_steps=recipe.config.max_steps, remote=remote))
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
         result.trajectory = list(inst.tracer.spans)
