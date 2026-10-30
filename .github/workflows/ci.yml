@@ -40,7 +40,7 @@ jobs:
         run: uv run --no-sync ruff check src tests
 
       - name: Tests
-        run: uv run --no-sync pytest -q
+        run: uv run --no-sync pytest -q -n auto
 
       - name: Recipes validate
         run: uv run --no-sync hfx validate

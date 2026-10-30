@@ -13,6 +13,7 @@ The tag is a content hash of everything that goes in, so a changed server module
 
 from __future__ import annotations
 
+import contextlib
 import importlib.metadata as md
 import shutil
 import subprocess
@@ -108,7 +109,27 @@ def ensure_image(base: str | None = None, python: str | None = None) -> str:
     python = python or settings.SANDBOX_PYTHON
     key = f"{base}|{python}"
     with _ensure_lock:
-        return _ensured.get(key) or _ensure_locked(key, base, python)
+        if key in _ensured:
+            return _ensured[key]
+        with _build_lock():                     # other processes too (parallel test workers, a second campaign)
+            return _ensure_locked(key, base, python)
+
+
+@contextlib.contextmanager
+def _build_lock():
+    """An exclusive file lock, so only one process builds the image and the others then find it built."""
+    try:
+        import fcntl
+    except ImportError:                          # Windows: fall back to the in-process lock only
+        yield
+        return
+    settings.ensure_dirs()
+    with open(settings.VAR / ".sandbox-image.lock", "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def _ensure_locked(key: str, base: str, python: str) -> str:

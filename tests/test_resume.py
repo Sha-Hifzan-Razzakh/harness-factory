@@ -67,9 +67,8 @@ async def test_quota_interrupted_runs_are_finished_tomorrow(factory, tmp_path):
     assert cells[0].e.n == 4 and cells[0].excluded == 0
 
 
-async def test_an_interrupted_campaign_resumes_to_the_same_result(factory):
-    specs = plan(factory, "v2-base", "scripted", ["scripted/replay"], seeds=2,
-                 task_ids=["fs-01", "fs-02", "mix-01", "sql-01", "sql-02"])             # 10 runs
+async def test_an_interrupted_campaign_resumes_to_the_same_result(factory, p0_tasks):
+    specs = plan(factory, "v2-base", "scripted", ["scripted/replay"], seeds=2, task_ids=p0_tasks)  # 10 runs
     job = asyncio.ensure_future(run_campaign(factory, specs, concurrency=2))
     while len(factory.store.rows()) < 3:                                       # let a few finish, then Ctrl-C
         await asyncio.sleep(0.05)

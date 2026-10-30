@@ -67,8 +67,9 @@ def test_adjusted_e_uses_class_weight_and_never_goes_negative():
     assert weight_profile_of("KNOWN_PATH|IRREVERSIBLE|R3") == "irreversible"
 
 
-async def test_cost_separates_shapes_that_tie_on_outcome(factory):
-    recs = await smoke(factory, ["v2-base", "v3-staged"], "scripted", ["scripted/replay"])
+async def test_cost_separates_shapes_that_tie_on_outcome(factory, p0_tasks):
+    recs = await smoke(factory, ["v2-base", "v3-staged"], "scripted", ["scripted/replay"], concurrency=4,
+                       task_ids=p0_tasks)
     rows = [record_row(r) for r in recs]
     assert all(r["composite"] == 1.0 for r in rows)                                   # E0 ties
     cells = aggregate_rows(rows, CostBaseline.from_rows(rows))
@@ -80,16 +81,17 @@ async def test_cost_separates_shapes_that_tie_on_outcome(factory):
     assert all(c.mean_c > 0 for c in cells if c.recipe_id == "v3-staged")
 
 
-async def test_frozen_baseline_keeps_scores_stable_as_runs_arrive(factory, tmp_path):
+async def test_frozen_baseline_keeps_scores_stable_as_runs_arrive(factory, tmp_path, p0_tasks):
     store = ResultsStore(f"sqlite:///{tmp_path / 'r.db'}")
     factory.store = store
-    await smoke(factory, "v2-base", "scripted", ["scripted/replay"])
+    await smoke(factory, "v2-base", "scripted", ["scripted/replay"], concurrency=4, task_ids=p0_tasks)
     frozen_id = store.save_baseline(store.live_baseline())
     assert store.save_baseline(store.live_baseline()) == frozen_id                    # idempotent
     frozen = store.get_baseline(frozen_id)
     before = {c.task_class + c.recipe_id: c.e.mean for c in store.aggregate(frozen)[1]}
 
-    await smoke(factory, "v3-staged", "scripted", ["scripted/replay"])                # pricier runs arrive
+    await smoke(factory, "v3-staged", "scripted", ["scripted/replay"], concurrency=4,
+                task_ids=p0_tasks)                                                    # pricier runs arrive
     after_frozen = {c.task_class + c.recipe_id: c.e.mean for c in store.aggregate(frozen)[1]}
     live_baseline, _ = store.aggregate()
     assert {k: after_frozen[k] for k in before} == before                             # old cells unchanged

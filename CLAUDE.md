@@ -7,7 +7,7 @@ and stores an effectiveness score per (task class × recipe × model). Read READ
 
 ```bash
 uv sync --extra dev                 # install from uv.lock
-uv run pytest -q                    # full suite (a few minutes: every task runs through each shape; spawns MCP servers)
+uv run pytest -q -n auto              # full suite in parallel, as CI runs it (spawns MCP servers)
 uv run ruff check src tests
 uv run hfx validate                 # recipes vs tools.yaml, prompts, tiers
 uv run hfx reference                # every task's reference.py passes its own oracle
@@ -72,6 +72,11 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   shielded (`provisioner._teardown`), and a cancelled campaign waits for in-flight runs to finish cleaning up.
   Anything that creates resources must not do so before a step that can fail (e.g. `DockerSandbox` resolves
   its image before creating directories).
+- **Tests run in parallel** (pytest-xdist, one process per worker). A test may not depend on another test's state
+  or on a fixed path outside `tmp_path` (each test gets its own sandboxes directory), and a check for leftovers
+  looks only at what the test itself created, never at every hf container or directory. Tests about
+  aggregation, identity or campaigns use the `p0_tasks` fixture, not every task, so they don't slow down as the
+  catalog grows.
 - **Offline first.** Every feature must be testable with the `scripted` provider. Real-provider tests mock
   `litellm.acompletion` (see `tests/test_gateway_litellm.py`).
 

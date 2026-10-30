@@ -333,10 +333,10 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,
 
 
 async def smoke(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
-                seeds: int = 1, concurrency: int = 1) -> list[EffectivenessRecord]:
-    """Every task x recipe x model x seed. Several recipes make this a like-for-like shape comparison.
-    Raises on the first failed run (a gate must not pass with runs missing)."""
-    result = await run_campaign(f, plan(f, recipe_ids, provider_id, models, seeds), concurrency)
+                seeds: int = 1, concurrency: int = 1, task_ids: list[str] | None = None) -> list[EffectivenessRecord]:
+    """Every task (or task_ids) x recipe x model x seed. Several recipes make this a like-for-like shape
+    comparison. Raises on the first failed run (a gate must not pass with runs missing)."""
+    result = await run_campaign(f, plan(f, recipe_ids, provider_id, models, seeds, task_ids=task_ids), concurrency)
     if result.errors:
         e = result.errors[0]
         raise RuntimeError(f"{len(result.errors)} run(s) failed; first: {e.spec.model_dump()} -> {e.error}")

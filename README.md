@@ -19,7 +19,7 @@ hfx reference             # every task's reference solution passes its own oracl
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
 hfx smoke --recipe v1-base,v2-base,v3-staged --models scripted/replay   # compare shapes
 hfx results --cells       # per-cell E0, C, cost-adjusted E, bootstrap CI, pass rate
-pytest -q                 # ~215 tests (Docker tests skip without a daemon, Inspect without the extra)
+pytest -q -n auto         # ~215 tests in parallel (Docker tests skip without a daemon)
 ```
 
 ## Real models
