@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SideEffect(str, Enum):
@@ -37,13 +37,38 @@ class ToolSpec(BaseModel):
 
 
 class MCPServerSpec(BaseModel):
+    """A local server (stdio, started inside each run's sandbox) or a remote one (streamable HTTP, an existing
+    service the factory's MCP client connects to; EXT-05). The sandbox never gets network access for a remote
+    server: the client runs in the factory process."""
     id: str
     transport: Literal["stdio", "streamable_http"] = "stdio"
-    module: str                      # python module run with -m for stdio servers
+    module: str | None = None        # stdio: python module run with -m inside the sandbox
+    url: str | None = None           # streamable_http: the server endpoint
+    version: str | None = None       # streamable_http: the pinned server version; part of env_hash
+    auth_env: str | None = None      # streamable_http: env var holding a bearer token (from .env, never a file)
     tools: list[ToolSpec] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _transport_fields(self) -> MCPServerSpec:
+        if self.transport == "stdio" and not self.module:
+            raise ValueError(f"server {self.id!r}: a stdio server needs `module`")
+        if self.transport == "streamable_http":
+            if not self.url or not self.version:
+                raise ValueError(f"server {self.id!r}: a remote server needs `url` and a pinned `version`")
+            # EXT-07: a remote side effect must land somewhere the factory can reset and grade (a test tenant).
+            # Until test tenants exist, remote servers are read-only.
+            writes = [t.name for t in self.tools if t.side_effect != SideEffect.READ]
+            if writes:
+                raise ValueError(f"server {self.id!r}: remote tools must be READ until test tenants exist "
+                                 f"(EXT-07); not READ: {', '.join(writes)}")
+        return self
+
+    @property
+    def remote(self) -> bool:
+        return self.transport == "streamable_http"
+
     def command(self) -> tuple[str, list[str]]:
-        return sys.executable, ["-m", self.module]
+        return sys.executable, ["-m", self.module or ""]
 
 
 class ToolCatalogFile(BaseModel):
@@ -70,7 +95,11 @@ class ToolCatalogFile(BaseModel):
         from harness_factory.hashing import content_hash
         specs = {t.ref(s.id): t.model_dump(mode="json", exclude={"granted_by"} if t.granted_by is None else None)
                  for s in self.servers if s.id in server_ids for t in s.tools}
-        return content_hash({"tools": specs, "provider_model_id": provider_model_id}, 12)
+        data = {"tools": specs, "provider_model_id": provider_model_id}
+        remote = {s.id: f"{s.url}@{s.version}" for s in self.servers if s.id in server_ids and s.remote}
+        if remote:                                   # only then, so local-only environments keep their hash
+            data["remote"] = remote
+        return content_hash(data, 12)
 
     def unhashed_tools(self) -> list[str]:
         return [t.ref(s.id) for s in self.servers for t in s.tools if not t.schema_hash]

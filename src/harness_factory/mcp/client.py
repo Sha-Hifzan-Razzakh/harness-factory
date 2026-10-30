@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections.abc import Callable
@@ -72,6 +73,9 @@ class MCPClient:
         self.capabilities = CapabilitySet()
         self._stack = AsyncExitStack()
         self._session: ClientSession | None = None
+        self.close_error: str | None = None
+        self._owner: asyncio.Task | None = None
+        self._closing: asyncio.Event | None = None
 
     async def __aenter__(self) -> MCPClient:
         # Python never calls __aexit__ for a failed __aenter__: if anything below fails or is cancelled (Ctrl-C
@@ -79,18 +83,24 @@ class MCPClient:
         try:
             return await self._open()
         except BaseException:
+            if self._owner is not None:                     # a remote session being opened: stop its owner too
+                self._owner.cancel()
+                await asyncio.gather(self._owner, return_exceptions=True)
             await self._stack.aclose()
             raise
 
     async def _open(self) -> MCPClient:
-        if self.launcher is not None:                       # the sandbox decides how the server process starts
-            cmd, args, extra = self.launcher(self.spec)
+        if self.spec.remote:
+            init = await self._open_remote()
         else:
-            (cmd, args), extra = self.spec.command(), self.env
-        params = StdioServerParameters(command=cmd, args=args, env=process_env(extra))
-        read, write = await self._stack.enter_async_context(stdio_client(params))
-        self._session = await self._stack.enter_async_context(ClientSession(read, write))
-        init = await self._session.initialize()
+            if self.launcher is not None:                   # the sandbox decides how the server process starts
+                cmd, args, extra = self.launcher(self.spec)
+            else:
+                (cmd, args), extra = self.spec.command(), self.env
+            params = StdioServerParameters(command=cmd, args=args, env=process_env(extra))
+            read, write = await self._stack.enter_async_context(stdio_client(params))
+            self._session = await self._stack.enter_async_context(ClientSession(read, write))
+            init = await self._session.initialize()
         self.protocol_version = str(init.protocol_version)
         caps = init.capabilities
         self.capabilities = CapabilitySet(
@@ -101,8 +111,64 @@ class MCPClient:
         )
         return self
 
+    async def _open_remote(self):
+        """A remote server (EXT-05): connect from the factory process over streamable HTTP. The token comes from
+        the environment variable the catalog names (EXT-13); it goes into this client's headers only, never into a
+        trace, a transcript, or a sandbox.
+
+        The session lives in its own owner task. The HTTP transport runs a task group; if the server goes away,
+        that group cancels the task that entered it. Owned here, that is only the owner: the run's pending call
+        then fails with "connection closed", which the tool executor records as the environment failing."""
+        import httpx2
+        from mcp.client.streamable_http import streamable_http_client
+
+        from harness_factory.substrate.errors import ErrorKind, HarnessError
+
+        headers = {}
+        if self.spec.auth_env:
+            token = os.environ.get(self.spec.auth_env)
+            if not token:
+                raise HarnessError(ErrorKind.PROVISION, f"remote MCP server {self.spec.id!r} needs "
+                                                        f"{self.spec.auth_env} in .env or the environment")
+            headers["Authorization"] = f"Bearer {token}"
+        self.transport = Transport.STREAMABLE_HTTP
+        ready, self._closing = asyncio.Event(), asyncio.Event()
+        box: dict[str, Any] = {}
+
+        async def owner() -> None:
+            try:
+                async with AsyncExitStack() as stack:
+                    http = await stack.enter_async_context(httpx2.AsyncClient(headers=headers, timeout=30))
+                    read, write = await stack.enter_async_context(streamable_http_client(self.spec.url, http_client=http))
+                    session = await stack.enter_async_context(ClientSession(read, write))
+                    box["init"] = await session.initialize()
+                    self._session = session
+                    ready.set()
+                    await self._closing.wait()
+            except BaseException as e:                      # noqa: BLE001  (reported to whoever waits on it)
+                box.setdefault("error", e)
+                if not isinstance(e, Exception):
+                    box["error"] = RuntimeError(f"remote session ended: {type(e).__name__}")
+            finally:
+                ready.set()
+
+        self._owner = asyncio.create_task(owner())
+        await ready.wait()
+        if "init" not in box:
+            await asyncio.gather(self._owner, return_exceptions=True)
+            raise box.get("error") or RuntimeError("remote session did not start")
+        return box["init"]
+
     async def __aexit__(self, *exc) -> None:
-        await self._stack.aclose()
+        if self._owner is None:
+            await self._stack.aclose()
+            return
+        # A remote server that went away can't take the session-end request; nothing of ours is left open, and the
+        # run's result does not depend on it.
+        self._closing.set()
+        (res,) = await asyncio.gather(self._owner, return_exceptions=True)
+        if isinstance(res, BaseException):
+            self.close_error = f"{type(res).__name__}: {str(res)[:200]}"
 
     async def list_tools(self) -> list[DiscoveredTool]:
         assert self._session is not None
