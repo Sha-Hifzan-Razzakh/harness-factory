@@ -18,6 +18,7 @@ class BudgetGuard:
         self.used_tool_calls = 0
         self.used_steps = 0
         self.started_at = time.monotonic()
+        self._excluded_at_start = 0.0
 
     def charge(self, span: Span) -> None:
         if span.kind == SpanKind.model_call:
@@ -44,11 +45,15 @@ class BudgetGuard:
         return None
 
     def start(self) -> None:
-        """Start the wall clock when the shape starts: provisioning (sandbox, MCP, Docker) is not the harness."""
+        """Start the wall clock when the shape starts: provisioning (sandbox, MCP, Docker) is not the harness.
+        Only waits after this point are excluded: a delegate's guard shares its parent's (cumulative) excluded_s,
+        and the waits before the helper started are not the helper's to keep."""
         self.started_at = time.monotonic()
+        self._excluded_at_start = self.excluded_s()
 
     def elapsed_s(self) -> float:
-        return max(0.0, time.monotonic() - self.started_at - self.excluded_s())
+        excluded = self.excluded_s() - self._excluded_at_start
+        return max(0.0, time.monotonic() - self.started_at - excluded)
 
     def remaining(self) -> dict[str, int]:
         return {

@@ -54,9 +54,10 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **How runs end** (`shapes/common.finish`, `runner._finalize_status`):
-  - A harness stop (budget, stage cap, context overflow, malformed output) is graded on the environment with
-    outcome × `OVERRUN_OUTCOME_FACTOR` and status at most PARTIAL.
-  - Infrastructure is INCOMPLETE; setup and crashes are ERROR. Neither is averaged into cell means.
+  - A harness stop (budget, V3 stage cap, V4 step cap, context overflow, malformed output) is graded on the
+    environment with outcome × `OVERRUN_OUTCOME_FACTOR` and status at most PARTIAL.
+  - Infrastructure is INCOMPLETE; setup and crashes are ERROR, including a delegate's or worker's (it ends the
+    parent run). Neither is averaged into cell means.
   - Provider exceptions are classified in exactly one place, `substrate/gateway.classify_provider_error`. Never
     catch provider errors elsewhere.
   - A 400 is the model's fault only when the provider says the output was malformed.

@@ -89,11 +89,14 @@ async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
             return out, f"budget:{limit}"
         name, args = call["function"]["name"], call["function"]["arguments"]
         where = f"{inst.scope}/{scope}" if inst.scope and scope else (scope or inst.scope)
+        stop = None
         if name == delegate.DELEGATE_NAME and inst.delegate is not None:
-            text = await delegate.run_delegate(inst, args, restrict=restrict, scope=where)
+            text, stop = await delegate.run_delegate(inst, args, restrict=restrict, scope=where)
         else:
             text = (await inst.tools.execute(name, args, restrict=restrict, scope=where)).text
         out.append({"role": "tool", "tool_call_id": call["id"], "content": text})
+        if stop:                    # a helper ended on infrastructure or a setup failure: so does this run
+            return out, stop
     return out, None
 
 
@@ -111,6 +114,8 @@ def finish(inst: HarnessInstance, messages: list[dict[str, Any]], stop: str | No
            error_text: str | None = None) -> RunResult:
     """Map how the shape ended to a RunResult. Grading then sets SUCCESS / PARTIAL / FAIL for every scored run."""
     stop = stop or DONE
+    if error_text is None:
+        error_text = inst.stop_error
     result = RunResult(run_key=inst.run_key, messages=messages, output=output)
     result.violations = list(inst.tools.violations)
     if stop == DONE:
