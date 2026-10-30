@@ -140,13 +140,18 @@ class WorkflowSpec(BaseModel):
 class PlanSpec(BaseModel):
     """V4 planner: the planner slot writes a numbered plan from the task and the tool list (it calls no tools); the
     executor carries it out one step at a time, each step a bounded tool loop. A step that replies "BLOCKED: ..."
-    sends the remaining work back to the planner, at most `max_replans` times per run."""
+    sends the remaining work back to the planner, at most `max_replans` times per run.
+
+    V5 orchestrator uses the same plan and replan, but each step is a delegate call to the recipe's `delegation`
+    child with `worker_prompt` as its task; `step_max_steps` doesn't apply there (the worker's own config bounds a
+    step)."""
     planner_prompt: str = "plan/planner"              # system prompt of the planner's calls
     step_prompt: str = "plan/step"                    # appended as a user message when each step starts
     replan_prompt: str = "plan/replan"                # the planner's instruction when a step is blocked
     max_plan_steps: int = Field(6, ge=1)              # a longer plan has its tail merged into the last step
     step_max_steps: int = Field(4, gt=0)              # model calls in one step before it is ended
     max_replans: int = Field(1, ge=0)
+    worker_prompt: str | None = None                  # V5: the task each worker gets (required there)
 
     def worst_case_calls(self) -> int:
         """Model calls the shape can make: every plan and replan, and every step of each at its cap."""
@@ -155,7 +160,7 @@ class PlanSpec(BaseModel):
 
 # Optional fields added after results were first recorded. When unset they are dropped before hashing, so
 # adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
-_HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "config.call_timeout_s", "config.recover_malformed")
+_HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_prompt", "config.call_timeout_s", "config.recover_malformed")
 
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
@@ -204,7 +209,7 @@ class HarnessRecipe(BaseModel):
     grader_hooks: list[str] = Field(default_factory=list)
     workflow: WorkflowSpec | None = None              # required by V3_WORKFLOW_GRAPH, rejected elsewhere
     delegation: Delegation | None = None              # delegate tool to a child recipe (EXT-09)
-    planning: PlanSpec | None = None                  # required by V4_PLANNER, rejected elsewhere
+    planning: PlanSpec | None = None                  # required by V4_PLANNER and V5_ORCHESTRATOR, rejected elsewhere
 
     def prompt_refs(self) -> list[str]:
         refs = [self.prompts.system, self.prompts.task] + ([self.prompts.operator] if self.prompts.operator else [])
@@ -214,6 +219,8 @@ class HarnessRecipe(BaseModel):
             refs += [st.prompt for st in self.workflow.stages]
         if self.planning:
             refs += [self.planning.planner_prompt, self.planning.step_prompt, self.planning.replan_prompt]
+            if self.planning.worker_prompt:
+                refs.append(self.planning.worker_prompt)
         return refs
 
     def content_hash(self, prompts: PromptSources | None = None, skills: dict | None = None) -> str:

@@ -81,8 +81,8 @@ jobs:
       - name: P0 gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8
 
-      - name: V3 workflow and V4 planner gate (offline, scripted model)
-        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner --models scripted/replay --strict -j 8
+      - name: V3, V4 and V5 shape gate (offline, scripted model)
+        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
         run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate --models scripted/replay --strict -j 8

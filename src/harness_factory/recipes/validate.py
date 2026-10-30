@@ -133,16 +133,31 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
                                                   detail=f"stage {st.id}: {pat!r} matches no reachable tool"))
 
     pl = recipe.planning
-    if recipe.variant == Variant.V4_PLANNER and pl is None:
-        issues.append(ValidationIssue(rule="planning_required", detail="V4_PLANNER needs `planning`"))
-    if recipe.variant != Variant.V4_PLANNER and pl is not None:
+    planned = (Variant.V4_PLANNER, Variant.V5_ORCHESTRATOR)
+    if recipe.variant in planned and pl is None:
+        issues.append(ValidationIssue(rule="planning_required", detail=f"{recipe.variant.value} needs `planning`"))
+    if recipe.variant not in planned and pl is not None:
         issues.append(ValidationIssue(rule="planning_unused", detail=f"{recipe.variant.value} ignores planning"))
+    if recipe.variant == Variant.V5_ORCHESTRATOR:
+        if pl is not None and not pl.worker_prompt:
+            issues.append(ValidationIssue(rule="worker_prompt_required",
+                                          detail="V5_ORCHESTRATOR needs planning.worker_prompt"))
+        if recipe.delegation is None:
+            issues.append(ValidationIssue(rule="workers_required",
+                                          detail="V5_ORCHESTRATOR needs `delegation` (the worker recipe)"))
+        elif pl is not None and recipe.delegation.max_calls < pl.max_plan_steps * (1 + pl.max_replans):
+            issues.append(ValidationIssue(rule="workers_fit_plan",
+                                          detail=f"plans can have {pl.max_plan_steps * (1 + pl.max_replans)} steps "
+                                                 f"(replans included) but delegation.max_calls is "
+                                                 f"{recipe.delegation.max_calls}"))
+    elif pl is not None and pl.worker_prompt:
+        issues.append(ValidationIssue(rule="worker_prompt_unused", detail="only V5 uses planning.worker_prompt"))
     if pl is not None:
-        if pl.worst_case_calls() > recipe.config.max_steps:
+        if recipe.variant == Variant.V4_PLANNER and pl.worst_case_calls() > recipe.config.max_steps:
             issues.append(ValidationIssue(rule="planning_fits_budget",
                                           detail=f"plans and steps can take {pl.worst_case_calls()} model calls "
                                                  f"(replans included) but max_steps is {recipe.config.max_steps}"))
-        for ref in (pl.planner_prompt, pl.step_prompt, pl.replan_prompt):
+        for ref in (pl.planner_prompt, pl.step_prompt, pl.replan_prompt, *([pl.worker_prompt] if pl.worker_prompt else [])):
             if not prompts.exists(ref):
                 issues.append(ValidationIssue(rule="prompt_exists", detail=f"planning: prompt {ref!r}"))
         planner = recipe.model_slots.get("planner")

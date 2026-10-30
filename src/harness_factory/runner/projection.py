@@ -27,7 +27,8 @@ from harness_factory.results.store import UNSCORED
 
 # (model calls, tokens) per run when nothing has been measured yet
 SHAPE_DEFAULTS = {Variant.V1_SINGLE_CALL: (1, 2_000), Variant.V2_TOOL_LOOP: (6, 6_000),
-                  Variant.V3_WORKFLOW_GRAPH: (10, 14_000), Variant.V4_PLANNER: (8, 12_000)}
+                  Variant.V3_WORKFLOW_GRAPH: (10, 14_000), Variant.V4_PLANNER: (8, 12_000),
+                  Variant.V5_ORCHESTRATOR: (10, 16_000)}
 INPUT_SHARE = 0.86       # Phase 1: 82,860 of 96,093 tokens were input; used to price a token estimate
 
 
