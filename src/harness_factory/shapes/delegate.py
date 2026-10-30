@@ -156,7 +156,8 @@ async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[st
     allowed = {r for r in inst.tools.allowed if child.tools.allows(r) and r.split(".")[0] in child.tools.mcp_servers}
     budget = BudgetGuard(config, excluded_s=inst.budget.excluded_s)
     tools = ToolExecutor(inst.tools.pool, inst.tools.declared, allowed, stricter(inst.tools.policy, child.policies),
-                         budget, inst.tracer, inst.tools.run_key, faults=inst.tools.faults)
+                         budget, inst.tracer, inst.tools.run_key, faults=inst.tools.faults,
+                         agent_calls=inst.tools.agent_calls)
     task = d.task.model_copy(update={"instruction": sub})
     grand = context_for(child, d.task, d.assembler, d.limits, d.depth + 1, d.chain)
     names = sorted(model_name(r) for r in allowed) + ([DELEGATE_NAME] if grand and grand.depth < d.limits.max_depth else [])

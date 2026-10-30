@@ -15,6 +15,11 @@ class CostLedger(BaseModel):
     tool_calls: int = 0
     wall_s: float = 0.0
     usd: float = 0.0
+    # Agent tools (EXT-10): their reported usage is already inside tokens_in/tokens_out/usd above (nothing is free);
+    # these say how much of it was theirs.
+    agent_calls: int = 0
+    agent_tokens: int = 0
+    agent_usd: float = 0.0
     price_basis: str = "provider list price"
 
     def add(self, span: Span, usd: float = 0.0) -> None:
@@ -28,3 +33,10 @@ class CostLedger(BaseModel):
             self.usd += usd
         elif span.kind == SpanKind.tool_call:
             self.tool_calls += 1
+            if span.attributes.get("agent"):
+                self.agent_calls += 1
+                self.tokens_in += span.tokens_in
+                self.tokens_out += span.tokens_out
+                self.usd += usd
+                self.agent_tokens += span.tokens_in + span.tokens_out
+                self.agent_usd += usd

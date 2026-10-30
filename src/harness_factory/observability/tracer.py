@@ -55,6 +55,9 @@ def _annotate(otel, s: Span) -> None:
         otel.set_attribute("gen_ai.usage.output_tokens", s.tokens_out)
     if s.kind == SpanKind.tool_call:
         otel.set_attribute("tool.name", s.name)
+        if s.tokens_in or s.tokens_out:                # an agent tool's reported usage (EXT-10)
+            otel.set_attribute("gen_ai.usage.input_tokens", s.tokens_in)
+            otel.set_attribute("gen_ai.usage.output_tokens", s.tokens_out)
     for k, v in s.attributes.items():
         if isinstance(v, (str, int, float, bool)):
             otel.set_attribute(f"hf.{k}", v)

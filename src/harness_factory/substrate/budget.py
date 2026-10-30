@@ -25,6 +25,7 @@ class BudgetGuard:
             self.used_tokens += span.tokens_in + span.tokens_out
         elif span.kind == SpanKind.tool_call:
             self.used_tool_calls += 1
+            self.used_tokens += span.tokens_in + span.tokens_out      # an agent tool's own model calls (EXT-10)
 
     def exceeded_by(self, before: str = "model_call") -> str | None:
         """Which limit stops the next action, or None. `before` is "model_call" or "tool_call".
