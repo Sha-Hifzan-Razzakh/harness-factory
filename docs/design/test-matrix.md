@@ -66,7 +66,32 @@ injected faults (framework error handling), and wall-time overhead.
 Fairness rules: same tasks, tool permissions and per-run budget for every runner. Framework defaults are what you
 deploy, so they are left as they are and recorded. Tuning them per runner is a separate experiment.
 
-## 3. Matrix checklist
+## 3. Every layer on its framework (MCP, LlamaIndex, LangGraph, …)
+
+The rule from the runners applies to every layer. Each one uses the framework the requirements name for it,
+through that framework's own components. Hand-written code is wrapped around it only at the two measurement points
+(model client → `ModelGateway`, tool callables → `ToolExecutor`). A hand-written substitute needs an ADR saying
+which measurement it protects. Requirements: FWK-01 to FWK-05, with the full plan-vs-build table ("Framework
+fidelity: plan vs build") in the Requirements v1 doc.
+
+Where the build stands (2026-10-30): the planned framework is used fully in 4 of 20 layers, partly in 6, and not at
+all in 10. The gaps that matter most for the matrix:
+
+| Layer | Planned framework | Built today | Fix |
+|---|---|---|---|
+| MCP client in harness | langchain-mcp-adapters (and LlamaIndex's MCP tool spec for LlamaIndex runners) | MCP SDK `ClientSession` in our own session pool | Framework runners load MCP tools through their framework's adapter, wrapped so calls still go through `ToolExecutor` |
+| Retrieval | LlamaIndex (Qdrant vector index, BM25 retriever, reranker) | Not built; `retrieval` is refused | Build it on LlamaIndex, never hand-written |
+| Model gateway | LiteLLM Router | `litellm.acompletion` per call in our gateway | `litellm.Router` inside `ModelGateway`; error classification stays in one place |
+| Shapes / runners | LangGraph prebuilt agent, Postgres checkpointer, supervisor for V5 | Hand-built graphs, no checkpointer | Hand-built graphs stay as the native runtime; prebuilt and supervisor become runners; add the checkpointer |
+| Graders | deepdiff, jsonschema, pytest; DeepEval and Ragas as judges | Own check kinds; no judge | Use those libraries; judges as separate graders, apart from the outcome score |
+| Structured output | instructor | Not built | instructor for models without native tool calling |
+| Analysis | scipy, polars; Superset | Standard library and markdown | `scipy.stats.bootstrap`, polars, Superset on the results DB |
+| Fault injection | FastMCP proxy + middleware | Inside `ToolExecutor` | Revisit with runners: MCP middleware hits every client alike |
+
+MCP servers (the SDK's `MCPServer`, FastMCP's successor), V1, Jinja2 prompts and skills, and the Docker sandbox
+already match. The campaign runner stays our own by decision (ADR 0001).
+
+## 4. Matrix checklist
 
 | Axis | Values today | Keep in mind |
 |---|---|---|
@@ -80,7 +105,7 @@ deploy, so they are left as they are and recorded. Tuning them per runner is a s
 | Budget, days | `--budget-usd`, `--deadline-days` | Free tiers spread a big plan over days; `--resume` after the 00:00 UTC reset |
 | Cost baseline | live, or frozen with `hfx baseline save` | Freeze before comparing across campaigns |
 
-## 4. Open items
+## 5. Open items
 
 - **`hfx bench <file>`** (planned): run a benchmark described like `benchmark.example.yaml` instead of long CLI
   flags, and record the file with the campaign.
