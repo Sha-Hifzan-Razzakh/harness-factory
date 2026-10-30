@@ -6,6 +6,7 @@ Keeping these in one place means shapes differ only in control flow, which is th
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,19 +18,55 @@ from harness_factory.substrate.errors import INFRA_KINDS, ErrorKind, HarnessErro
 DONE = "done"
 
 
+RECOVERY_NOTE = ("Your last reply was rejected and not run: {error}\n"
+                 "Use only these tools: {tools}. Continue the task.")
+
+
+@dataclass
+class Turn:
+    """One model turn. `added` are the messages to append, in order: any recovery notes, then the reply (absent
+    when the turn stopped). `calls` counts model calls made, a recovered turn makes more than one."""
+    added: list[dict[str, Any]] = field(default_factory=list)
+    stop: str | None = None
+    error: str | None = None
+    calls: int = 0
+
+    @property
+    def message(self) -> dict[str, Any] | None:
+        return self.added[-1] if self.added and self.added[-1].get("role") == "assistant" else None
+
+
 async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict[str, Any]],
-                     tools: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None, str | None]:
-    """One model call under the budget. Returns (assistant message, stop reason, error text)."""
-    limit = inst.budget.exceeded_by()
-    if limit:
-        return None, f"budget:{limit}", None
-    try:
-        comp = await inst.gateway.complete(slot, messages, tools)
-    except HarnessError as e:
-        return None, f"error:{e.kind.value}", e.message
-    inst.budget.used_steps += 1
-    inst.budget.used_tokens += comp.tokens_in + comp.tokens_out
-    return comp.message, None, None
+                     tools: list[dict[str, Any]]) -> Turn:
+    """One model call under the budget.
+
+    With `config.recover_malformed`, a reply the provider rejects as malformed (MODEL_PARSE, e.g. a call to a tool
+    that doesn't exist) is not the end: the model is told why, with the real tool names, and asked again. The
+    rejected reply still costs a step, and the trajectory grader counts it as an invalid call, so recovering is
+    never free: it can only beat stopping, not a clean run."""
+    turn = Turn()
+    while True:
+        limit = inst.budget.exceeded_by()
+        if limit:
+            turn.stop = f"budget:{limit}"
+            return turn
+        try:
+            comp = await inst.gateway.complete(slot, messages + turn.added, tools)
+        except HarnessError as e:
+            if e.kind == ErrorKind.MODEL_PARSE and inst.recoveries < (inst.recipe.config.recover_malformed or 0):
+                inst.recoveries += 1
+                inst.budget.used_steps += 1
+                turn.calls += 1
+                names = ", ".join(t["function"]["name"] for t in tools) or "none"
+                turn.added.append({"role": "user", "content": RECOVERY_NOTE.format(error=e.message[:300], tools=names)})
+                continue
+            turn.stop, turn.error = f"error:{e.kind.value}", e.message
+            return turn
+        inst.budget.used_steps += 1
+        inst.budget.used_tokens += comp.tokens_in + comp.tokens_out
+        turn.calls += 1
+        turn.added.append(comp.message)
+        return turn
 
 
 async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],

@@ -8,13 +8,48 @@ from pydantic import BaseModel
 
 from harness_factory.env.mcp.servers import RISK_TO_TIER, TIER_ORDER, ToolCatalogFile
 from harness_factory.providers.catalog import ProviderCatalog
-from harness_factory.recipes.model import HarnessRecipe, Variant
+from harness_factory.recipes.model import (
+    HarnessRecipe,
+    MemoryProfile,
+    RuntimeConfig,
+    SkillSet,
+    ToolSlice,
+    Variant,
+)
 from harness_factory.substrate.prompts import PromptRegistry
 
 
 class ValidationIssue(BaseModel):
     rule: str
     detail: str
+
+
+def inert_fields(recipe: HarnessRecipe) -> list[str]:
+    """Recipe fields set away from their default that nothing in the factory acts on yet. A recipe that sets one
+    would be measured as if it had that feature while running without it, so it is refused until the field is
+    implemented (ADR 0002). Remove a line here in the PR that implements the field."""
+    d_cfg, d_tools = RuntimeConfig(), ToolSlice(tool_ids=[], mcp_servers=[])
+    out = []
+    if recipe.skills != SkillSet():
+        out.append("skills")
+    if recipe.memory != MemoryProfile():
+        out.append("memory")
+    if recipe.retrieval is not None and recipe.retrieval.mode != "none":
+        out.append("retrieval")
+    if recipe.config.compaction_at != d_cfg.compaction_at:
+        out.append("config.compaction_at")
+    if recipe.config.parallel_tool_calls != d_cfg.parallel_tool_calls:
+        out.append("config.parallel_tool_calls")
+    for f in ("deferred", "defer_above_tokens", "binding"):
+        if getattr(recipe.tools, f) != getattr(d_tools, f):
+            out.append(f"tools.{f}")
+    if recipe.policies.approval_rules:
+        out.append("policies.approval_rules")
+    if not recipe.headless:
+        out.append("headless")
+    if recipe.grader_hooks:
+        out.append("grader_hooks")
+    return out
 
 
 def reachable_tools(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[str]:
@@ -39,6 +74,9 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
 
     issues: list[ValidationIssue] = []
     prompts = prompts or PromptRegistry()
+
+    for f in inert_fields(recipe):
+        issues.append(ValidationIssue(rule="field_implemented", detail=f"{f} is declared but not implemented yet"))
 
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))
