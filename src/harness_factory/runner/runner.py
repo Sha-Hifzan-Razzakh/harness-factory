@@ -7,8 +7,11 @@ smoke          every task x every model on one recipe: the P0 gate
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
+
+from pydantic import BaseModel
 
 import harness_factory.shapes.builtin  # noqa: F401
 from harness_factory import settings
@@ -158,15 +161,71 @@ async def run_reference(f: Factory, task: Task) -> Grade:
         return f.graders.graders["state_diff"].grade(ctx)
 
 
-async def smoke(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
-                seeds: int = 1) -> list[EffectivenessRecord]:
-    """Every task x recipe x model x seed. Several recipes make this a like-for-like shape comparison."""
+class RunSpec(BaseModel):
+    """One planned run of a campaign: task x recipe x model x provider x seed."""
+    task_id: str
+    recipe_id: str
+    canonical_model: str
+    provider: str
+    seed: int = 0
+
+
+class CampaignError(BaseModel):
+    spec: RunSpec
+    error: str
+
+
+class CampaignResult(BaseModel):
+    records: list[EffectivenessRecord]          # in plan order
+    errors: list[CampaignError]
+    concurrency: int
+    wall_s: float
+    quota_wait_s: dict[str, float]
+
+
+def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
+         seeds: int = 1, task_ids: list[str] | None = None) -> list[RunSpec]:
+    """Every task x recipe x model x seed, in a fixed order (results come back in this order)."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
-    out = []
-    for task in f.tasks.all():
-        for rid in recipe_ids:
-            for m in models:
-                for seed in range(seeds):
-                    out.append(await run_one(f, task, f.recipes[rid], m, provider_id, seed=seed))
-    return out
+    tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
+    return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s)
+            for t in tasks for r in recipe_ids for m in models for s in range(seeds)]
+
+
+async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4) -> CampaignResult:
+    """Run specs with up to `concurrency` runs in flight. Workers share the Factory's QuotaLedger, so model
+    calls are paced to each provider's limits however many workers there are. One failing run never stops
+    the others; its error is reported with its spec."""
+    if concurrency < 1:
+        raise ValueError("concurrency must be at least 1")
+    gate = asyncio.Semaphore(concurrency)
+    t0 = time.monotonic()
+    waits_before = dict(f.ledger.waits)
+
+    async def one(spec: RunSpec) -> EffectivenessRecord | CampaignError:
+        async with gate:
+            try:
+                return await run_one(f, f.tasks.get(spec.task_id), f.recipes[spec.recipe_id], spec.canonical_model,
+                                     spec.provider, seed=spec.seed)
+            except Exception as e:  # noqa: BLE001  (reported per run with its spec; the campaign carries on)
+                return CampaignError(spec=spec, error=f"{type(e).__name__}: {str(e)[:500]}")
+
+    outcomes = await asyncio.gather(*(one(s) for s in specs))
+    return CampaignResult(
+        records=[o for o in outcomes if isinstance(o, EffectivenessRecord)],
+        errors=[o for o in outcomes if isinstance(o, CampaignError)],
+        concurrency=concurrency, wall_s=round(time.monotonic() - t0, 3),
+        quota_wait_s={p: round(w - waits_before.get(p, 0.0), 3) for p, w in f.ledger.waits.items()
+                      if w > waits_before.get(p, 0.0)})
+
+
+async def smoke(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
+                seeds: int = 1, concurrency: int = 1) -> list[EffectivenessRecord]:
+    """Every task x recipe x model x seed. Several recipes make this a like-for-like shape comparison.
+    Raises on the first failed run (a gate must not pass with runs missing)."""
+    result = await run_campaign(f, plan(f, recipe_ids, provider_id, models, seeds), concurrency)
+    if result.errors:
+        e = result.errors[0]
+        raise RuntimeError(f"{len(result.errors)} run(s) failed; first: {e.spec.model_dump()} -> {e.error}")
+    return result.records

@@ -50,6 +50,10 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   asked for still run. Tool, token and wall-time limits gate everything.
 - **Shapes differ only in control flow.** Model turns, tool batches and the stop-to-status mapping live in
   `shapes/common.py`; a new shape reuses them so comparisons stay fair.
+- **Concurrency.** Campaigns run many `run_one` calls on one event loop. Per-run state lives in the run
+  (tracer, budget, backend, sandbox); only the Factory's QuotaLedger and ResultsStore are shared. Never add
+  module-level mutable state that a run writes to. Model calls go through `ModelGateway`, which takes a ledger
+  slot first, so new code must not call providers directly.
 - **Offline first.** Every feature must be testable with the `scripted` provider. Real-provider tests mock
   `litellm.acompletion` (see `tests/test_gateway_litellm.py`).
 

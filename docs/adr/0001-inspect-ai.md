@@ -41,7 +41,7 @@ inspect view
 | Providers | LiteLLM + catalog + quota ledger + allocation planner (P2) | Built-in providers, incl. OpenRouter and Groq | **Factory**: no quota or allocation in Inspect |
 | MCP | Session pool, frozen catalog, schema-drift check | `mcp_server_stdio/http/sandbox` | **Factory**: drift checking is required for comparable runs |
 | Sandboxes | Local, Docker (no network, read-only, no caps) | Docker, plus Kubernetes and others via plugins | **Factory** for now; revisit if Kubernetes scale is needed |
-| Concurrency, retries | Sequential runner | `max_samples`, retries, eval sets | **Gap in the factory**: parallel workers are a P2 item; Inspect can be used meanwhile |
+| Concurrency, retries | Parallel campaigns with a shared, pacing quota ledger (added after this spike) | `max_samples`, retries, eval sets | **Factory** (the gap this spike found is closed) |
 | Log viewing | JSONL, Phoenix, Langfuse, MLflow | `inspect view` | **Both**: Inspect's viewer is a good per-sample transcript browser |
 | Benchmarks | 5 seed tasks | `inspect_evals` library | **Later**: importing agentic benchmarks as factory tasks needs environment-state oracles, so only some fit |
 

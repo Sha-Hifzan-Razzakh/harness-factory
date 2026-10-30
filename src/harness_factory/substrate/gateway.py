@@ -115,12 +115,14 @@ class ModelGateway:
         if not slot.canonical_model:
             raise HarnessError(ErrorKind.PROVISION, f"model slot {slot.role} has no canonical model")
         served = self.catalog.served(self.provider.id, slot.canonical_model)
-        if self.ledger.exhausted(self.provider.id):
-            raise HarnessError(ErrorKind.QUOTA_EXHAUSTED, f"{self.provider.id} quota exhausted")
         attempt = 0
         while True:
+            waited_from = self.ledger.waits[self.provider.id]
+            await self.ledger.acquire(self.provider.id)          # paces to the provider's limits; may raise
             with self.tracer.span(SpanKind.model_call, slot.canonical_model, provider=self.provider.id,
                                   provider_model_id=served.provider_model_id, attempt=attempt) as span:
+                if self.ledger.waits[self.provider.id] > waited_from:
+                    span.attributes["quota_wait_s"] = round(self.ledger.waits[self.provider.id] - waited_from, 3)
                 try:
                     comp = await self.backend.complete(messages, tools, slot, self.provider, served)
                 except HarnessError as e:
@@ -134,7 +136,7 @@ class ModelGateway:
                     span.tokens_in, span.tokens_out = comp.tokens_in, comp.tokens_out
                     span.attributes["usd"] = comp.usd
                     span.attributes["tool_calls"] = len(comp.message.get("tool_calls") or [])
-                    self.ledger.charge(self.provider.id, 1, comp.tokens_in + comp.tokens_out)
+                    self.ledger.record_tokens(self.provider.id, comp.tokens_in + comp.tokens_out)
                     return comp
             if retry:
                 attempt += 1
