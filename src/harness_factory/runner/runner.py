@@ -193,6 +193,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             messages=result.messages,
             transcript_path=str(transcript_path),
             fault=fault,
+            tools_hash=f.declared.env_hash(recipe.tools.mcp_servers, "*"),
+            served_id=f.providers.served(provider_id, canonical_model).provider_model_id,
         )
     if f.store:
         f.store.add(rec)

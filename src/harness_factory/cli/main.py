@@ -543,3 +543,8 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
         console.print(f"wrote {out}")
     else:
         print(text)
+
+
+from harness_factory.cli.calibration import calibration_app
+
+app.add_typer(calibration_app, name="calibration")
