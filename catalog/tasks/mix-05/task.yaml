@@ -1,0 +1,72 @@
+id: mix-05
+version: 1
+domain: data
+instruction: Reconcile data/bank_statement.csv against the orders. A statement line matches when its reference (ORD-<order
+  id>) names a paid order and the amount equals that order's value (the sum of quantity times unit price over its
+  items). Write the lines that do not match to reports/unmatched.csv, with the same header, in statement order.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R1
+expected_depth: UNKNOWN_PATH
+split: DEV
+status: verified
+tags:
+- sql
+- fs
+- reconcile
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: flags_ORD-2030
+    kind: file_contains
+    weight: 0.2
+    path: reports/unmatched.csv
+    text: 2026-10-09,ORD-2030,1650.00
+  - id: flags_ORD-2099
+    kind: file_contains
+    weight: 0.2
+    path: reports/unmatched.csv
+    text: 2026-10-16,ORD-2099,450.00
+  - id: flags_ORD-2033
+    kind: file_contains
+    weight: 0.2
+    path: reports/unmatched.csv
+    text: 2026-10-20,ORD-2033,802.00
+  - id: no_false_positives
+    kind: file_regex
+    weight: 0.2
+    path: reports/unmatched.csv
+    pattern: ORD-20(28|29|31|34|36)\b
+    negate: true
+  - id: exact
+    kind: file_equals
+    weight: 0.2
+    path: reports/unmatched.csv
+    text: |
+      date,reference,amount
+      2026-10-09,ORD-2030,1650.00
+      2026-10-16,ORD-2099,450.00
+      2026-10-20,ORD-2033,802.00
+  - id: statement_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: data/bank_statement.csv
+    text: |
+      date,reference,amount
+      2026-10-02,ORD-2028,900.00
+      2026-10-05,ORD-2029,1185.00
+      2026-10-09,ORD-2030,1650.00
+      2026-10-13,ORD-2031,600.00
+      2026-10-16,ORD-2099,450.00
+      2026-10-20,ORD-2033,802.00
+      2026-10-22,ORD-2034,270.00
+      2026-10-25,ORD-2036,1900.00

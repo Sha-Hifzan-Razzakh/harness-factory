@@ -1,0 +1,5 @@
+# Matrix (prompt): v2-base with one change, a system prompt that asks for a plan up front and a check at the end.
+id: v2-plan-check
+version: 1
+base: v2-base
+prompts: {system: system/plan_check}

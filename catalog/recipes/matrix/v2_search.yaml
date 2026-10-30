@@ -1,0 +1,9 @@
+# Matrix (tools): v2-base with one change, the search server (find files by name, grep contents) added to the
+# tool slice. Tasks that allow fs.list_dir / fs.read_file get it without any task edit (granted_by in tools.yaml).
+# Phase 1's code-01 failed when the model reached for a search tool that wasn't there.
+id: v2-search
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "search.*"]
+  mcp_servers: [fs, sql, search]
