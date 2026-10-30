@@ -4,6 +4,8 @@
 #   docker compose run --rm factory smoke --models scripted/replay --strict      # sandboxes: local
 #   docker compose run --rm factory-docker smoke --models <model>                 # sandboxes: Docker (real models)
 #
+# Host ports are HF_*_PORT in .env (defaults: the services' own ports), for machines where another stack already
+# uses them. Only the host side moves: services still reach each other on their own ports (phoenix:6006 ...).
 # Image tags are set in .env; pin them to versions you have checked.
 # Langfuse needs ClickHouse, Redis and object storage: run its official docker-compose alongside this file
 # and put the stack on the same network (see README), or point LANGFUSE_OTLP_ENDPOINT at Langfuse Cloud.
@@ -50,7 +52,7 @@ services:
   postgres:
     image: postgres:${POSTGRES_TAG:-16}
     environment: {POSTGRES_USER: hf, POSTGRES_PASSWORD: hf, POSTGRES_DB: hf}
-    ports: ["5432:5432"]
+    ports: ["${HF_POSTGRES_PORT:-5432}:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
 
   mlflow:
@@ -59,12 +61,12 @@ services:
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
       --artifacts-destination /mlflow/artifacts
-    ports: ["5000:5000"]
+    ports: ["${HF_MLFLOW_PORT:-5000}:5000"]
     volumes: [mlflow:/mlflow]
 
   phoenix:
     image: arizephoenix/phoenix:${PHOENIX_TAG:-latest}
-    ports: ["6006:6006"]
+    ports: ["${HF_PHOENIX_PORT:-6006}:6006"]
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:${OTELCOL_TAG:-latest}
@@ -73,7 +75,7 @@ services:
     environment:
       LANGFUSE_OTLP_ENDPOINT: ${LANGFUSE_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel}
       LANGFUSE_AUTH: ${LANGFUSE_AUTH:-}
-    ports: ["4317:4317", "4318:4318"]
+    ports: ["${HF_OTLP_GRPC_PORT:-4317}:4317", "${HF_OTLP_HTTP_PORT:-4318}:4318"]
     depends_on: [phoenix]
 
 volumes:

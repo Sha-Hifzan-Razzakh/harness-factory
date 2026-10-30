@@ -43,10 +43,10 @@ def fake_litellm(monkeypatch):
 
 
 async def test_litellm_request_shape_and_success(factory, fake_litellm):
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "SUCCESS"
     first = fake_litellm[0]
-    assert first["model"] == "groq/llama-3.3-70b-versatile"
+    assert first["model"] == "groq/openai/gpt-oss-120b"
     assert first["api_key"] == "test-key"
     assert first["temperature"] == 0.0 and first["seed"] == 0
     names = {t["function"]["name"] for t in first["tools"]}
@@ -70,7 +70,7 @@ async def test_rate_limit_is_retried(factory, monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "k")
     recipe = factory.recipes["v2-base"]
     recipe = recipe.model_copy(update={"config": recipe.config.model_copy(update={"backoff_s": 0.01})})
-    rec = await run_one(factory, factory.tasks.get("sql-01"), recipe, "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("sql-01"), recipe, "gpt-oss-120b", "groq")
     assert rec.status.value == "SUCCESS" and len(attempts) == 3
 
 
@@ -121,7 +121,7 @@ async def test_transient_5xx_is_retried_and_not_counted_as_a_step(factory, monke
     _script(monkeypatch, _status(litellm.InternalServerError, 502),
             _resp(tool_calls=[_call("c1", "sql__query", '{"sql": "SELECT COUNT(*) FROM customers WHERE city=\'Dubai\'"}')]),
             _resp(content="3"))
-    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "SUCCESS"
     assert rec.cost.model_calls == 2 and rec.cost.failed_calls == 1
     assert no_backoff == [2.0]
@@ -131,7 +131,7 @@ async def test_persistent_provider_failure_is_incomplete_recorded_and_unscored(f
                                                                                tmp_path):
     factory.store = ResultsStore(f"sqlite:///{tmp_path / 'r.db'}")
     _script(monkeypatch, _status(litellm.ServiceUnavailableError, 503))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "INCOMPLETE" and "PROVIDER_ERROR" in rec.grades[-1]["detail"]
     assert rec.trace_path and len(factory.store.rows()) == 1                    # recorded, with a trace
     _, cells = factory.store.aggregate()
@@ -141,28 +141,52 @@ async def test_persistent_provider_failure_is_incomplete_recorded_and_unscored(f
 async def test_retry_after_header_is_honoured(factory, monkeypatch, no_backoff):
     _script(monkeypatch, litellm.RateLimitError("slow down", llm_provider="groq", model="x",
                                                 headers={"retry-after": "7"}), _resp(content="3"))
-    await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert no_backoff == [7.0]
 
 
 async def test_provider_daily_quota_stops_every_worker(factory, monkeypatch, no_backoff):
     calls = _script(monkeypatch, litellm.RateLimitError(
         "Rate limit reached for model on tokens per day (TPD): Limit 100000", llm_provider="groq", model="x"))
-    a = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
-    b = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    a = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
+    b = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert a.status.value == b.status.value == "INCOMPLETE"
     assert len(calls) == 1 and no_backoff == []                 # not retried; the second run never calls out
 
 
+async def test_one_model_out_of_daily_quota_does_not_stop_another(factory, monkeypatch, no_backoff):
+    """Groq's free-tier limits are per model: 120b spending its day must leave 20b running."""
+    calls = _script(monkeypatch, litellm.RateLimitError(
+        "Rate limit reached for model on tokens per day (TPD): Limit 200000", llm_provider="groq", model="x"),
+        _resp(content="done"))
+    a = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
+    b = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-20b", "groq")
+    c = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
+    assert a.status.value == "INCOMPLETE" and b.status.value != "INCOMPLETE"     # 20b still called out
+    assert c.status.value == "INCOMPLETE" and len(calls) == 2                    # 120b stays stopped
+    assert factory.ledger.exhausted("groq|gpt-oss-120b") and not factory.ledger.exhausted("groq|gpt-oss-20b")
+
+
+def test_quota_buckets_follow_the_limit_scope(factory):
+    cat = factory.providers
+    assert cat.bucket("groq", "gpt-oss-120b") == "groq|gpt-oss-120b"            # scope: model
+    assert cat.bucket("scripted", "scripted/replay") == "scripted"               # one bucket per provider
+    assert cat.limits("groq|gpt-oss-20b").tpd == cat.get("groq").limits.tpd
+    own = cat.model_copy(deep=True)
+    own.get("scripted").models[0].limits = type(cat.get("groq").limits)(rpd=5)   # a model with its own limits
+    assert own.bucket("scripted", "scripted/replay") == "scripted|scripted/replay"
+    assert own.limits("scripted|scripted/replay").rpd == 5
+
+
 async def test_auth_failure_is_a_setup_error_not_a_harness_result(factory, monkeypatch, no_backoff):
     _script(monkeypatch, _status(litellm.AuthenticationError, 401, "invalid api key"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "ERROR" and "CONFIG" in rec.grades[-1]["detail"] and no_backoff == []
 
 
 async def test_context_overflow_counts_against_the_harness(factory, monkeypatch, no_backoff):
     _script(monkeypatch, litellm.ContextWindowExceededError("too long", model="x", llm_provider="groq"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "FAIL"                           # scored (not excluded); nothing was written
     assert any(v.kind == "context_overflow" for v in rec.violations)
 
@@ -170,7 +194,7 @@ async def test_context_overflow_counts_against_the_harness(factory, monkeypatch,
 async def test_malformed_tool_call_is_the_models_failure_not_setup(factory, monkeypatch, no_backoff):
     """Groq answers a broken tool call with 400 tool_use_failed: dropping it would flatter the model."""
     _script(monkeypatch, _status(litellm.BadRequestError, 400, "tool_use_failed: Failed to call a function"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "FAIL" and any(v.kind == "malformed_output" for v in rec.violations)
 
 
@@ -179,7 +203,7 @@ async def test_a_mid_run_400_without_the_providers_marker_surfaces_as_error(fact
     _script(monkeypatch,
             _resp(tool_calls=[_call("c1", "fs__write_file", '{"path": "notes/todo.txt", "content": "buy milk"}')]),
             _status(litellm.BadRequestError, 400, "messages: invalid content"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "ERROR" and "mid-run" in rec.grades[-1]["detail"]
 
 
@@ -187,25 +211,25 @@ async def test_a_mid_run_malformed_call_after_solving_is_partial(factory, monkey
     _script(monkeypatch,
             _resp(tool_calls=[_call("c1", "fs__write_file", '{"path": "notes/todo.txt", "content": "buy milk"}')]),
             _status(litellm.BadRequestError, 400, "tool_use_failed"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "PARTIAL" and rec.scores.outcome == 0.5    # solved, but did not finish cleanly
 
 
 async def test_request_too_large_is_a_context_limit(factory, monkeypatch, no_backoff):
     _script(monkeypatch, _status(litellm.BadRequestError, 400, "Request too large for model: Limit 6000"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert any(v.kind == "context_overflow" for v in rec.violations) and rec.status.value == "FAIL"
 
 
 async def test_a_400_on_the_first_call_is_setup(factory, monkeypatch, no_backoff):
     _script(monkeypatch, _status(litellm.BadRequestError, 400, "unsupported parameter: foo"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "ERROR" and "CONFIG" in rec.grades[-1]["detail"]
 
 
 async def test_timeouts_are_retried_once_only(factory, monkeypatch, no_backoff):
     calls = _script(monkeypatch, litellm.Timeout("read timed out", model="x", llm_provider="groq"))
-    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "llama-3.3-70b", "groq")
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "gpt-oss-120b", "groq")
     assert rec.status.value == "INCOMPLETE" and len(calls) == 2 and "timeout" in rec.grades[-1]["detail"]
 
 
@@ -220,7 +244,7 @@ async def test_failed_attempt_time_is_not_charged_to_the_harness(factory, no_bac
 
     gw = ModelGateway(factory.providers, factory.ledger, Tracer("t"), "groq", backend=SlowFail(), retries=0)
     with pytest.raises(HarnessError) as e:
-        await gw.complete(ModelSlot(canonical_model="llama-3.3-70b"), [{"role": "user", "content": "x"}], [])
+        await gw.complete(ModelSlot(canonical_model="gpt-oss-120b"), [{"role": "user", "content": "x"}], [])
     assert e.value.kind == ErrorKind.PROVIDER_ERROR
     assert gw.infra_wait_s >= 0.3
 
@@ -232,7 +256,7 @@ async def test_hung_call_is_cut_off(factory, monkeypatch, no_backoff):
     monkeypatch.setattr(litellm, "acompletion", hang)
     base = factory.recipes["v2-base"]
     quick = base.model_copy(update={"config": base.config.model_copy(update={"call_timeout_s": 1, "retries": 0})})
-    rec = await asyncio.wait_for(run_one(factory, factory.tasks.get("fs-01"), quick, "llama-3.3-70b", "groq"), 15)
+    rec = await asyncio.wait_for(run_one(factory, factory.tasks.get("fs-01"), quick, "gpt-oss-120b", "groq"), 15)
     assert rec.status.value == "INCOMPLETE"
 
 

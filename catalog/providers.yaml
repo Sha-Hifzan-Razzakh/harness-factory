@@ -16,11 +16,19 @@ providers:
     litellm_prefix: groq
     auth_env: GROQ_API_KEY
     data_terms: "no training on API data (verify)"
-    limits: {rpm: 30, rpd: 1000, tpm: 6000, scope: account}
+    # Free / Developer plan base limits, per model (console.groq.com/docs/rate-limits, checked 2026-10-29).
+    # Your organization's exact limits: console.groq.com/settings/limits.
+    limits: {rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000, scope: model}
+    # Llama 3.3 70B and Qwen3 32B were shut down for free and Developer accounts in Jul/Aug 2026.
+    # Prices: list $/M (free tier is not billed), as published for GroqCloud in Oct 2026.
     models:
-      - {canonical: llama-3.3-70b, provider_model_id: llama-3.3-70b-versatile, price_in: 0.59, price_out: 0.79, free: true}
-      - {canonical: gpt-oss-120b,  provider_model_id: openai/gpt-oss-120b,     price_in: 0.15, price_out: 0.75, free: true}
-      - {canonical: qwen3-32b,     provider_model_id: qwen/qwen3-32b,          price_in: 0.29, price_out: 0.59, free: true}
+      - {canonical: gpt-oss-120b, provider_model_id: openai/gpt-oss-120b, price_in: 0.15,  price_out: 0.60, free: true,
+         caps: {context_len: 131072}}
+      - {canonical: gpt-oss-20b,  provider_model_id: openai/gpt-oss-20b,  price_in: 0.075, price_out: 0.30, free: true,
+         caps: {context_len: 131072}}
+      # Preview: Groq says preview models are for evaluation and may be discontinued at short notice.
+      - {canonical: qwen3.8-27b,  provider_model_id: qwen/qwen3.8-27b,    price_in: 0.80,  price_out: 4.00, free: true,
+         caps: {context_len: 131072}}
 
   - id: openrouter
     kind: litellm

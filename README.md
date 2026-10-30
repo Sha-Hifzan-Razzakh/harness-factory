@@ -25,11 +25,15 @@ pytest -q -n auto         # ~215 tests in parallel (Docker tests skip without a 
 ## Real models
 
 Put keys in `.env` (copy `.env.example`), then check the model ids and limits in `catalog/providers.yaml` against
-each provider's current model list. The ids shipped are examples.
+each provider's current model list. Providers retire models: Groq's entries were checked on 2026-10-29.
+
+`smoke` and `run` start by printing where results go: the results store, traces (and whether the OTLP collector
+is reachable) and MLflow (or why it's off, e.g. the `mlops` extra is missing). Check those lines before a
+campaign spends quota.
 
 ```bash
-hfx run   --task fs-02 --model llama-3.3-70b --provider groq
-hfx smoke --provider groq --models llama-3.3-70b,gpt-oss-120b,qwen3-32b
+hfx run   --task fs-02 --model gpt-oss-120b --provider groq
+hfx smoke --provider groq --models gpt-oss-120b,gpt-oss-20b
 ```
 
 Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quota ledger:
@@ -37,19 +41,24 @@ Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quo
 - **Pacing.** Before each model call, a worker reserves a request slot. If the provider's per-minute request or
   token window is full, it waits for the window to roll. Waits are recorded on the `model_call` span
   (`quota_wait_s`) and summed at the end of the campaign.
+- **Quota buckets.** Limits apply to the whole provider (`scope: account`) or to each model on its own
+  (`scope: model`, how Groq's free tier works; a model can also carry its own `limits`). Per-model buckets are
+  named `provider|model` in the ledger and in the output.
 - **Daily limits.** If a per-day limit is spent, in the ledger or because the provider's 429 says so, the run
-  ends **INCOMPLETE** instead of waiting a day, and every other worker stops calling that provider.
+  ends **INCOMPLETE** instead of waiting a day, and every other worker stops calling that bucket. With per-model
+  limits, one model running out leaves the others running.
 - **Provider failures.** Each model call has a timeout (`config.call_timeout_s`, default `HF_CALL_TIMEOUT_S=120`).
   5xx errors, timeouts, connection errors and 429s are retried with backoff (honouring `Retry-After`, at most
   60 s; timeouts once). If they persist, the run ends INCOMPLETE. Time lost to quota waits, backoff and failed
   attempts is not charged to the run's wall-time budget.
 - **Preflight.** `smoke` refuses to start when the worst case (every run using every step) exceeds today's
-  remaining request limit.
+  remaining request limit in any bucket; `--dry-run` prints the worst case per bucket. On Groq, tokens per day
+  (200k per model) usually run out before requests: a V2 run on the 20 tasks averaged about 5k tokens in Phase 1.
 - **Order.** Results come back in plan order, whatever the concurrency. A run that errors is reported with its
   spec and does not stop the others.
 
 ```bash
-hfx smoke --provider groq --recipe v2-base,v3-staged --models llama-3.3-70b,qwen3-32b --seeds 3 -j 8
+hfx smoke --provider groq --recipe v2-base,v3-staged --models gpt-oss-120b,gpt-oss-20b -j 8
 ```
 
 ### Interrupted? Resume.
@@ -125,7 +134,7 @@ supporting services:
 ```bash
 mkdir -p var                                             # else Docker creates it, owned by root
 docker compose run --rm factory smoke --models scripted/replay --strict          # sandboxes: local
-docker compose run --rm factory-docker smoke --models llama-3.3-70b --provider groq   # sandboxes: Docker
+docker compose run --rm factory-docker smoke --models gpt-oss-120b --provider groq    # sandboxes: Docker
 ```
 
 - **Settings come from `.env`** (`env_file`), never from the image. Set `HF_UID`/`HF_GID` (`id -u`, `id -g`) so
