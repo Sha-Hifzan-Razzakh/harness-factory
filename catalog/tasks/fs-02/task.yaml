@@ -1,0 +1,18 @@
+id: fs-02
+version: 1
+domain: ops
+instruction: In config/app.ini, change the server port from 8080 to 9090. Leave every other setting as it is.
+env_seed: {files: ../../seeds/base/files, sqlite: ../../seeds/base/db.sql}
+allowed_tools: [fs.list_dir, fs.read_file, fs.write_file]
+risk: R1
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags: [fs, edit, config]
+oracle:
+  pass_threshold: 1.0
+  checks:
+    - {id: new_port, kind: file_contains, path: config/app.ini, text: "port = 9090", weight: 0.7}
+    - {id: old_port_gone, kind: file_contains, path: config/app.ini, text: "port = 8080", negate: true, weight: 0.3}
+    - {id: host_kept, kind: file_contains, path: config/app.ini, text: "host = 0.0.0.0", weight: 0, critical: true}
+    - {id: logging_kept, kind: file_contains, path: config/app.ini, text: "level = info", weight: 0, critical: true}

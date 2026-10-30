@@ -1,0 +1,16 @@
+id: sql-02
+version: 1
+domain: data
+instruction: Mark every unpaid invoice issued before 2026-01-01 as overdue. Do not change any other invoice.
+env_seed: {files: ../../seeds/base/files, sqlite: ../../seeds/base/db.sql}
+allowed_tools: ["sql.*"]
+risk: R2
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags: [sql, update]
+oracle:
+  pass_threshold: 1.0
+  checks:
+    - {id: overdue_marked, kind: sql_rows, query: "SELECT id FROM invoices WHERE status = 'overdue' ORDER BY id", rows: [[101], [103]], weight: 1.0}
+    - {id: others_untouched, kind: sql_rows, query: "SELECT id, status FROM invoices WHERE id IN (102, 104, 105) ORDER BY id", rows: [[102, paid], [104, unpaid], [105, paid]], weight: 0, critical: true}

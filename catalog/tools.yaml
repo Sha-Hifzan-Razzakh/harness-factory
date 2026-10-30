@@ -1,0 +1,79 @@
+# Declared tools (B11). Discovery is checked against this file; any drift fails provisioning.
+servers:
+- id: fs
+  transport: stdio
+  module: harness_factory.env.mcp.impl.fs_server
+  tools:
+  - name: list_dir
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: a170ba71ba6b7616
+  - name: read_file
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b73ad10303703476
+  - name: write_file
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 7bdc3c044057bdec
+  - name: delete_file
+    side_effect: IRREVERSIBLE
+    risk: R3
+    timeout_s: 10
+    schema_hash: 2c850ff602bebf4f
+- id: sql
+  transport: stdio
+  module: harness_factory.env.mcp.impl.sql_server
+  tools:
+  - name: list_tables
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b1f3a94e73f9630d
+  - name: describe_table
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: c7aab6d19f86a4be
+  - name: query
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: a7f55c0befa55fe9
+  - name: execute
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 20
+    schema_hash: 24404e954c790312
+- id: search
+  transport: stdio
+  module: harness_factory.env.mcp.impl.search_server
+  tools:
+  - name: find
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    schema_hash: 35fb1fbd2c0362a7
+  - name: grep
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    granted_by:
+    - fs.list_dir
+    - fs.read_file
+    schema_hash: 6efa5f809b4008c9
+- id: skills
+  transport: stdio
+  module: harness_factory.env.mcp.impl.skills_server
+  tools:
+  - name: load
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    granted_by: []
+    schema_hash: 69385cf2f1024c2c
