@@ -74,6 +74,7 @@ docker compose --profile api up -d api     # in a container (needs HF_API_TOKEN 
 |---|---|
 | Catalog | `GET /api/catalog[/{kind}[/{id}]]`, `POST /api/catalog/{kind}`, `PUT` / `DELETE /api/catalog/{kind}/{id}`; `?dry_run=true`, `?confirm=true`; `GET /api/check`; `POST /api/servers/stub` |
 | Experiments | `GET /api/meta` (variants, dimensions, prompt layers), `/api/tasks` (with task class), `/api/models` (and whether each provider's key is set), `/api/faults` |
+| Campaigns | `POST /api/campaigns/plan` (projection, nothing runs), `POST /api/campaigns` (202, runs in the background), `GET /api/campaigns[/{id}]` (state and progress), `DELETE /api/campaigns/{id}` (cancel) |
 | Results | `GET /api/results`, `/api/results/cells`, `/api/baselines`, `/api/report` (markdown), `/api/runs/{id}/transcript` |
 
 - **A change answers like the CLI.** 201/200 when written or dry-run, **409** when it changes an existing identity
@@ -83,6 +84,12 @@ docker compose --profile api up -d api     # in a container (needs HF_API_TOKEN 
 - **Pasted tool code runs** when its tools are discovered, on the machine running the API. That's why it binds
   to localhost by default and refuses any other address without `HF_API_TOKEN`; with a token, every route but
   `/api/health` needs `Authorization: Bearer <token>`.
+- **Campaigns are `hfx smoke` in the background:** the same plan and preflight (a bucket spent today, a plan
+  past `deadline_days` or over `budget_usd` is refused with 409), `resume` to skip scored runs, progress from the
+  store as runs finish. Every campaign shares the API's one quota ledger, so campaigns started side by side are
+  paced together. Each starts from the catalog as it is then, so a recipe written through the API runs in the next
+  campaign without a restart. Cancelling tears down the runs' sandboxes and servers; finished runs stay stored.
+  The campaign list lives in memory: after a restart it is empty, the runs are not.
 - The compose service mounts `catalog/`, `prompts/` and the local tool servers' folder read-write (the `factory`
   services keep them read-only). The image has no ruff, so a module written through it is linted by CI instead.
 

@@ -14,6 +14,7 @@ import hmac
 import json
 import os
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,13 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from harness_factory import settings
+from harness_factory.api.campaigns import (
+    CampaignInvalid,
+    CampaignManager,
+    CampaignRequest,
+    preflight,
+    specs_for,
+)
 from harness_factory.authoring import toolcode
 from harness_factory.authoring.fsops import LockTimeout
 from harness_factory.authoring.models import KINDS, ChangeResult, Issue, Item
@@ -33,24 +41,39 @@ CHANGE_CODES = {"applied": 200, "dry_run": 200, "needs_confirm": 409, "rejected"
 class State:
     """What the app holds: the authoring service and a Factory that is reloaded when the catalog changes."""
 
-    def __init__(self, service: AuthoringService, results_url: str | None, var_dir: Path) -> None:
+    def __init__(self, service: AuthoringService, results_url: str | None, var_dir: Path,
+                 quota_state: Path | None = None) -> None:
         self.service = service
         self.results_url = results_url
+        self.quota_state = quota_state
         self.var_dir = var_dir.resolve()
         self._factory = None
         self._factory_fp: str | None = None
         self._lock = threading.Lock()
 
     def factory(self):
+        """One Factory for the app's life: one QuotaLedger and one ResultsStore, shared by every campaign. When the
+        catalog changes, its catalog parts (tasks, recipes, tools, faults) are reloaded into a new Factory that
+        keeps the same ledger, store and providers; a campaign already running keeps the catalog it started with."""
+        import dataclasses
+
+        from harness_factory.env.faults import load_fault_profiles
+        from harness_factory.env.mcp.servers import load_tool_catalog
+        from harness_factory.recipes.model import load_recipes
         from harness_factory.runner.runner import Factory
+        from harness_factory.tasks.registry import TaskRegistry
         fp = self.service._fingerprint()
         with self._lock:
-            if self._factory is None or fp != self._factory_fp:
+            if self._factory is None:
                 url = self.results_url or settings.RESULTS_URL
                 if url.startswith("sqlite:///"):                 # a fresh install has no var/ yet
                     Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
-                self._factory = Factory.load(store=True, results_url=self.results_url)
-                self._factory_fp = fp
+                self._factory = Factory.load(store=True, results_url=self.results_url, quota_state=self.quota_state)
+            elif fp != self._factory_fp:
+                self._factory = dataclasses.replace(
+                    self._factory, tasks=TaskRegistry(), recipes=load_recipes(settings.RECIPES_DIR),
+                    declared=load_tool_catalog(settings.TOOLS_FILE), faults=load_fault_profiles(settings.FAULTS_DIR))
+            self._factory_fp = fp
             return self._factory
 
 
@@ -67,12 +90,23 @@ def _authoring_error(e: Exception) -> HTTPException:
 
 
 def create_app(service: AuthoringService | None = None, token: str | None = None,
-               results_url: str | None = None, var_dir: Path | None = None) -> FastAPI:
+               results_url: str | None = None, var_dir: Path | None = None,
+               quota_state: Path | None = None) -> FastAPI:
     """`token`: required bearer token (None = open, for localhost). `results_url`: the store to read
-    (default: settings.RESULTS_URL). `var_dir`: where transcripts may be read from (default: settings.VAR)."""
-    state = State(service or AuthoringService(), results_url, var_dir or settings.VAR)
-    app = FastAPI(title="Harness Factory", version="1", summary="Catalog authoring and results (ADR 0009)")
+    (default: settings.RESULTS_URL). `var_dir`: where transcripts may be read from (default: settings.VAR).
+    `quota_state`: where provider usage is persisted (default: settings.QUOTA_STATE)."""
+    state = State(service or AuthoringService(), results_url, var_dir or settings.VAR, quota_state)
+    manager = CampaignManager()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        await manager.shutdown()            # no sandbox or MCP server outlives the API
+
+    app = FastAPI(title="Harness Factory", version="1", summary="Catalog authoring, campaigns and results (ADR 0009)",
+                  lifespan=lifespan)
     app.state.hf = state
+    app.state.campaigns = manager
 
     def auth(request: Request) -> None:
         if token is None:
@@ -190,6 +224,55 @@ def create_app(service: AuthoringService | None = None, token: str | None = None
     @app.get("/api/faults", dependencies=guarded)
     def faults() -> list[dict[str, Any]]:
         return [{"id": fid, "description": f.description} for fid, f in state.factory().faults.items()]
+
+    # ---- campaigns -------------------------------------------------------------------------------------------
+
+    def _planned(req: CampaignRequest):
+        f = state.factory()
+        try:
+            specs = specs_for(f, req)
+        except CampaignInvalid as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return f, specs, preflight(f, req, specs)
+
+    @app.post("/api/campaigns/plan", dependencies=guarded)
+    def campaign_plan(req: CampaignRequest) -> dict[str, Any]:
+        """What a campaign would do: runs done / to retry / new, the projection per quota bucket, and any reason
+        it would be refused. Runs nothing."""
+        return _planned(req)[2].model_dump()
+
+    @app.post("/api/campaigns", dependencies=guarded, status_code=202)
+    async def campaign_start(req: CampaignRequest) -> dict[str, Any]:
+        """Start a campaign in the background (202). 409 with the reasons when preflight refuses it."""
+        import anyio
+        f, specs, plan_ = await anyio.to_thread.run_sync(_planned, req)
+        if plan_.problems:
+            raise HTTPException(status_code=409, detail={"problems": plan_.problems, "plan": plan_.model_dump()})
+        if not plan_.will_run:
+            nothing = "nothing to run: every run already has a scored result"
+            raise HTTPException(status_code=409, detail={"problems": [nothing], "plan": plan_.model_dump()})
+        c = manager.start(f, req, specs, plan_)
+        return {**c.model_dump(), "progress": manager.progress(c)}
+
+    @app.get("/api/campaigns", dependencies=guarded)
+    def campaigns() -> list[dict[str, Any]]:
+        return [{**c.model_dump(exclude={"plan"}), "progress": manager.progress(c)}
+                for c in sorted(manager.campaigns.values(), key=lambda c: c.created_at, reverse=True)]
+
+    @app.get("/api/campaigns/{cid}", dependencies=guarded)
+    def campaign(cid: str) -> dict[str, Any]:
+        c = manager.campaigns.get(cid)
+        if c is None:
+            raise HTTPException(status_code=404, detail=f"no campaign {cid!r} (campaigns live until the API restarts)")
+        return {**c.model_dump(), "progress": manager.progress(c)}
+
+    @app.delete("/api/campaigns/{cid}", dependencies=guarded, status_code=202)
+    def campaign_cancel(cid: str) -> dict[str, Any]:
+        if cid not in manager.campaigns:
+            raise HTTPException(status_code=404, detail=f"no campaign {cid!r}")
+        if not manager.cancel(cid):
+            raise HTTPException(status_code=409, detail=f"campaign {cid} is not running")
+        return {"id": cid, "state": "cancelling"}
 
     # ---- results ---------------------------------------------------------------------------------------------
 
