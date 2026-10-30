@@ -18,7 +18,7 @@ from langgraph.graph import END, START, StateGraph
 from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
-from harness_factory.shapes.common import DONE, finish, model_turn, run_tool_calls
+from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult, Violation
 
 RETRY_PREFIX = "RETRY:"          # exactly what prompts/stage/verify.j2 asks for; "Retrying is not needed" is not one
@@ -61,7 +61,7 @@ class WorkflowGraphShape:
                 # Stage cap: end the stage without a reply, and record it like a step cap in any other shape.
                 inst.tools.violations.append(Violation(kind="stage_cap", detail=f"{st.id}: {st.max_steps} calls"))
                 return {"reply": ""}
-            tools = inst.tools.tools_for_model(restrict=st.allows) if st.tools else []
+            tools = offered_tools(inst, restrict=st.allows) if st.tools else []
             turn = await model_turn(inst, slot, state["messages"], tools)
             if turn.stop:
                 return {"messages": state["messages"] + turn.added, "stop": turn.stop, "error": turn.error}

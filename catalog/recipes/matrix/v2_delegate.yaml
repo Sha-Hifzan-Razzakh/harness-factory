@@ -1,0 +1,7 @@
+# Matrix (delegation): v2-base with one change, a delegate tool. The model can hand a sub-task to a helper, here
+# another v2-base, which works in the same sandbox; the helper's tokens and cost count in this run, and its budget
+# comes out of this run's. Measures whether "agent plus helper" beats one agent (EXT-09, EXT-12).
+id: v2-delegate
+version: 1
+base: v2-base
+delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}

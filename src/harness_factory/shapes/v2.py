@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
-from harness_factory.shapes.common import DONE, finish, model_turn, run_tool_calls
+from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult
 
 
@@ -29,7 +29,7 @@ class ToolLoopShape:
 
     def _build(self, inst: HarnessInstance):
         slot = inst.recipe.model_slots["executor"]
-        tools = inst.tools.tools_for_model()
+        tools = offered_tools(inst)
 
         async def call_model(state: LoopState) -> dict:
             turn = await model_turn(inst, slot, state["messages"], tools)

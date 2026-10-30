@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 from harness_factory import settings
 from harness_factory.hashing import content_hash
@@ -139,7 +139,7 @@ class WorkflowSpec(BaseModel):
 
 # Optional fields added after results were first recorded. When unset they are dropped before hashing, so
 # adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
-_HASH_OMIT_WHEN_NONE = ("workflow", "config.call_timeout_s", "config.recover_malformed")
+_HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "config.call_timeout_s", "config.recover_malformed")
 
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
@@ -153,6 +153,21 @@ def _drop_none(data: dict, dotted: str) -> None:
         node = node.get(key) or {}
     if isinstance(node, dict) and node.get(last) is None:
         node.pop(last, None)
+
+
+class Delegation(BaseModel):
+    """Delegate tool (EXT-09): the model can hand a sub-task to a child recipe, which runs in the same sandbox
+    through the same model gateway; its tokens, cost and quota count in the parent run. The root recipe's limits
+    govern the whole tree (EXT-11): at most `max_calls` delegate calls per run, nested at most `max_depth` deep.
+    load_recipes() resolves `recipe` into the child, so the child's own hash is part of this recipe's hash."""
+    recipe: str
+    max_calls: int = Field(default=2, ge=1)
+    max_depth: int = Field(default=1, ge=1)
+    _child: object | None = PrivateAttr(default=None)        # the resolved child HarnessRecipe
+
+    @property
+    def child(self) -> HarnessRecipe | None:
+        return self._child  # type: ignore[return-value]
 
 
 class HarnessRecipe(BaseModel):
@@ -172,6 +187,7 @@ class HarnessRecipe(BaseModel):
     retrieval: RetrievalConfig | None = None
     grader_hooks: list[str] = Field(default_factory=list)
     workflow: WorkflowSpec | None = None              # required by V3_WORKFLOW_GRAPH, rejected elsewhere
+    delegation: Delegation | None = None              # delegate tool to a child recipe (EXT-09)
 
     def prompt_refs(self) -> list[str]:
         refs = [self.prompts.system, self.prompts.task] + ([self.prompts.operator] if self.prompts.operator else [])
@@ -199,6 +215,9 @@ class HarnessRecipe(BaseModel):
             from harness_factory.skills.library import load_skills
             lib = skills if skills is not None else load_skills()
             data["skill_sources"] = {sid: lib[sid].text if sid in lib else None for sid in sorted(self.skills.skill_ids)}
+        if self.delegation is not None:                 # editing the child changes every recipe delegating to it
+            child = self.delegation.child
+            data["delegate_hash"] = child.content_hash(prompts, skills) if child is not None else None
         return content_hash(data)
 
     def with_model(self, canonical_model: str, role: str = "executor") -> HarnessRecipe:
@@ -260,4 +279,15 @@ def load_recipes(root: Path) -> dict[str, HarnessRecipe]:
         resolved[rid] = data
         return data
 
-    return {rid: HarnessRecipe.model_validate(resolve(rid)) for rid in raw}
+    out = {rid: HarnessRecipe.model_validate(resolve(rid)) for rid in raw}
+    for rid, recipe in out.items():                 # delegation: resolve the child, refuse cycles (self included)
+        chain, cur = [rid], recipe
+        while cur.delegation is not None and cur.delegation.recipe in out:
+            nxt = cur.delegation.recipe
+            if nxt in chain:
+                raise ValueError(f"recipe delegation cycle: {' -> '.join((*chain, nxt))}")
+            chain.append(nxt)
+            cur = out[nxt]
+        if recipe.delegation is not None:
+            recipe.delegation._child = out.get(recipe.delegation.recipe)    # unknown: a validator finding
+    return out

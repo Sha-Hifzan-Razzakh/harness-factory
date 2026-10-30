@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
-from harness_factory.shapes.common import DONE, finish, model_turn, run_tool_calls
+from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult
 
 
@@ -19,7 +19,7 @@ class SingleCallShape:
 
     async def run(self, inst: HarnessInstance) -> RunResult:
         slot = inst.recipe.model_slots["executor"]
-        turn = await model_turn(inst, slot, inst.messages, inst.tools.tools_for_model())
+        turn = await model_turn(inst, slot, inst.messages, offered_tools(inst))
         messages = inst.messages + turn.added
         if turn.stop:
             return finish(inst, messages, turn.stop, None, turn.error)

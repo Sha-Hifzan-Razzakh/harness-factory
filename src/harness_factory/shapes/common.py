@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from harness_factory.recipes.model import ModelSlot
+from harness_factory.shapes import delegate
 from harness_factory.shapes.base import HarnessInstance
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import INFRA_KINDS, ErrorKind, HarnessError
@@ -69,6 +70,14 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
         return turn
 
 
+def offered_tools(inst: HarnessInstance, restrict: Callable[[str], bool] | None = None) -> list[dict[str, Any]]:
+    """The tools a model is offered: the allowed MCP tools (optionally narrowed, e.g. to a V3 stage), plus the
+    delegate tool when the recipe has a delegation and the limits allow one more level. Every shape uses this, so a
+    recipe dimension that adds a harness-side tool reaches every shape the same way."""
+    spec = delegate.tool_spec(inst, restrict)
+    return inst.tools.tools_for_model(restrict) + ([spec] if spec else [])
+
+
 async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
                          restrict: Callable[[str], bool] | None = None,
                          scope: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
@@ -78,9 +87,13 @@ async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
         limit = inst.budget.exceeded_by(before="tool_call")
         if limit:
             return out, f"budget:{limit}"
-        result = await inst.tools.execute(call["function"]["name"], call["function"]["arguments"],
-                                          restrict=restrict, scope=scope)
-        out.append({"role": "tool", "tool_call_id": call["id"], "content": result.text})
+        name, args = call["function"]["name"], call["function"]["arguments"]
+        where = f"{inst.scope}/{scope}" if inst.scope and scope else (scope or inst.scope)
+        if name == delegate.DELEGATE_NAME and inst.delegate is not None:
+            text = await delegate.run_delegate(inst, args, restrict=restrict, scope=where)
+        else:
+            text = (await inst.tools.execute(name, args, restrict=restrict, scope=where)).text
+        out.append({"role": "tool", "tool_call_id": call["id"], "content": text})
     return out, None
 
 

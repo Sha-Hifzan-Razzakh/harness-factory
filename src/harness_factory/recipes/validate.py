@@ -80,6 +80,20 @@ def _skill_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[Vali
     return out
 
 
+def _delegation_issues(recipe: HarnessRecipe) -> list[ValidationIssue]:
+    """EXT-09/11: the child must exist, and open no server its parent doesn't (it runs on the parent's sessions)."""
+    d = recipe.delegation
+    if d is None:
+        return []
+    if d.child is None:
+        return [ValidationIssue(rule="delegate_resolves", detail=f"delegation.recipe {d.recipe!r} is not a known recipe")]
+    extra = sorted(set(d.child.tools.mcp_servers) - set(recipe.tools.mcp_servers))
+    if extra:
+        return [ValidationIssue(rule="delegate_servers",
+                                detail=f"{d.child.id} opens {', '.join(extra)}, which {recipe.id} does not")]
+    return []
+
+
 def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: PromptRegistry | None = None,
                     providers: ProviderCatalog | None = None, provider_id: str | None = None) -> list[ValidationIssue]:
     import harness_factory.shapes.builtin  # noqa: F401  (registers built-in shapes)
@@ -91,6 +105,7 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
     for f in inert_fields(recipe):
         issues.append(ValidationIssue(rule="field_implemented", detail=f"{f} is declared but not implemented yet"))
     issues += _skill_issues(recipe, declared)
+    issues += _delegation_issues(recipe)
 
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))

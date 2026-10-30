@@ -290,6 +290,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | tools | `v2-search` | Adds the `search` server: `search.find` (files by name) and `search.grep` (contents, `path:line: text`). Phase 1's `code-01` model reached for a search tool that wasn't there |
 | skills | `v2-skills-upfront` | Every skill's how-to appended to the system prompt (about 5k characters) |
 | skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
+| delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
 
 **Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
 general how-tos so far: `sql-analysis`, `sql-changes`, `editing-files`, `file-exports`,
@@ -308,6 +309,19 @@ would change every task hash. A READ tool that reveals nothing beyond other tool
 gets `find` and `grep`, `mix-01` (no `read_file`) gets only `find`, and SQL-only tasks get neither.
 `granted_by` never grants a tool with side effects. The search server is a separate MCP server, so recipes that
 don't open it keep their environment hash (`v2-base` is still `87cf105d96ea`, as in Phase 1).
+
+**Delegation (agent as a tool).** `delegation: {recipe, max_calls, max_depth}` gives any shape a
+`delegate__run(task)` tool (ADR 0003). The helper runs the named recipe on the sub-task in the same sandbox
+(same files, database and MCP sessions) through the same model gateway, so its tokens, cost and quota count in
+the parent run. Its tools are its own slice intersected with the parent's, its permissions are the stricter of
+the two per side effect, and its budget is its own config capped by what the parent has left; what it uses is
+charged back to the parent, so delegating never buys extra steps. A V3 recipe offers the tool only in stages
+whose tool patterns allow `delegate.run` (`v3-staged`'s act stage, `"*"`). The helper's conversation is kept in
+the run's transcript (`snapshot.delegations`), and its tool calls are traced under scope `delegate:<n>`. The
+helper's own hash is part of the delegating recipe's hash, and `load_recipes` refuses delegation cycles. A
+helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. Offline, with
+`scripted/delegate` (hands the whole task over when it can), `v2-delegate` passes 20/20 like `v2-base` at about
+37% more tokens, so its E is lower: delegation has to earn its cost on real models.
 
 Rules for a dimension:
 
@@ -577,12 +591,15 @@ response and never batches dependent steps, so on V1 only the first plan step ru
 | `scripted/replay` | Follows the plan | SUCCESS, E = 1.0 |
 | `scripted/noisy` | Makes one malformed call first, then recovers | SUCCESS, E ≈ 0.9 (pays on Q) |
 | `scripted/lazy` | Stops one step early | FAIL or PARTIAL |
+| `scripted/retry` | Repeats a step whose tool failed or returned nothing | SUCCESS under `first-call-fails` |
+| `scripted/invent` | First call names a tool that doesn't exist (rejected as malformed) | FAIL, SUCCESS with `v2-recover` |
+| `scripted/delegate` | Hands the task to its helper when offered `delegate__run`; otherwise replay | SUCCESS, more tokens |
 
 These prove the factory measures differences before any API budget is spent.
 
 ## Not in P0
 
-- **P1:** V4 planner and V5 orchestrator shapes.
+- **P1:** V4 planner and V5 orchestrator shapes (a delegate tool for any shape exists: `delegation`).
 - **P2:** allocation planner (which provider serves each cell); quota ledger shared across hosts (Redis);
   cross-provider equivalence calibration (then cells can pool providers).
 - **Known limits:**
