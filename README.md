@@ -226,6 +226,31 @@ A remote server whose tools change state (refund an order, file a ticket) declar
   exactly the calls the live run made; otherwise the run is `INCOMPLETE` (`replay_diverged`), so a replay that skips
   the work can't inherit the live run's result.
 
+## Provider calibration
+
+A canonical model served by two providers gets two cells until the providers are shown to behave alike (ADR 0010).
+`hfx calibration` measures it:
+
+```bash
+hfx calibration run gpt-oss-120b --providers groq,openrouter --run --seeds 2   # run missing pairs, then judge
+hfx calibration list                                                           # saved verdicts
+hfx calibration cells                                                          # cells, equivalent providers pooled
+```
+
+- **Pairs** are runs that differ only in the provider: same task, recipe, model, seed and tool environment, clean
+  and scored, each served by the model id its catalog entry names now. Runs store the tool environment apart from
+  the served model id (`tools_hash`, `served_id`) for this.
+- **Verdict** from the paired E0 difference and its bootstrap 95% interval:
+  - `equivalent` when the interval is within ±0.1 (`--margin`);
+  - `different` when it excludes 0;
+  - otherwise, or with fewer than 20 pairs (`--min-pairs`), `inconclusive`.
+
+  Verdicts are frozen in the results store, and the newest per pair is in force.
+- **Pooling** happens only in `hfx calibration cells`, only for `equivalent` pairs whose providers still serve the
+  calibrated model id. A pool of three or more needs a verdict for every pair. Cost stays per provider (each run
+  against its own provider's median); the cell is `groq+openrouter` with `tools:<hash>` as its environment.
+  `hfx results --cells` and the selector are unchanged.
+
 ## Running in containers
 
 Two images, two Dockerfiles:
