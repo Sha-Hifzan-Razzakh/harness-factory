@@ -35,6 +35,11 @@ The framework that runs a harness becomes a matrix axis, like the model:
 
 - **Recipe option** `runtime: native | langgraph-prebuilt | llamaindex-agent | …`. A framework runtime builds the
   harness with that framework's own agent, prompts and tool handling: what you would deploy.
+- **The framework's own agent, never a generic stand-in.** Each framework runner is built from that framework's own
+  components and idioms: LangGraph's prebuilt agent and `ToolNode`, LlamaIndex's `FunctionAgent` or
+  `AgentWorkflow`, and so on. Its prompts, tool formatting, tool-call parsing, retries and history handling stay at
+  the framework's defaults. A loop re-implemented in factory code doesn't count as a framework runner, even if it
+  imitates one: it would measure our code under the framework's name.
 - **Same measurement points.** The framework gets a chat-model wrapper that sends every call through
   `ModelGateway` and tool wrappers that call `ToolExecutor`. Quota pacing, token and cost counting, permissions,
   injected faults and traces stay the factory's, so scores stay comparable. A runner whose model calls can't be
@@ -43,6 +48,8 @@ The framework that runs a harness becomes a matrix axis, like the model:
 - **Identity.** The runner and its exact framework version (pinned in `uv.lock`) go into the run's identity, so a
   framework upgrade starts new cells, and shows whether the upgrade changed agent behaviour.
 - **Offline.** The scripted models must drive every runner through the wrappers, so CI checks runners without keys.
+
+Requirements: RUN-01 to RUN-09 in the Requirements v1 doc ("Runners (RUN)").
 
 Two questions it answers:
 
