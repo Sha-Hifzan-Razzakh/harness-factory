@@ -5,9 +5,11 @@ don't: each hand-written script falls into one trap, and the check that should c
 
 import pytest
 
+from harness_factory.grading.state import output_matches
 from harness_factory.runner.runner import run_one
 from harness_factory.substrate.gateway import ScriptedBackend
 from harness_factory.tasks.model import WeightedCheck
+from harness_factory.tasks.reference import load_reference
 
 
 def call(tool: str, **args) -> dict:
@@ -35,9 +37,15 @@ def read(factory, task_id, path) -> str:
 
 TRAPS = [
     # task, trap, script, checks that must fail
+    ("sql-01", "counted every customer", [GROUND, say("5")], {"answer"}),
+    ("sql-01", "hedged with neighbouring counts", [GROUND, say("It is 2, 3 or 4.")], {"answer"}),
     ("sql-03", "gross instead of net", [GROUND, say("Marina Fitness")], {"answer"}),
+    ("sql-03", "hedged gross and net", [GROUND, say("Marina Fitness by gross, Harbor Logistics by net.")], {"answer"}),
     ("sql-04", "kept test accounts", [GROUND, say("7")], {"answer"}),
+    ("sql-04", "hedged a range", [GROUND, say("between 5 and 7; 6 if test accounts are excluded, 7 otherwise")],
+     {"answer"}),
     ("sql-08", "Sep 30 dropped from Q3", [GROUND, say("1866.88")], {"answer"}),
+    ("sql-08", "hedged two amounts", [GROUND, say("1,696.11 or 1866.88")], {"answer"}),
     ("sql-05", "took the newest entry, which is not in effect yet",
      [call("sql.execute", sql="UPDATE products SET price = (SELECT ph.price FROM price_history ph WHERE "
                               "ph.product_id = products.id ORDER BY ph.effective_on DESC LIMIT 1) "
@@ -81,9 +89,11 @@ TRAPS = [
     ("ops-03", "counted 4xx too", [SVC_READ, say("/api/orders")], {"answer"}),
     ("ops-03", "hedged with every endpoint", [SVC_READ, say("/api/checkout, /api/orders or /api/search")],
      {"answer"}),
+    ("ops-03", "hedged on two lines", [SVC_READ, say("/api/orders\n/api/checkout")], {"answer"}),
     ("code-01", "bumped the dependency pin too", ["bump_all"], {"dependency_pins_untouched"}),
     ("docs-01", "kept the chore and put 2.4.0 at the bottom", ["changelog_bottom"], {"newest_first", "no_chores"}),
     ("res-01", "trusted the base default for prod and dev", [SVC_READ, say("staging")], {"answer"}),
+    ("res-01", "listed prod on a line of its own", [SVC_READ, say("prod\ndev, staging")], {"answer"}),
 ]
 
 
@@ -144,3 +154,53 @@ async def test_a_run_that_does_nothing_scores_zero(factory, task_id):
     passed = [c["id"] for g in rec.grades if g["grader_id"] == "state_diff" for c in g["checks"]
               if c["passed"] and c["weight"] > 0]
     assert rec.scores.outcome == 0 and rec.composite == 0, f"{task_id} credits a do-nothing run: {passed}"
+
+
+# ------------------------------------------------------------------ answers can't be hedged, catalog-wide
+
+ANSWER_TASKS = [t for t in ALL_TASKS
+                if any(c.kind == "output_regex" for c in __import__("harness_factory.tasks.registry", fromlist=["x"])
+                       .TaskRegistry().get(t).oracle.checks)]
+WRONG_ANSWERS = {}                       # task -> the wrong final answers its trap scripts give
+for _task, _trap, _script, _must_fail in TRAPS:
+    for _step in _script:
+        if isinstance(_step, dict) and "content" in _step:
+            WRONG_ANSWERS.setdefault(_task, []).append(_step["content"])
+
+
+def hedges(right: str, wrong: str) -> list[str]:
+    """Replies that name the right answer next to a wrong one, so a reader can't tell which the model means."""
+    return [f"{right} or {wrong}", f"{wrong} or {right}", f"{right}, {wrong}", f"{wrong}\n{right}",
+            f"{right}\n{wrong}", f"Either {wrong} or {right}, depending on how you count."]
+
+
+@pytest.mark.parametrize("task_id", ANSWER_TASKS)
+def test_an_answer_check_refuses_a_hedge(factory, task_id):
+    """Every output_regex check must pass the reference answer alone and fail the reference answer said next to
+    any wrong answer from this file's trap scripts. A trap answer that is already part of the right one (a
+    subset, e.g. "staging" for "dev, staging") makes no hedge and is skipped."""
+    task = factory.tasks.get(task_id)
+    right = load_reference(task).final
+    wrongs = [w for w in WRONG_ANSWERS.get(task_id, []) if w.lower() not in right.lower()]
+    assert wrongs, f"{task_id} has an output_regex check but no wrong-answer trap in TRAPS to hedge with"
+    for check in (c for c in task.oracle.checks if c.kind == "output_regex"):
+        assert output_matches(check.pattern, right), f"{task_id}/{check.id} refuses its own reference answer"
+        for wrong in wrongs:
+            for reply in hedges(right, wrong):
+                assert not output_matches(check.pattern, reply), f"{task_id}/{check.id} accepts {reply!r}"
+
+
+@pytest.mark.parametrize(("task_id", "reply"), [
+    ("sql-01", "There are 3 customers based in Dubai."),
+    ("sql-01", "3"),
+    ("sql-03", "Harbor Logistics brought in the most net revenue in 2026."),
+    ("sql-04", "6 customers ordered in October 2026 but not in September 2026."),
+    ("sql-08", "The average paid order value in Q3 2026 was AED 1,696.11."),
+    ("sql-08", "1696.11"),
+    ("ops-03", "The endpoint with the most 5xx errors was /api/checkout."),
+])
+def test_a_plain_answer_still_passes(factory, task_id, reply):
+    """The hedge-proof patterns still accept one clear answer in ordinary words, including numbers the
+    instruction itself uses (2026) and numbers inside words (Q3)."""
+    checks = [c for c in factory.tasks.get(task_id).oracle.checks if c.kind == "output_regex"]
+    assert checks and all(output_matches(c.pattern, reply) for c in checks)
