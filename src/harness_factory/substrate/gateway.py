@@ -220,6 +220,13 @@ class ModelGateway:
                             comp = await self.backend.complete(messages, tools, slot, self.provider, served)
                     else:
                         comp = await self.backend.complete(messages, tools, slot, self.provider, served)
+                except asyncio.CancelledError:
+                    # Ctrl-C or a cancelled campaign: the call never finished, so give back the tokens it reserved
+                    # (otherwise the persisted ledger over-counts tpm/tpd until the window rolls). Not a provider
+                    # error, so nothing to classify; the cancellation goes on.
+                    span.status, span.error = "error", "cancelled"
+                    self.ledger.record_tokens(bucket, 0, reserve)
+                    raise
                 except Exception as raw:  # classified below; nothing escapes untyped
                     e = raw if isinstance(raw, HarnessError) else classify_provider_error(
                         raw, mid_run=self.successful_calls > 0)

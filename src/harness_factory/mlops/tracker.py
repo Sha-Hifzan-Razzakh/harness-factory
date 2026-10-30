@@ -3,6 +3,8 @@ the results store is the source of truth; MLflow is the browsing and comparison 
 
 from __future__ import annotations
 
+import threading
+
 from harness_factory import settings
 from harness_factory.recipes.model import HarnessRecipe
 from harness_factory.results.model import EffectivenessRecord
@@ -12,6 +14,8 @@ class ExperimentTracker:
     def __init__(self, experiment: str = "harness-factory") -> None:
         self.enabled = False
         self.experiment = experiment
+        self.failures = 0                             # runs whose mirror to MLflow failed (they are still stored)
+        self._lock = threading.Lock()                 # runs log from worker threads; MLflow's run stack is not ours
         self.disabled_reason: str | None = None      # set when MLflow was asked for but can't be used
         if not settings.MLFLOW_TRACKING_URI:
             return
@@ -33,7 +37,8 @@ class ExperimentTracker:
         if not self.enabled:
             return
         mlflow = self._mlflow
-        with mlflow.start_run(run_name=f"{rec.run_key.task_version}:{recipe.id}:{rec.run_key.canonical_model}"):
+        name = f"{rec.run_key.task_version}:{recipe.id}:{rec.run_key.canonical_model}"
+        with self._lock, mlflow.start_run(run_name=name):
             mlflow.log_params({**recipe.to_mlflow_params(), "model": rec.run_key.canonical_model,
                                "provider": rec.run_key.provider, "seed": rec.run_key.seed,
                                "task": rec.run_key.task_version, "task_class": rec.task_class})

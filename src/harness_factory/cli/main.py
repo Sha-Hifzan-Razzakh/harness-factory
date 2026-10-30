@@ -137,10 +137,16 @@ def tasks() -> None:
 
 @app.command()
 def validate() -> None:
-    """Validate every recipe against the tool catalog, prompts and providers."""
+    """Validate every task's graders, and every recipe against the tool catalog, prompts and providers."""
     from harness_factory.recipes.validate import validate_recipe
     f = _factory(store=False)
     bad = 0
+    for task in f.tasks.all(include_held_out=True):
+        unknown = f.graders.unknown(task)
+        if unknown:
+            console.print(f"[red]FAIL[/] task {task.key()}: unknown grader(s) {', '.join(unknown)}; "
+                          f"known: {', '.join(sorted(f.graders.graders))}")
+            bad += 1
     for rid, recipe in f.recipes.items():
         issues = validate_recipe(recipe, f.declared)
         console.print(f"{'[green]ok' if not issues else '[red]FAIL'}[/] {rid} ({recipe.content_hash()})")
@@ -390,10 +396,6 @@ def baseline_list() -> None:
                       f"{', '.join(legacy)}")
 
 
-if __name__ == "__main__":
-    app()
-
-
 select_app = typer.Typer(no_args_is_help=True, help="Selector: which recipe to use per task class (SEL-01..06).")
 app.add_typer(select_app, name="select")
 
@@ -474,7 +476,9 @@ def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = t
     if dry_run:
         return
     specs = [RunSpec(task_id=tk, recipe_id=r, canonical_model=model, provider=provider) for tk, r in runs]
-    asyncio.run(run_campaign(f, specs, concurrency, resume=True))
+    result = asyncio.run(run_campaign(f, specs, concurrency, resume=True))
+    for e in result.errors:     # a run that never got a record is missing from its strategy's score: say so
+        console.print(f"[red]error[/] {e.spec.task_id} with {e.spec.recipe_id}: {e.error}")
     rows = f.store.rows()
     keys = {(tk, r): run_key_for(f.tasks.get(tk), f.recipes[r], model, provider, 0, declared=f.declared,
                                  providers=f.providers).as_str() for tk, r in runs}
@@ -489,6 +493,9 @@ def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = t
         st.add_row(s.strategy, "-" if s.mean_e is None else f"{s.mean_e:.3f}", f"{s.passed}/{s.tasks}",
                    f"{s.scored}/{s.tasks}")
     console.print(st)
+    if result.errors:
+        console.print(f"[red]{len(result.errors)} evaluation run(s) failed; their strategies are scored without them")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -522,6 +529,9 @@ def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option
         console.print(_records_table(result.records))
     for e in result.errors:
         console.print(f"[red]error[/] {e.spec.recipe_id}: {e.error}")
+    errored = [r for r in result.records if r.status.value == "ERROR"]
+    if result.errors or errored:
+        raise typer.Exit(code=1)       # the task was not done: scripts and schedulers must see it
 
 
 @app.command()
@@ -548,3 +558,8 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
 from harness_factory.cli.authoring import register as _register_authoring  # hfx new, hfx catalog
 
 _register_authoring(app)
+
+
+# Last, so `python -m harness_factory.cli.main` sees every command registered above.
+if __name__ == "__main__":
+    app()

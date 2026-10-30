@@ -3,5 +3,5 @@
 id: garbled-reads
 description: Half of reads come back truncated; some come back empty.
 rules:
-  - {tools: ["fs.read_file", "fs.list_dir", "sql.query", "sql.describe_table"], kind: garbled, rate: 0.4}
-  - {tools: ["fs.read_file", "fs.list_dir", "sql.query", "sql.describe_table"], kind: empty, rate: 0.15}
+  - {tools: ["fs.read_file", "fs.list_dir", "sql.query", "sql.describe_table", "search.find", "search.grep"], kind: garbled, rate: 0.4}
+  - {tools: ["fs.read_file", "fs.list_dir", "sql.query", "sql.describe_table", "search.find", "search.grep"], kind: empty, rate: 0.15}

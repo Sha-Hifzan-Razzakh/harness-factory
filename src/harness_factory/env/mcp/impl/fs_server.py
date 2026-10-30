@@ -38,15 +38,27 @@ def read_file(path: str) -> str:
     p = _resolve(path)
     if not p.is_file():
         raise ToolError(f"no such file: {path}")
-    return p.read_text()
+    try:
+        return p.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ToolError(f"not a UTF-8 text file: {path} (byte {e.start} cannot be decoded)") from e
+    except OSError as e:
+        raise ToolError(f"cannot read {path}: {e.strerror or e}") from e
 
 
 @app.tool()
 def write_file(path: str, content: str) -> str:
     """Create or overwrite a UTF-8 text file in the workspace. Parent folders are created."""
     p = _resolve(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
+    if p == _root() or p.is_dir():
+        raise ToolError(f"is a directory, not a file: {path}")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except (FileExistsError, NotADirectoryError) as e:
+        raise ToolError(f"cannot write {path}: a parent of it is a file, not a folder") from e
+    except OSError as e:
+        raise ToolError(f"cannot write {path}: {e.strerror or e}") from e
     return f"wrote {len(content)} characters to {path}"
 
 
@@ -56,7 +68,10 @@ def delete_file(path: str) -> str:
     p = _resolve(path)
     if not p.is_file():
         raise ToolError(f"no such file: {path}")
-    p.unlink()
+    try:
+        p.unlink()
+    except OSError as e:
+        raise ToolError(f"cannot delete {path}: {e.strerror or e}") from e
     return f"deleted {path}"
 
 
