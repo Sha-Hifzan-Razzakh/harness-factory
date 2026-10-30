@@ -59,6 +59,23 @@ Two questions it answers:
 2. **Which runner is best for a task class?** The runner is part of the cell (task class × recipe × model ×
    runner), and the selector can pick runner and recipe together.
 
+**Which frameworks.** Every framework a team may deploy on is a candidate runner. The "one agent framework"
+decision in the requirements still holds for *shapes*: frameworks enter only as runners, a separate axis, so shape
+comparisons stay free of framework effects. Order of building (full catalog with each framework's model-client and
+MCP seams: Requirements v1, "Runners (RUN)"):
+
+1. LangGraph ready-made agent; LlamaIndex `FunctionAgent` / `AgentWorkflow`.
+2. Microsoft Agent Framework (`agent-framework`, 1.0 GA on 3 Apr 2026), the successor to Semantic Kernel and AutoGen.
+3. Semantic Kernel v1.x (supported, new features go to MAF); AutoGen AgentChat (maintenance mode since 2 Oct 2025,
+   benchmarked for existing deployments and migration, e.g. the same recipe on AutoGen vs MAF); LangGraph supervisor
+   as a V5 runner.
+4. CrewAI, OpenAI Agents SDK, Pydantic AI.
+5. Google ADK, smolagents, AG2 (community fork of AutoGen).
+
+Each must still meet the rules above: the framework's own agent, model calls through `ModelGateway`, tools through
+`ToolExecutor`, version in identity, offline-testable. Check each framework's extension points against its current
+docs when its runner is built.
+
 What a runner benchmark should report, besides E: tokens spent on the framework's hidden prompts and tool
 formatting, extra model calls from framework retries, invalid tool calls caused by tool formatting, robustness under
 injected faults (framework error handling), and wall-time overhead.
