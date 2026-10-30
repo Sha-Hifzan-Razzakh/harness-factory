@@ -1,0 +1,3 @@
+# US: unpaid accounts go to the collections partner instead of being suspended.
+[final]
+action = "collections"

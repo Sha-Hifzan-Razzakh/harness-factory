@@ -1,0 +1,7 @@
+# EU: SEPA direct debits settle slower, so retries are spaced further apart.
+[retry]
+retry_days = [2, 5, 10]
+max_attempts = 3
+
+[final]
+after_days = 30

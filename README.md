@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 23 tasks and their class keys (3 held out)
+hfx tasks                 # 31 tasks and their class keys (6 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -376,15 +376,16 @@ gateway, a grant that is a subset of the orchestrator's, a budget capped by what
 to it. A worker that replies `BLOCKED:` or stops early triggers the replan. Each worker is a `delegate.run` span with
 scope `step:<n>`; its conversation is in `snapshot.delegations`. See ADR 0008.
 
-Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks, cost baseline over these five recipes):
+Offline comparison (`scripted/replay`, the 25 DEV + TEST tasks, cost baseline over these five recipes; tokens are
+the total over all 25 runs):
 
 | Recipe | Success | E₀ | C | E | Tokens |
 |---|---|---|---|---|---|
-| `v1-base` | 1/20 (fs-01 only) | 0.100 | 0.054 | 0.094 | ~4,500 |
-| `v2-base` | 20/20 | 1.000 | 0.257 | 0.954 | ~28,000 |
-| `v3-staged` | 20/20 | 1.000 | 0.615 | 0.887 | ~62,000 |
-| `v4-planner` | 20/20 | 1.000 | 0.696 | 0.878 | ~81,000 |
-| `v5-orchestrator` | 20/20 | 1.000 | 0.446 | 0.919 | ~46,000 |
+| `v1-base` | 1/25 (fs-01 only) | 0.090 | 0.052 | 0.085 | ~5,700 |
+| `v2-base` | 25/25 | 1.000 | 0.263 | 0.954 | ~41,000 |
+| `v3-staged` | 25/25 | 1.000 | 0.611 | 0.889 | ~86,000 |
+| `v4-planner` | 25/25 | 1.000 | 0.720 | 0.876 | ~120,000 |
+| `v5-orchestrator` | 25/25 | 1.000 | 0.445 | 0.920 | ~64,000 |
 
 V2 to V5 tie on E₀; efficiency C separates them (see *Cost and efficiency*). V5 costs less than V4 with the same
 plan because each worker starts from a short conversation, where V4's executor carries every step's history.
@@ -423,9 +424,10 @@ the recipe's skills in the run's state folder, outside the workspace: the model 
 `skills.load` and can't change them. `skills.load` is granted to every task (`granted_by: []`) because it reads
 harness material, nothing from the task's world.
 
-> **Caveat:** these skills were written by the same author as the tasks, held-out ones included. Skill gains on
-> this catalog are an upper bound. Tasks written later, by an author who hasn't seen the skills, give the honest
-> estimate.
+> **Caveat:** these skills were written by the same author as task batches 1 and 2, held-out ones included, so
+> skill gains on those tasks are an upper bound. Batch 3 (`b3-*`, tag `batch-3`) was written by an author who never
+> saw the skills, recipes, prompts or shapes; measure skills on it for the honest estimate, in a store of its own:
+> `HF_VAR=var/batch3 hfx smoke --tag batch-3 --recipe v2-base,v2-skills-upfront,v2-skills-on-demand --models <m>`.
 
 **New tools without task edits.** A task's `allowed_tools` decides what a run may call, and editing every task
 would change every task hash. A READ tool that reveals nothing beyond other tools declares them instead:
@@ -651,7 +653,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-23 tasks over three seeds. The first five are the P0 smoke set. The other eighteen each hide a trap that a
+31 tasks over four seeds. The first five are the P0 smoke set. The other twenty-six each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -675,6 +677,18 @@ careless harness falls into: the right answer and the plausible wrong one differ
 | `docs-02` | unknown path, reversible, R1 | HELD_OUT | The new port is prod's, not the base default or staging's |
 | `code-01` | unknown path, reversible, R1 | TEST | Version bump; a dependency is pinned at the same version number |
 | `res-01` | unknown path, read, R0 | TEST | Backups per environment: env files override the base default |
+| `b3-01` | known path, read, R0 | TEST | Cash collected in October: failed attempts, an Oct 31 evening payment, the internal tenant, invoice month vs payment date |
+| `b3-02` | unknown path, read, R0 | HELD_OUT | Accounts over their seat allowance: add-on seats, the month's peak, "at" vs "over", a suspended account |
+| `b3-03` | known path, reversible, R2 | TEST | Mark past-due invoices overdue: credit notes, failed payments, due today, drafts and voids |
+| `b3-04` | unknown path, reversible, R2 | TEST | A ticket asks for a downgrade now and a refund; the billing policy says schedule it and no credit note |
+| `b3-05` | unknown path, reversible, R1 | HELD_OUT | Add an EU dunning retry: the EU file has its own list, and `max_attempts` must match |
+| `b3-06` | unknown path, reversible, R1 | TEST | Sync the API doc with the routes: a commented-out route, an internal one, a method that changed |
+| `b3-07` | known path, reversible, R1 | TEST | Raise the late fee; the early-payment discount has the same number, and the floor test changes too |
+| `b3-08` | known path, reversible, R2 | HELD_OUT | Outage credit notes: one account already credited by hand, a draft invoice, a suspended account |
+
+**Batch 3** (`b3-*`, seed `billing`: a B2B SaaS billing world dated 2026-11-02) was written by an independent author
+who did not see the skills, recipes, prompts or shapes, so it is the fair set for judging them. The batch has 31 trap
+scripts in `tests/test_task_traps.py`. `--tag batch-3` restricts `hfx smoke` to it.
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
