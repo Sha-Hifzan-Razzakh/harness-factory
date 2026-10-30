@@ -12,7 +12,6 @@ from harness_factory.recipes.model import (
     HarnessRecipe,
     MemoryProfile,
     RuntimeConfig,
-    SkillSet,
     ToolSlice,
     Variant,
 )
@@ -30,8 +29,6 @@ def inert_fields(recipe: HarnessRecipe) -> list[str]:
     implemented (ADR 0002). Remove a line here in the PR that implements the field."""
     d_cfg, d_tools = RuntimeConfig(), ToolSlice(tool_ids=[], mcp_servers=[])
     out = []
-    if recipe.skills != SkillSet():
-        out.append("skills")
     if recipe.memory != MemoryProfile():
         out.append("memory")
     if recipe.retrieval is not None and recipe.retrieval.mode != "none":
@@ -67,6 +64,22 @@ def reachable_tools(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[st
     return out
 
 
+def _skill_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[ValidationIssue]:
+    from harness_factory.skills.library import load_skills
+    sk, out = recipe.skills, []
+    if sk.loading == "none" and sk.skill_ids:
+        out.append(ValidationIssue(rule="skills_loading", detail="skill_ids set but loading is none"))
+    if sk.loading != "none" and not sk.skill_ids:
+        out.append(ValidationIssue(rule="skills_loading", detail=f"loading {sk.loading} with no skill_ids"))
+    unknown = sorted(set(sk.skill_ids) - set(load_skills()))
+    if unknown:
+        out.append(ValidationIssue(rule="skill_exists", detail=f"no SKILL.md for {', '.join(unknown)}"))
+    if sk.loading == "on_demand" and "skills.load" not in reachable_tools(recipe, declared):
+        out.append(ValidationIssue(rule="skills_tool_reachable",
+                                   detail="loading on_demand needs the skills server and skills.load in the slice"))
+    return out
+
+
 def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: PromptRegistry | None = None,
                     providers: ProviderCatalog | None = None, provider_id: str | None = None) -> list[ValidationIssue]:
     import harness_factory.shapes.builtin  # noqa: F401  (registers built-in shapes)
@@ -77,6 +90,7 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
 
     for f in inert_fields(recipe):
         issues.append(ValidationIssue(rule="field_implemented", detail=f"{f} is declared but not implemented yet"))
+    issues += _skill_issues(recipe, declared)
 
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))

@@ -28,6 +28,7 @@ Launch = tuple[str, list[str], dict[str, str]]       # command, args, extra envi
 
 WORKSPACE_IN_CONTAINER = "/work"
 DB_IN_CONTAINER = "/state/task.sqlite"
+SKILLS_IN_CONTAINER = "/state/skills"   # installed by the provisioner next to the database, outside the workspace
 
 
 class Sandbox(Protocol):
@@ -63,15 +64,19 @@ class LocalSandbox:
             shutil.rmtree(child) if child.is_dir() and not child.is_symlink() else child.unlink()
         if files:
             shutil.copytree(files, self.workspace, dirs_exist_ok=True)
-        for f in self.db_path.parent.iterdir():          # database plus any journal/WAL files
-            f.unlink()
+        for f in self.db_path.parent.iterdir():          # database plus any journal/WAL files, installed skills
+            shutil.rmtree(f) if f.is_dir() and not f.is_symlink() else f.unlink()
         with sqlite3.connect(self.db_path) as c:
             if sql:
                 c.executescript(sql.read_text())
             c.commit()
 
     def env(self) -> dict[str, str]:
-        return {"HF_WORKSPACE": str(self.workspace), "HF_DB": str(self.db_path)}
+        return {"HF_WORKSPACE": str(self.workspace), "HF_DB": str(self.db_path), "HF_SKILLS": str(self.skills_dir)}
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.db_path.parent / "skills"
 
     def launch(self, spec: MCPServerSpec) -> Launch:
         return sys.executable, ["-m", spec.module], self.env()
@@ -132,7 +137,7 @@ class DockerSandbox(LocalSandbox):
         docker(*self.run_args(), timeout=60)
 
     def env(self) -> dict[str, str]:
-        return {"HF_WORKSPACE": WORKSPACE_IN_CONTAINER, "HF_DB": DB_IN_CONTAINER}
+        return {"HF_WORKSPACE": WORKSPACE_IN_CONTAINER, "HF_DB": DB_IN_CONTAINER, "HF_SKILLS": SKILLS_IN_CONTAINER}
 
     def launch(self, spec: MCPServerSpec) -> Launch:
         env_flags = [x for k, v in self.env().items() for x in ("-e", f"{k}={v}")]

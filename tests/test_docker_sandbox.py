@@ -159,3 +159,14 @@ def test_failed_start_leaves_no_container(factory, docker_required):
         sb.reset(factory.tasks.get("fs-01"))
     sb.teardown()
     assert not _existing([sb.container])
+
+
+async def test_skills_on_demand_inside_the_container(factory, docker_required, monkeypatch):
+    """Skills are installed in the state folder, mounted at /state: the server inside the container reads them."""
+    from harness_factory.substrate.gateway import ScriptedBackend
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    script = [{"tool_calls": [{"name": "skills__load", "arguments": {"name": "sql-analysis"}}]}, {"content": "3"}]
+    rec = await run_one(factory, factory.tasks.get("sql-01"), factory.recipes["v2-skills-on-demand"],
+                        "scripted/replay", "scripted", backend=ScriptedBackend(script))
+    tool = next(m for m in rec.messages if m["role"] == "tool")
+    assert "List the tables and describe" in tool["content"]

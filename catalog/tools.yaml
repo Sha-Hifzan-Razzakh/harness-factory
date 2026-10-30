@@ -67,3 +67,13 @@ servers:
     - fs.list_dir
     - fs.read_file
     schema_hash: 6efa5f809b4008c9
+- id: skills
+  transport: stdio
+  module: harness_factory.env.mcp.impl.skills_server
+  tools:
+  - name: load
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    granted_by: []
+    schema_hash: 69385cf2f1024c2c

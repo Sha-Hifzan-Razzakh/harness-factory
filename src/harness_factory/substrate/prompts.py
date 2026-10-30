@@ -27,13 +27,24 @@ class PromptRegistry:
 
 
 class PromptAssembler:
-    def __init__(self, registry: PromptRegistry | None = None) -> None:
+    def __init__(self, registry: PromptRegistry | None = None, skills: dict | None = None) -> None:
         self.registry = registry or PromptRegistry()
+        self._skills = skills
+
+    @property
+    def skills(self) -> dict:
+        if self._skills is None:
+            from harness_factory.skills.library import load_skills
+            self._skills = load_skills()
+        return self._skills
 
     def assemble(self, recipe: HarnessRecipe, task: Task, tool_names: list[str]) -> list[dict[str, Any]]:
         system = self.registry.render(recipe.prompts.system, tools=tool_names, recipe=recipe)
         if recipe.prompts.operator:
             system += "\n\n" + self.registry.render(recipe.prompts.operator, recipe=recipe)
+        if recipe.skills.loading != "none" and recipe.skills.skill_ids:
+            chosen = [self.skills[s] for s in recipe.skills.skill_ids]
+            system += "\n\n" + self.registry.render(f"skills/{recipe.skills.loading}", skills=chosen)
         user = self.registry.render(recipe.prompts.task, task=task)
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 

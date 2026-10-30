@@ -32,5 +32,9 @@ and prompts had any effect. `base:` was declared and ignored.
 - **Q changed meaning slightly:** a reply the provider rejects as malformed is now an invalid call. Before, a
   run that ended on one kept Q from its tool calls alone (Phase 1's `code-01`: Q 1.0, O 0, so E₀ 0 either way).
   It only moves runs that had a rejected reply and partial credit.
+- **Author bias in hand-written dimensions.** Prompts and skills written by the person who wrote the tasks fit
+  those tasks better than they would fit unseen work. Gains from them on the current catalog are an upper bound;
+  tasks authored afterwards, without sight of the skills, are the fair test (the v2 loop's held-out rule,
+  IMP-12, exists for the same reason).
 - **Campaigns grow multiplicatively,** recipes × models × tasks. The matrix is run against the base it extends,
   not all pairs.

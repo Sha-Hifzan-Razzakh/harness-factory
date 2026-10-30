@@ -40,8 +40,8 @@ def task_tools(task: Task, declared: ToolCatalogFile) -> list[str]:
     """The task's allowance, plus any READ tool `granted_by` tools the task already allows."""
     direct = [r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)]
     granted = [r for r in declared.all_refs() if r not in direct
-               and (g := declared.spec(r).granted_by) and declared.spec(r).side_effect == SideEffect.READ
-               and all(x in direct for x in g)]
+               and (g := declared.spec(r).granted_by) is not None and declared.spec(r).side_effect == SideEffect.READ
+               and all(x in direct for x in g)]              # granted_by: [] = every task (harness material only)
     return direct + granted
 
 
@@ -114,6 +114,19 @@ async def _start_sandbox(task: Task) -> LocalSandbox:
         raise
 
 
+def install_skills(sandbox: LocalSandbox, recipe: HarnessRecipe) -> None:
+    """Copy the recipe's skills into the run's state folder, where the skills server reads them (on_demand).
+    Outside the workspace: the model's file tools can't see or change them, and they never show in the diff."""
+    if recipe.skills.loading != "on_demand":
+        return
+    from harness_factory.skills.library import load_skills
+    lib = load_skills()
+    for sid in recipe.skills.skill_ids:
+        dest = sandbox.skills_dir / sid / "SKILL.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(lib[sid].text)
+
+
 @dataclass
 class Provisioned:
     instance: HarnessInstance
@@ -151,6 +164,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     # run's container start never stalls the other workers.
     sandbox = await _start_sandbox(task)
     try:
+        install_skills(sandbox, recipe)
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)

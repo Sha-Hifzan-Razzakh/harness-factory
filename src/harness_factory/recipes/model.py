@@ -175,11 +175,13 @@ class HarnessRecipe(BaseModel):
 
     def prompt_refs(self) -> list[str]:
         refs = [self.prompts.system, self.prompts.task] + ([self.prompts.operator] if self.prompts.operator else [])
+        if self.skills.loading != "none":
+            refs.append(f"skills/{self.skills.loading}")
         if self.workflow:
             refs += [st.prompt for st in self.workflow.stages]
         return refs
 
-    def content_hash(self, prompts: PromptSources | None = None) -> str:
+    def content_hash(self, prompts: PromptSources | None = None, skills: dict | None = None) -> str:
         """Identity of the harness: the recipe minus its campaign axes, plus the source of every prompt
         template it references. Editing a template changes behaviour, so it changes the hash.
 
@@ -193,6 +195,10 @@ class HarnessRecipe(BaseModel):
             _drop_none(data, dotted)
         sources = prompts if prompts is not None else default_prompt_sources()
         data["prompt_sources"] = {ref: sources[ref] for ref in sorted(set(self.prompt_refs())) if ref in sources}
+        if self.skills.skill_ids:                       # only then, so recipes without skills keep their hash
+            from harness_factory.skills.library import load_skills
+            lib = skills if skills is not None else load_skills()
+            data["skill_sources"] = {sid: lib[sid].text if sid in lib else None for sid in sorted(self.skills.skill_ids)}
         return content_hash(data)
 
     def with_model(self, canonical_model: str, role: str = "executor") -> HarnessRecipe:
