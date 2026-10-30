@@ -22,6 +22,42 @@ hfx results --cells       # per-cell E0, C, cost-adjusted E, bootstrap CI, pass 
 pytest -q -n auto         # ~215 tests in parallel (Docker tests skip without a daemon)
 ```
 
+## Adding things: `hfx new` and `hfx catalog`
+
+Prompts, skills, recipes, tool servers and fault profiles can be added without editing files by hand. Every change
+is staged in a copy of the catalog, checked with the same validators as `hfx validate`, and written only if it
+passes (ADR 0009). The API and the UI use the same code.
+
+```bash
+hfx new prompt system/terse -f terse.j2                       # a Jinja2 template (system: tools, recipe; task: task)
+hfx new recipe v2-terse --set prompts.system=system/terse \
+    --note "Matrix (prompt): a terse system prompt"            # base v2-base + one change
+hfx new skill csv-checks --name "Checking CSV files" --description "..." -f body.md
+hfx new tool calc --tool add --param a:float --param b:float   # a local server: writes a stub to fill in
+hfx new tool --spec calc.yaml --code calc_server.py           # or your own module
+hfx new remote-tool --spec kb.yaml                            # an existing MCP server (url, version, auth_env)
+hfx new fault --spec slow_sql.yaml
+hfx catalog list [recipe]                                      # every item, what uses it, its hash
+hfx catalog show recipe v2-terse
+hfx catalog check                                              # everything wrong with the catalog now
+hfx catalog rm fault slow-sql
+```
+
+- **Nothing broken gets written.** A template that doesn't parse, a recipe that fails validation, a server module
+  that imports anything but `mcp` and the standard library (it runs in the offline sandbox), raises `ValueError`
+  or serves tools other than the ones declared: the change is rejected and no file changes.
+- **Identity changes are shown first.** Editing an existing item (a base recipe, a skill, a prompt, a server) lists
+  the recipes whose hash or tool environment changes and how many stored runs that leaves on the old identity.
+  It is written only with `--yes`. New items never change existing identities. `--dry-run` shows all of it and
+  writes nothing.
+- **`--update`** replaces an item instead of creating one. A recipe update replaces the whole file.
+- **Local tool servers** are discovered on the spot: the server is started as the sandbox would, its tools are
+  listed, and their schema hashes go into `tools.yaml` (what `hfx tools freeze` would write). A new tool reaches
+  the model only when its task allows it, or with `granted_by` on a READ tool.
+- **Not here:** tasks (they need a reference solution, trap scripts and a do-nothing check), and the built-in
+  servers `fs`, `sql`, `search` and `skills`.
+- Files are written, never committed: review them with `git diff`.
+
 ## Real models
 
 Put keys in `.env` (copy `.env.example`), then check the model ids and limits in `catalog/providers.yaml` against
@@ -342,6 +378,7 @@ src/harness_factory/
   mlops/                  MLflow tracker                                            (B9)
   mcp/                    MCPClient, MCPSessionPool, ToolCatalog                    (B11)
   observability/          Span, Tracer (JSONL + OTLP)
+  authoring/              AuthoringService: staged, validated catalog writes (ADR 0009)
   cli/                    hfx
 ```
 
