@@ -56,8 +56,9 @@ class PlanBackend:
             script, so the same plan) does the work, then the parent gives the final answer. Without a delegate
             tool it is replay
 
-    Every style plans when called in the planner slot (V4): one numbered line per remaining plan step. In a V4 step
-    ("Step i of n: ..."), it makes the next plan call and then closes the step, so one plan step runs per V4 step.
+    Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
+    step ("Step i of n: ...") or a V5 worker's part ("Your part: ..."), it makes the next plan call and then closes
+    the step, so one plan step runs per V4 step or V5 worker.
     """
 
     INVENTED_TOOL = "fs__search_file"
@@ -67,7 +68,7 @@ class PlanBackend:
 
     STAGE_DONE = "Stage complete."
     STEP_DONE = "Step complete."
-    _STEP = re.compile(r"(?:^|\n)Step \d+ of \d+:")
+    _STEP = re.compile(r"(?:^|\n)(?:Step \d+ of \d+:|Your part:)")
 
     def __init__(self, ref: Reference, style: str = "replay") -> None:
         if style not in ("replay", "noisy", "lazy", "retry", "invent", "delegate"):
@@ -82,8 +83,8 @@ class PlanBackend:
         self.delegate_pending = style == "delegate"
         self.i = 0
         self.calls = 0
-        self.steps_seen = 0          # V4 step prompts seen so far
-        self.step_start = 0          # plan index when the current V4 step started
+        self.step_marker: str | None = None   # the V4 step / V5 part prompt being worked on
+        self.step_start = 0                   # plan index when it started
 
     @staticmethod
     def _last_tool_failed(messages: list[dict]) -> bool:
@@ -127,10 +128,11 @@ class PlanBackend:
             msg = self._msg(model_name(self.last_step["tool"]), self.last_step["args"])
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         self.retries = 0
-        steps = sum(1 for m in messages if m.get("role") == "user" and self._STEP.search(m.get("content") or ""))
-        if steps != self.steps_seen:
-            self.steps_seen, self.step_start = steps, self.i
-        if steps and self.i > self.step_start and messages[-1].get("role") == "tool":
+        marker = next((m.get("content") for m in reversed(messages)
+                       if m.get("role") == "user" and self._STEP.search(m.get("content") or "")), None)
+        if marker != self.step_marker:
+            self.step_marker, self.step_start = marker, self.i
+        if marker and self.i > self.step_start and messages[-1].get("role") == "tool":
             msg = self._msg(content=self.final if self.i >= len(self.plan) else self.STEP_DONE)
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         nxt = model_name(self.plan[self.i]["tool"]) if self.i < len(self.plan) else None
