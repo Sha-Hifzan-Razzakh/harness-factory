@@ -1206,6 +1206,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+api = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "uvicorn" },
+]
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1225,6 +1230,8 @@ postgres = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = ">=4.5" },
+    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
+    { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27" },
     { name = "inspect-ai", marker = "extra == 'inspect'", specifier = ">=0.3.285,<0.4" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "langgraph", specifier = ">=1.0,<2" },
@@ -1243,8 +1250,9 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
     { name = "typer", specifier = ">=0.15" },
+    { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.32" },
 ]
-provides-extras = ["postgres", "mlops", "inspect", "dev"]
+provides-extras = ["postgres", "mlops", "inspect", "api", "dev"]
 
 [[package]]
 name = "hf-xet"

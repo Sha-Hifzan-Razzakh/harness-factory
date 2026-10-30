@@ -58,6 +58,34 @@ hfx catalog rm fault slow-sql
   servers `fs`, `sql`, `search` and `skills`.
 - Files are written, never committed: review them with `git diff`.
 
+## API: `hfx serve`
+
+The same authoring rules over HTTP, plus read access to what experiments are made of and what they produced. The
+UI uses it; scripts can too.
+
+```bash
+uv sync --extra dev --extra api
+hfx serve                                  # http://127.0.0.1:8765, OpenAPI docs at /docs
+HF_API_TOKEN=... hfx serve --host 0.0.0.0  # beyond localhost a token is required
+docker compose --profile api up -d api     # in a container (needs HF_API_TOKEN in .env), host loopback only
+```
+
+| Area | Routes |
+|---|---|
+| Catalog | `GET /api/catalog[/{kind}[/{id}]]`, `POST /api/catalog/{kind}`, `PUT` / `DELETE /api/catalog/{kind}/{id}`; `?dry_run=true`, `?confirm=true`; `GET /api/check`; `POST /api/servers/stub` |
+| Experiments | `GET /api/meta` (variants, dimensions, prompt layers), `/api/tasks` (with task class), `/api/models` (and whether each provider's key is set), `/api/faults` |
+| Results | `GET /api/results`, `/api/results/cells`, `/api/baselines`, `/api/report` (markdown), `/api/runs/{id}/transcript` |
+
+- **A change answers like the CLI.** 201/200 when written or dry-run, **409** when it changes an existing identity
+  (the body lists the recipes and servers; repeat with `?confirm=true`), **422** when rejected (the body lists the
+  issues; nothing was written). Kinds are `prompt`, `skill`, `recipe`, `server`, `fault`; a prompt's id is its
+  ref, slash included (`/api/catalog/prompt/system/terse`).
+- **Pasted tool code runs** when its tools are discovered, on the machine running the API. That's why it binds
+  to localhost by default and refuses any other address without `HF_API_TOKEN`; with a token, every route but
+  `/api/health` needs `Authorization: Bearer <token>`.
+- The compose service mounts `catalog/`, `prompts/` and the local tool servers' folder read-write (the `factory`
+  services keep them read-only). The image has no ruff, so a module written through it is linted by CI instead.
+
 ## Real models
 
 Put keys in `.env` (copy `.env.example`), then check the model ids and limits in `catalog/providers.yaml` against
@@ -379,6 +407,7 @@ src/harness_factory/
   mcp/                    MCPClient, MCPSessionPool, ToolCatalog                    (B11)
   observability/          Span, Tracer (JSONL + OTLP)
   authoring/              AuthoringService: staged, validated catalog writes (ADR 0009)
+  api/                    hfx serve: authoring and results over HTTP (extra `api`)
   cli/                    hfx
 ```
 
