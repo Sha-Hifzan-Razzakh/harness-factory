@@ -279,6 +279,14 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 |---|---|---|
 | prompt | `v2-plan-check` | System prompt asks for a numbered plan with the first tool call and a check before the final answer (`prompts/system/plan_check.j2`) |
 | config | `v2-recover` | When the provider rejects a reply as malformed (a call to a tool that doesn't exist, Phase 1's `code-01`), re-ask with the error and the real tool list, at most twice per run (`config.recover_malformed`) |
+| tools | `v2-search` | Adds the `search` server: `search.find` (files by name) and `search.grep` (contents, `path:line: text`). Phase 1's `code-01` model reached for a search tool that wasn't there |
+
+**New tools without task edits.** A task's `allowed_tools` decides what a run may call, and editing every task
+would change every task hash. A READ tool that reveals nothing beyond other tools declares them instead:
+`granted_by: [fs.list_dir, fs.read_file]` in `tools.yaml`. Any task allowing those allows it too. So `code-01`
+gets `find` and `grep`, `mix-01` (no `read_file`) gets only `find`, and SQL-only tasks get neither.
+`granted_by` never grants a tool with side effects. The search server is a separate MCP server, so recipes that
+don't open it keep their environment hash (`v2-base` is still `87cf105d96ea`, as in Phase 1).
 
 Rules for a dimension:
 

@@ -27,6 +27,9 @@ class ToolSpec(BaseModel):
     risk: Literal["R0", "R1", "R2", "R3"]
     timeout_s: float = 30.0
     schema_hash: str | None = None   # declared hash; drift against discovery fails provisioning
+    # A READ tool that reveals nothing beyond these tools: a task allowing all of them allows this one too, so a
+    # new capability (e.g. search) needs no edit to every task's allowance (and no task hash change).
+    granted_by: list[str] | None = None
 
     def ref(self, server: str) -> str:
         return f"{server}.{self.name}"
@@ -64,7 +67,8 @@ class ToolCatalogFile(BaseModel):
     def env_hash(self, server_ids: list[str], provider_model_id: str) -> str:
         """Identity of the tool environment a run sees, plus the concrete provider model. Part of RunKey."""
         from harness_factory.hashing import content_hash
-        specs = {t.ref(s.id): t.model_dump(mode="json") for s in self.servers if s.id in server_ids for t in s.tools}
+        specs = {t.ref(s.id): t.model_dump(mode="json", exclude={"granted_by"} if t.granted_by is None else None)
+                 for s in self.servers if s.id in server_ids for t in s.tools}
         return content_hash({"tools": specs, "provider_model_id": provider_model_id}, 12)
 
     def unhashed_tools(self) -> list[str]:

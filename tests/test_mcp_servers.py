@@ -16,7 +16,7 @@ def sandbox(factory):
 
 async def test_discovery_matches_declared(factory, sandbox):
     async with MCPSessionPool(factory.declared, ["fs", "sql"], sandbox.env()) as pool:
-        assert set(pool.catalog.tools) == set(factory.declared.all_refs())
+        assert set(pool.catalog.tools) == {r for r in factory.declared.all_refs() if r.split(".")[0] in ("fs", "sql")}
         assert pool.clients["fs"].protocol_version
 
 

@@ -48,3 +48,22 @@ servers:
     risk: R2
     timeout_s: 20
     schema_hash: 24404e954c790312
+- id: search
+  transport: stdio
+  module: harness_factory.env.mcp.impl.search_server
+  tools:
+  - name: find
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    schema_hash: 35fb1fbd2c0362a7
+  - name: grep
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    granted_by:
+    - fs.list_dir
+    - fs.read_file
+    schema_hash: 6efa5f809b4008c9
