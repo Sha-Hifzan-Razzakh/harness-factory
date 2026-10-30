@@ -1,0 +1,5 @@
+The agent could not finish the plan.
+{% if done %}Done so far:
+{% for d in done %}{{ loop.index }}. {{ d.step }} -> {{ d.result }}
+{% endfor %}{% endif %}Blocked at: {{ blocked.step }} -> {{ blocked.result }}
+Write a new numbered plan for the remaining work only, at most {{ max_steps }} steps. Reply with the plan only.

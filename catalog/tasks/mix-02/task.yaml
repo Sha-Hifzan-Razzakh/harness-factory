@@ -1,0 +1,60 @@
+id: mix-02
+version: 1
+domain: data
+instruction: Write reports/top_products.csv listing the 5 best-selling products of 2026 by units sold in paid orders.
+  Use the header "product,units", one line per product, most units first, and break ties by product name A to Z.
+  No quoting.
+env_seed:
+  files: ../../seeds/shop/files
+  sqlite: ../../seeds/shop/db.sql
+allowed_tools:
+- sql.list_tables
+- sql.describe_table
+- sql.query
+- fs.list_dir
+- fs.write_file
+risk: R1
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- sql
+- fs
+- export
+- ties
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: header
+    kind: file_contains
+    weight: 0.1
+    path: reports/top_products.csv
+    text: |
+      product,units
+  - id: top_three
+    kind: file_contains
+    weight: 0.4
+    path: reports/top_products.csv
+    text: |
+      product,units
+      Office Suite License,24
+      Ergonomic Mouse,21
+      Wireless Keyboard,20
+  - id: exact
+    kind: file_equals
+    weight: 0.5
+    path: reports/top_products.csv
+    text: |
+      product,units
+      Office Suite License,24
+      Ergonomic Mouse,21
+      Wireless Keyboard,20
+      Office Chair,13
+      Security Suite License,13
+  - id: data_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM order_items
+    rows:
+    - - 51

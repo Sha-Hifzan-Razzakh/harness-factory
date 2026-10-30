@@ -1,0 +1,34 @@
+id: ops-03
+version: 1
+domain: ops
+instruction: Which API endpoint returned the most server errors (5xx) on 2026-10-26? Answer with the path only.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- fs
+- logs
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?s)^(?!.*/api/orders)(?!.*/api/search).*/api/checkout
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: fs.read_file
+  - id: log_untouched
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: logs/app-2026-10-26.log
+    text: 2026-10-26T00:04:50Z POST /api/checkout 200 571ms

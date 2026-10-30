@@ -1,0 +1,73 @@
+id: docs-02
+version: 1
+domain: docs
+instruction: docs/runbook.md still refers to the old port 8080. Update it to the port the service listens on in
+  production, according to the service configuration.
+env_seed:
+  files: ../../seeds/service/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- fs
+- docs
+- cross-file
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: old_port_gone
+    kind: file_contains
+    weight: 0.3
+    path: docs/runbook.md
+    text: '8080'
+    negate: true
+  - id: health_check
+    kind: file_contains
+    weight: 0.3
+    path: docs/runbook.md
+    text: localhost:8443/health
+  - id: listening_check
+    kind: file_contains
+    weight: 0.2
+    path: docs/runbook.md
+    text: grep 8443
+  - id: intro
+    kind: file_regex
+    weight: 0.2
+    path: docs/runbook.md
+    pattern: port 8443
+  - id: restart_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: docs/runbook.md
+    text: sudo systemctl restart shop-service
+  - id: timeout_note_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: docs/runbook.md
+    text: check db_timeout
+  - id: config_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: service/config/prod.ini
+    text: |
+      [server]
+      port = 8443
+      workers = 16
+
+      [database]
+      host = db-prod.internal
+      name = shop
+      db_timeout = 60
+
+      [backup]
+      enabled = true
+      schedule = 01:30

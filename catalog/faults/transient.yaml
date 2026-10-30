@@ -1,0 +1,7 @@
+# Flaky infrastructure: about 1 in 4 tool calls fails transiently (error, 429 or timeout).
+id: transient
+description: ~25% of tool calls fail transiently.
+rules:
+  - {tools: ["*"], kind: error, rate: 0.15}
+  - {tools: ["*"], kind: rate_limit, rate: 0.06}
+  - {tools: ["*"], kind: timeout, rate: 0.04}

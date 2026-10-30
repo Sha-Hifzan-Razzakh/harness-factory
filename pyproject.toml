@@ -1,0 +1,46 @@
+[project]
+name = "harness-factory"
+version = "0.1.0"
+description = "Builds, measures and selects agent harnesses per task class."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "litellm>=1.80,<2",
+    "langgraph>=1.0,<2",          # StateGraph API used by shapes/
+    "mcp>=2.3,<3",                # MCPServer / ToolError (renamed from FastMCP in 2.x)
+    "anyio>=4.5",                 # tool-call timeouts
+    "sqlalchemy>=2.0,<3",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
+    "typer>=0.15",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+mlops = ["mlflow>=2.14"]
+inspect = ["inspect-ai>=0.3.285,<0.4"]        # optional outer shell; see docs/adr/0001-inspect-ai.md
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15"]
+
+[project.scripts]
+hfx = "harness_factory.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harness_factory"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+ignore = ["PYI034", "C408", "TRY004"]
