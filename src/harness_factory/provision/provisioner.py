@@ -41,11 +41,11 @@ _SE_ORDER = [SideEffect.READ, SideEffect.REVERSIBLE, SideEffect.IRREVERSIBLE]
 
 
 def task_tools(task: Task, declared: ToolCatalogFile) -> list[str]:
-    """The task's allowance, plus any READ tool `granted_by` tools the task already allows."""
+    """The task's allowance, plus any tool `granted_by` tools the task already allows (`ToolCatalogFile.grantable`)."""
     direct = [r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)]
     granted = [r for r in declared.all_refs() if r not in direct
-               and (g := declared.spec(r).granted_by) is not None and declared.spec(r).side_effect == SideEffect.READ
-               and all(x in direct for x in g)]              # granted_by: [] = every task (harness material only)
+               and (g := declared.spec(r).granted_by) is not None and all(x in direct for x in g)
+               and declared.grantable(r)]                    # granted_by: [] = every task (harness material only)
     return direct + granted
 
 

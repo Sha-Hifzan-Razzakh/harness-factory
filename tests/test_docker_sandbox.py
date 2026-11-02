@@ -152,6 +152,20 @@ async def test_mcp_servers_run_inside_the_container(factory, sandbox):
         assert hostname.is_error                                     # absolute paths are outside /work too
 
 
+async def test_fsx_server_runs_inside_the_container(factory, sandbox):
+    async with MCPSessionPool(factory.declared, ["fsx"], sandbox.env(), sandbox.launch) as pool:
+        edit = await pool.call("fsx.edit", {"path": "config/app.ini", "old": "port = 8080", "new": "port = 9090"})
+        assert not edit.is_error, edit.text
+        moved = await pool.call("fsx.move", {"src": "notes/README.txt", "dst": "notes/old/README.txt"})
+        assert not moved.is_error, moved.text
+        assert "port = 9090" in (sandbox.workspace / "config/app.ini").read_text()
+        assert (sandbox.workspace / "notes/old/README.txt").is_file()        # on the host, through the mount
+        tree = await pool.call("fsx.tree", {"depth": 3})
+        assert "    README.txt" in tree.text
+        escape = await pool.call("fsx.append", {"path": "../state/task.sqlite", "text": "x"})
+        assert escape.is_error and "escapes" in escape.text
+
+
 def test_failed_start_leaves_no_container(factory, docker_required):
     sb = DockerSandbox("dk-fail")
     sb.run_args = lambda: ["run", "-d", "--name", sb.container, "--label", "hf.sandbox=1", sb.image, "/nonexistent"]

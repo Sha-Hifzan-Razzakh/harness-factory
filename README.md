@@ -453,6 +453,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | prompt | `v2-plan-check` | System prompt asks for a numbered plan with the first tool call and a check before the final answer (`prompts/system/plan_check.j2`) |
 | config | `v2-recover` | When the provider rejects a reply as malformed (a call to a tool that doesn't exist, Phase 1's `code-01`), re-ask with the error and the real tool list, at most twice per run (`config.recover_malformed`) |
 | tools | `v2-search` | Adds the `search` server: `search.find` (files by name) and `search.grep` (contents, `path:line: text`). Phase 1's `code-01` model reached for a search tool that wasn't there |
+| tools | `v2-fsx` | Adds the `fsx` server: `fsx.edit` (exact-string replace), `fsx.append`, `fsx.move`, `fsx.mkdir` and `fsx.tree`. `fs` can only rewrite a whole file |
 | skills | `v2-skills-upfront` | Every skill's how-to appended to the system prompt (about 5k characters) |
 | skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
@@ -475,6 +476,19 @@ gets `find` and `grep`, `mix-01` (no `read_file`) gets only `find`, and SQL-only
 `granted_by` never grants a tool with side effects. The search server is a separate MCP server, so recipes that
 don't open it keep their environment hash (`v2-base` kept Phase 1's `87cf105d96ea` until tool descriptions joined
 the environment hash, a one-time reset of every environment hash).
+
+**Write tools without task edits (`fsx`).** `fsx` tools with side effects use `granted_by` too, under a stricter
+rule (`ToolCatalogFile.grantable`): a tool with side effects is granted only when the task allows every tool it
+names *and* one of them is at least as strong in side effect and risk as the tool itself. So `fsx.edit` (granted
+by `fs.read_file` + `fs.write_file`), `fsx.append` and `fsx.mkdir` (`fs.list_dir` + `fs.write_file`) reach only
+tasks that already allow file writes; read-only tasks such as `ops-03` get only `fsx.tree` (`fs.list_dir`), and
+SQL-only tasks get nothing. `fsx.move` makes its source disappear, which `write_file` can't, so it also needs
+`fs.delete_file`: no current task allows that, and a task that wants `move` names `fsx.move` itself. A granted
+tool never raises a task's class, and its calls fall under the recipe's permission rule for its own side effect
+(all five are REVERSIBLE or READ, so `v2-base`'s `IRREVERSIBLE: DENY` refuses `fs.delete_file` but not
+`fsx.move`). `fsx.edit` refuses an `old` text that is missing or occurs a different number of times than `count`
+(and says how many times it occurs); `fsx.append` only extends existing files; `fsx.move` never overwrites;
+`fsx.tree` lists at most 200 entries. Recipes that don't open `fsx` keep every hash.
 
 **Delegation (agent as a tool).** `delegation: {recipe, max_calls, max_depth}` gives any shape a
 `delegate__run(task)` tool (ADR 0003). The helper runs the named recipe on the sub-task in the same sandbox
