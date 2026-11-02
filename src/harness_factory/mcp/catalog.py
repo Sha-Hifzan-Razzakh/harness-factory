@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import inspect
+
 from pydantic import BaseModel
 
 from harness_factory.env.mcp.servers import ToolCatalogFile, ToolSpec
 from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import DiscoveredTool
+
+
+def description_hash_of(text: str | None) -> str:
+    """Hash of a tool description as the model reads it, independent of how Python stored the docstring:
+    3.13 strips docstring indentation at compile time and 3.12 doesn't, so the text is normalised first."""
+    return content_hash(inspect.cleandoc(text or ""))
 
 
 class DriftIssue(BaseModel):
@@ -29,7 +37,7 @@ class ToolCatalog(BaseModel):
 
     def description_hash(self, ref: str) -> str:
         """The description is what the model reads to decide what a tool does: changing it changes behaviour."""
-        return content_hash(self.tools[ref].description)
+        return description_hash_of(self.tools[ref].description)
 
     def catalog_hash(self) -> str:
         return content_hash({ref: {"schema": self.schema_hash(ref), "description": self.description_hash(ref)}

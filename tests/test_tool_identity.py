@@ -162,3 +162,13 @@ def test_no_recovery_hashes_the_same_however_it_is_written(factory):
     assert zero.config.recover_malformed is None and zero.content_hash() == base.content_hash()
     two = HarnessRecipe.model_validate({**data, "config": {**data["config"], "recover_malformed": 2}})
     assert two.content_hash() != base.content_hash()
+
+
+def test_a_description_hashes_the_same_whatever_python_did_to_its_docstring():
+    # Python 3.13 strips docstring indentation at compile time and 3.12 keeps it: the same tool must hash equal
+    # on both, or `hfx tools freeze --check` passes on one CI Python and reports drift on the other.
+    from harness_factory.mcp.catalog import description_hash_of
+    kept = "Find files by name.\n    Returns workspace-relative paths, at most 100."
+    stripped = "Find files by name.\nReturns workspace-relative paths, at most 100."
+    assert description_hash_of(kept) == description_hash_of(stripped)
+    assert description_hash_of(stripped) != description_hash_of("Find files by name.")

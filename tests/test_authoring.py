@@ -19,6 +19,7 @@ from harness_factory import settings
 from harness_factory.authoring import fsops, toolcode
 from harness_factory.authoring.fsops import FileOp
 from harness_factory.authoring.service import AuthoringError, AuthoringService
+from harness_factory.mcp.catalog import description_hash_of
 from harness_factory.recipes.model import load_recipes
 
 TERSE = "Be brief.\n{% if tools %}Tools: {{ tools | join(', ') }}.{% endif %}\n"
@@ -137,7 +138,7 @@ def test_local_tool_server_stub(svc, repo):
     from harness_factory.hashing import content_hash
     assert entry["tools"][0]["schema_hash"] == content_hash(toolcode.discover(module, "calc")["add"])
     served = toolcode.discover_tools(module, "calc")["add"]                     # descriptions are frozen too (#42)
-    assert entry["tools"][0]["description_hash"] == content_hash(served.description)
+    assert entry["tools"][0]["description_hash"] == description_hash_of(served.description)
     assert svc.errors() == []
 
     # A new server never changes another recipe's environment; changing this one shows who uses it.

@@ -479,6 +479,7 @@ class AuthoringService:
                 return [], [Issue(where=where, detail=f"the server did not start or list its tools: "
                                                      f"{type(e).__name__}: {e}")], notes
         from harness_factory.hashing import content_hash
+        from harness_factory.mcp.catalog import description_hash_of
         declared, served = {t.name for t in item.tools}, set(served_tools)
         issues = [Issue(where=where, detail=f"declared but not served: {n}") for n in sorted(declared - served)]
         issues += [Issue(where=where, detail=f"served but not declared (add side effect and risk): {n}")
@@ -487,7 +488,7 @@ class AuthoringService:
             return [], issues, notes
         entry = {"id": item.id, "transport": "stdio", "module": toolcode.module_name(item.id),
                  "tools": [self._tool_entry(t, content_hash(served_tools[t.name].input_schema),
-                                            description_hash=content_hash(served_tools[t.name].description))
+                                            description_hash=description_hash_of(served_tools[t.name].description))
                            for t in item.tools]}
         text = code if code.endswith("\n") else code + "\n"
         return [FileOp(path=toolcode.module_path(item.id), text=text), self._tools_op(item.id, entry)], [], notes
