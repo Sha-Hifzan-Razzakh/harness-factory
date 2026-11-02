@@ -90,6 +90,12 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 
 Branch from `main` (`feat/…`, `fix/…`, `ci/…`), one concern per PR, CI green before merge.
 
+**Commit identity and signing.** `main` requires verified signatures, and GitHub checks the signing key
+against the *committer's* account. Commit with the session's default git identity and signing as configured:
+never change `user.name`/`user.email` (in config or via `GIT_COMMITTER_*`), never pass
+`-c commit.gpgsign=false` or `--no-gpg-sign`. If signing fails, stop and report it instead of committing
+unsigned. A commit made under any other identity, or unsigned, blocks the PR from merging.
+
 ## Parallel sessions
 
 More than one session may be working on this repo. Before opening a PR, claiming an ADR number or editing a
