@@ -22,7 +22,11 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.1"]
 mlops = ["mlflow>=2.14"]
 inspect = ["inspect-ai>=0.3.285,<0.4"]        # optional outer shell; see docs/adr/0001-inspect-ai.md
-dev = ["pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15"]
+# Framework runners (docs/adr/0016-runner-axis.md). Their exact versions are part of a runner run's identity.
+langgraph-prebuilt = ["langchain[mcp]>=1.4.7,<1.5"]          # create_agent + langchain.mcp (FastMCP client)
+llamaindex = ["llama-index-core>=0.14.25,<0.15", "llama-index-tools-mcp>=0.6.0,<0.7"]
+dev = ["pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15",
+       "harness-factory[langgraph-prebuilt,llamaindex]"]   # CI tests both runners
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

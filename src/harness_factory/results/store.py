@@ -72,6 +72,14 @@ equivalences = Table(
     Column("created_at", DateTime, nullable=False),
 )
 
+transfers = Table(
+    "transfers", metadata,                                   # runner transfer checks (ADR 0016), frozen
+    Column("id", String(12), primary_key=True),              # content hash of what was compared and found
+    Column("runtime", String, nullable=False, index=True),
+    Column("record", JSON, nullable=False),                  # results.transfer.Transfer
+    Column("created_at", DateTime, nullable=False),
+)
+
 cost_baselines = Table(
     "cost_baselines", metadata,
     Column("id", String(12), primary_key=True),          # content hash of basis + medians
@@ -214,7 +222,7 @@ class ResultsStore:
 
     def _migrate(self) -> None:
         """Additive only: add nullable columns that newer code defines and an older store lacks."""
-        for table in (runs, cost_baselines, equivalences):
+        for table in (runs, cost_baselines, equivalences, transfers):
             existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
             with self.engine.begin() as c:
                 for col in table.columns:
@@ -301,4 +309,18 @@ class ResultsStore:
         """Saved calibrations as dicts, oldest first (results.calibration.Equivalence.model_validate reads them)."""
         with self.engine.connect() as c:
             rs = c.execute(select(equivalences.c.record).order_by(equivalences.c.created_at)).all()
+        return [r[0] for r in rs]
+
+    def save_transfer(self, tr) -> str:
+        """Freeze a runner transfer check (results.transfer.Transfer). Idempotent: the id is a content hash."""
+        with self.engine.begin() as c:
+            if c.execute(select(transfers.c.id).where(transfers.c.id == tr.id)).first() is None:
+                c.execute(insert(transfers).values(id=tr.id, runtime=tr.runtime, record=tr.model_dump(mode="json"),
+                                                   created_at=tr.created_at))
+        return tr.id
+
+    def transfers(self) -> list[dict]:
+        """Saved transfer checks as dicts, oldest first (results.transfer.Transfer.model_validate reads them)."""
+        with self.engine.connect() as c:
+            rs = c.execute(select(transfers.c.record).order_by(transfers.c.created_at)).all()
         return [r[0] for r in rs]

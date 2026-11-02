@@ -102,21 +102,24 @@ def calibrate(rows: list[dict], providers_catalog: ProviderCatalog, canonical_mo
     common = dict(canonical_model=canonical_model, providers=(a, b), served=served,
                   recipe_hashes=sorted({ra["recipe_hash"] for ra, _ in ps}), margin=margin, min_pairs=min_pairs,
                   n=len(ps), token_ratio=round(statistics.median(ratios), 4) if ratios else None, note=note)
-    if len(ps) < min_pairs:
-        return Equivalence(**common, verdict="inconclusive",
-                           reason=f"{len(ps)} pairs; at least {min_pairs} are needed",
-                           **({"mean": d["mean"], "ci": d["ci"], "wins": d["wins"], "losses": d["losses"],
-                               "ties": d["ties"]} if ps else {}))
+    verdict, reason = judge(d, margin, min_pairs)
+    return Equivalence(**common, verdict=verdict, reason=reason,
+                       **({"mean": d["mean"], "ci": d["ci"], "wins": d["wins"], "losses": d["losses"],
+                           "ties": d["ties"]} if ps else {}))
+
+
+def judge(d: dict, margin: float, min_pairs: int) -> tuple[Verdict, str]:
+    """The verdict on a paired difference (`results.report.paired_delta`), in the order the module doc gives. Shared
+    with the runner transfer check (results.transfer, ADR 0016)."""
+    if d["n"] < max(min_pairs, 1):
+        return "inconclusive", f"{d['n']} pairs; at least {max(min_pairs, 1)} are needed"
     lo, hi = d["ci"]
     if -margin <= lo and hi <= margin:
-        verdict, reason = "equivalent", f"the 95% interval [{lo:+.3f}, {hi:+.3f}] is within ±{margin}"
-    elif lo > 0 or hi < 0:
-        verdict, reason = "different", f"the 95% interval [{lo:+.3f}, {hi:+.3f}] excludes 0"
-    else:
-        verdict, reason = "inconclusive", (f"the 95% interval [{lo:+.3f}, {hi:+.3f}] includes 0 but reaches past "
-                                           f"±{margin}: more pairs would decide it")
-    return Equivalence(**common, verdict=verdict, reason=reason, mean=d["mean"], ci=d["ci"], wins=d["wins"],
-                       losses=d["losses"], ties=d["ties"])
+        return "equivalent", f"the 95% interval [{lo:+.3f}, {hi:+.3f}] is within ±{margin}"
+    if lo > 0 or hi < 0:
+        return "different", f"the 95% interval [{lo:+.3f}, {hi:+.3f}] excludes 0"
+    return "inconclusive", (f"the 95% interval [{lo:+.3f}, {hi:+.3f}] includes 0 but reaches past ±{margin}: more "
+                            f"pairs would decide it")
 
 
 def latest(records: list[dict]) -> dict[tuple[str, tuple[str, str]], Equivalence]:

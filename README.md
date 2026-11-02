@@ -519,6 +519,55 @@ Rules for a dimension:
   a tool that doesn't exist. On the 20 visible tasks, `v2-base` passes 0/20 with it and `v2-recover` passes
   20/20, at E₀ 0.930 rather than 1.0.
 
+## Runners
+
+A runner is what executes a recipe. Until now that was always the factory's own graphs (`native`). A recipe can name
+a framework's own ready-made agent instead, so the factory measures what a team would deploy (ADR 0016):
+
+```yaml
+# catalog/recipes/matrix/v2_langgraph_prebuilt.yaml
+id: v2-langgraph-prebuilt
+base: v2-base
+runtime: langgraph-prebuilt      # or llamaindex-agent; unset = native (left out of the hash)
+```
+
+| Runtime | Agent | MCP tools via | Extra |
+|---|---|---|---|
+| `native` | the factory's shapes (`shapes/`) | the run's MCP session pool | (none) |
+| `langgraph-prebuilt` | `langchain.agents.create_agent` (LangGraph graph with `ToolNode`; successor of `create_react_agent`) | `langchain.mcp` (successor of langchain-mcp-adapters, which needs `mcp<2`) | `langgraph-prebuilt` |
+| `llamaindex-agent` | `FunctionAgent` | `McpToolSpec` (llama-index-tools-mcp) | `llamaindex` |
+
+- **Only two things are wrapped.**
+  - **Model client:** a LangChain chat model / LlamaIndex LLM whose calls go through `model_turn` and
+    `ModelGateway` (budget, quota, tokens, cost, error classification).
+  - **Tool calls:** the framework's MCP adapter builds its tools from a session whose `call_tool` goes to
+    `ToolExecutor` (allowance, permissions, faults, traces).
+
+  The loop, prompts, tool formatting, parsing, retries and history are the framework's, at its defaults. Neither
+  framework adds prompt text: the recipe's system message is the agent's system prompt and its task message the
+  input. They do differ in what tools and results look like. LlamaIndex, for example, shows a tool result as the
+  `CallToolResult` object's repr.
+- **Tool loop only.** A runtime other than `native` is refused for V1/V3/V4 recipes, `delegation` and
+  `recover_malformed`: those are the factory's control flow, not the framework's.
+- **Identity.** A runner recipe's hash includes the runtime and the exact versions of its framework packages
+  (`runners/identity.py`, locked in `uv.lock`). A framework upgrade starts new cells; native hashes never change.
+- **Run endings** are native ones:
+  - final answer: graded;
+  - a budget limit, or the framework's own recursion or iteration limit (LlamaIndex: 20): a harness stop, outcome
+    × 0.5;
+  - provider infrastructure: INCOMPLETE.
+- **Transfer check:** does the score carry over? The same recipe, tasks, seeds, model and provider on native and on
+  the runner; the paired E0 difference is judged like a provider calibration and frozen:
+
+```bash
+hfx transfer run v2-llamaindex-agent --model scripted/replay --provider scripted --run --min-pairs 20
+hfx transfer list
+```
+
+Offline (`scripted/replay`, the 20 visible tasks), both runners pass 20/20 with the same model and tool calls as
+`v2-base`, and both transfer checks are `equivalent` (20 pairs, every one a tie). Tokens against `v2-base`:
+LangGraph ×1.02, LlamaIndex ×1.22, mostly from its repr tool results. Real models are where runners can differ.
+
 ## Selector
 
 The payoff: given a task, which recipe? `catalog/selector.yaml` holds the rules; `src/harness_factory/select/`

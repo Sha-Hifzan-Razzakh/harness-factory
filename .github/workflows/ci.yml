@@ -87,6 +87,9 @@ jobs:
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
         run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate --models scripted/replay --strict -j 8
 
+      - name: Runner gate (framework runners solve the visible tasks offline, ADR 0016)
+        run: uv run --no-sync hfx smoke --recipe v2-langgraph-prebuilt,v2-llamaindex-agent --models scripted/replay --strict -j 8
+
       - name: Fault injection (clean runs gate; faulted runs feed R)
         run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict -j 8
 

@@ -31,6 +31,9 @@ def default_prompt_sources(root: Path | None = None) -> PromptSources:
 Tier = Literal["T1", "T2", "T3", "T4"]
 SideEffectName = Literal["READ", "REVERSIBLE", "IRREVERSIBLE"]
 PermissionModeName = Literal["AUTO", "ASK", "DENY"]
+# What executes the harness (RUN-01, docs/adr/0016-runner-axis.md): the factory's own graphs, or a framework's own
+# ready-made agent. Unset means native.
+RuntimeName = Literal["native", "langgraph-prebuilt", "llamaindex-agent"]
 
 
 class Variant(str, Enum):
@@ -160,7 +163,8 @@ class PlanSpec(BaseModel):
 
 # Optional fields added after results were first recorded. When unset they are dropped before hashing, so
 # adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
-_HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_prompt", "config.call_timeout_s", "config.recover_malformed")
+_HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_prompt", "config.call_timeout_s",
+                        "config.recover_malformed", "runtime")
 
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
@@ -210,6 +214,12 @@ class HarnessRecipe(BaseModel):
     workflow: WorkflowSpec | None = None              # required by V3_WORKFLOW_GRAPH, rejected elsewhere
     delegation: Delegation | None = None              # delegate tool to a child recipe (EXT-09)
     planning: PlanSpec | None = None                  # required by V4_PLANNER and V5_ORCHESTRATOR, rejected elsewhere
+    runtime: RuntimeName | None = None                # framework runner (RUN-01); None / "native" = the factory's
+
+    @property
+    def runner(self) -> str | None:
+        """The framework runner that executes this recipe, or None for the native runtime."""
+        return None if self.runtime in (None, "native") else self.runtime
 
     def prompt_refs(self) -> list[str]:
         refs = [self.prompts.system, self.prompts.task] + ([self.prompts.operator] if self.prompts.operator else [])
@@ -233,8 +243,13 @@ class HarnessRecipe(BaseModel):
         for slot in data["model_slots"].values():
             for axis in _SLOT_AXES:
                 slot[axis] = None
+        if data.get("runtime") == "native":             # native is the default: spelled out or not, same harness
+            data["runtime"] = None
         for dotted in _HASH_OMIT_WHEN_NONE:
             _drop_none(data, dotted)
+        if self.runner is not None:                     # RUN-04: the framework and its exact version are identity
+            from harness_factory.runners.identity import runner_identity
+            data["runner"] = runner_identity(self.runner)
         sources = prompts if prompts is not None else default_prompt_sources()
         data["prompt_sources"] = {ref: sources[ref] for ref in sorted(set(self.prompt_refs())) if ref in sources}
         if self.skills.skill_ids:                       # only then, so recipes without skills keep their hash

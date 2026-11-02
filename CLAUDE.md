@@ -36,6 +36,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
 | Authoring (`hfx new`, API, UI) | `src/harness_factory/authoring/` (one service; CLI in `cli/authoring.py`) | every catalog write goes through `AuthoringService`: staged, checked by `authoring/snapshot.py` in a child process (never re-point `settings` in-process), rejected on any new issue, written all-or-nothing under the lock; a change to an existing identity needs confirm; the snapshot and `hfx validate` must agree (`tests/test_authoring.py`) |
 | Provider calibration | `results/calibration.py`, CLI `cli/calibration.py` (`hfx calibration`) | pool cells only on a saved `equivalent` verdict whose served model ids are current; C stays per provider; never pool across tool environments (`tools_hash`) |
+| New framework runner | `src/harness_factory/runners/<id>.py` (the framework's own agent and MCP adapter), `RunnerRegistry` in `runners/base.py`, packages in `runners/identity.py`, optional extra in `pyproject.toml` + `uv.lock` (also in `dev`) | wrap only the model client (`RunnerContext.model`) and the tool callables (`ExecutorSession` -> `RunnerContext.tool`), never write the loop; framework defaults stay; a matrix recipe `base: v2-base` + `runtime:` in the CI runner gate; the offline checks of `tests/test_runners.py` (ADR 0016) |
 
 ## Rules that protect the measurements
 

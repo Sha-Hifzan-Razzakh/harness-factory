@@ -552,3 +552,7 @@ _register_authoring(app)
 from harness_factory.cli.calibration import calibration_app
 
 app.add_typer(calibration_app, name="calibration")
+
+from harness_factory.cli.transfer import transfer_app
+
+app.add_typer(transfer_app, name="transfer")
