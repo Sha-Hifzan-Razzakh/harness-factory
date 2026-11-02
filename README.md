@@ -320,7 +320,7 @@ Inspect's `--model` is unused (`mockllm/model` makes no calls). The factory mode
 ## Observability and MLOps stack
 
 ```bash
-docker compose up -d     # postgres, mlflow, phoenix, otel-collector
+docker compose up -d     # postgres, mlflow, phoenix, otel-collector, langfuse-* (see Langfuse below)
 ```
 
 Then set the following in `.env`:
@@ -331,9 +331,7 @@ Then set the following in `.env`:
 | `MLFLOW_TRACKING_URI` | `http://localhost:5000` | Each run is logged as an MLflow run (params, metrics, trace artifact) |
 | `HF_RESULTS_URL` | `postgresql+psycopg://hf:hf@localhost:5432/hf` | Results go to Postgres (`uv pip install -e ".[postgres,mlops]"`) |
 
-Langfuse needs ClickHouse, Redis and object storage, so it isn't in this compose file. Run Langfuse's official
-docker-compose on the same Docker network, or use Langfuse Cloud. Then set `LANGFUSE_OTLP_ENDPOINT` and
-`LANGFUSE_AUTH` (base64 of `public_key:secret_key`).
+Langfuse runs in the same compose file and needs a key pair in `.env` first: see [Langfuse](#langfuse).
 
 Each run is **one trace**:
 
@@ -349,6 +347,56 @@ run:<run-key-short>
 
 Spans carry OpenInference attributes (Phoenix) and `gen_ai.*` attributes (Langfuse). With no OTLP endpoint set,
 traces are still written to `var/traces/<trace_id>.jsonl`.
+
+## Langfuse
+
+Self-hosted Langfuse v4 is the collector's second trace target, next to Phoenix. `compose.yaml` follows Langfuse's
+own docker-compose: `langfuse-web` (UI and OTLP ingestion) and `langfuse-worker`, with their own Postgres,
+ClickHouse, Redis and MinIO (`langfuse-postgres`, `-clickhouse`, `-redis`, `-minio`; separate from the results
+`postgres`). Only the UI has a host port (`HF_LANGFUSE_PORT`, default 3000). Langfuse recommends 4 cores and 16 GiB
+for a server; locally, give Docker a few GiB more than the rest of the stack needs.
+
+The collector's `otlphttp/langfuse` exporter sends to `LANGFUSE_OTLP_ENDPOINT` (default
+`http://langfuse-web:3000/api/public/otel`, plus `/v1/traces`; Langfuse takes OTLP over HTTP only, not gRPC). It
+authenticates with HTTP Basic auth built from `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (the `basicauth`
+extension) and sends `x-langfuse-ingestion-version: 4`, so spans appear at once. At startup `langfuse-web`
+creates the `harness-factory` organization and project if missing and, when both keys are set, registers that key
+pair for the project (headless initialization; the first user too, when its email and password are set). For
+Langfuse Cloud instead, set `LANGFUSE_OTLP_ENDPOINT` to `https://cloud.langfuse.com/api/public/otel` (or your
+region) and use that project's keys.
+
+1. In `.env`, set the key pair and a first user, and replace the local-only secret defaults if anyone else can
+   reach port 3000 (`.env.example` lists them):
+
+   ```bash
+   LANGFUSE_PUBLIC_KEY=pk-lf-$(openssl rand -hex 16)      # write the values, not the commands
+   LANGFUSE_SECRET_KEY=sk-lf-$(openssl rand -hex 16)
+   LANGFUSE_INIT_USER_EMAIL=you@example.com
+   LANGFUSE_INIT_USER_PASSWORD=...
+   ```
+
+2. Pin MinIO. Its vendor publishes the image as `latest` only, so after the first pull write its digest to `.env`:
+   `LANGFUSE_MINIO_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' cgr.dev/chainguard/minio:latest)`.
+   The other Langfuse images have pinned defaults (`LANGFUSE_TAG=4.60.0`, Postgres 17.11, ClickHouse 25.12.12.1,
+   Redis 7.4.11).
+
+3. Check that one scripted run reaches both Phoenix and Langfuse:
+
+   ```bash
+   set -a; . ./.env; set +a                               # the keys, for the curl below
+   docker compose up -d
+   docker compose ps                                       # langfuse-web up; its first start runs migrations
+   curl -fsS http://localhost:3000/api/public/health        # 200 once migrations are done
+   curl -fsS -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" http://localhost:3000/api/public/projects   # keys valid
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 hfx smoke --recipe v2-base --models scripted/replay --strict
+   docker compose logs otel-collector | grep -i error      # nothing: both exporters were accepted
+   ```
+
+   Then open Phoenix (http://localhost:6006, project `default`) and Langfuse (http://localhost:3000, project
+   `harness-factory`, Tracing). Both show one `run:<run-key-short>` trace per run with the same `model_call`,
+   `tool_call` and `grade` children. A 401 in the collector log means the keys in `.env` aren't the project's.
+   `langfuse-web` adds a key pair at startup only when its public key is new: after changing the secret alone,
+   pick a new public key too, then `docker compose up -d` (it recreates `langfuse-web` and `otel-collector`).
 
 ## Layout
 

@@ -8,17 +8,26 @@ receivers:
 processors:
   batch: {}
 
+extensions:
+  # Langfuse authenticates OTLP with HTTP Basic auth: public key as user, secret key as password.
+  basicauth/langfuse:
+    client_auth:
+      username: ${env:LANGFUSE_PUBLIC_KEY}
+      password: ${env:LANGFUSE_SECRET_KEY}
+
 exporters:
   otlphttp/phoenix:
     endpoint: http://phoenix:6006            # Phoenix accepts OTLP at /v1/traces
   otlphttp/langfuse:
-    endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}  # e.g. http://langfuse-web:3000/api/public/otel
+    endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}  # http://langfuse-web:3000/api/public/otel (+ /v1/traces); HTTP only
+    auth: {authenticator: basicauth/langfuse}
     headers:
-      Authorization: "Basic ${env:LANGFUSE_AUTH}"   # base64("pk-lf-...:sk-lf-...")
+      x-langfuse-ingestion-version: "4"      # spans show up at once (v4 data model), not after a delay
   debug:
     verbosity: basic
 
 service:
+  extensions: [basicauth/langfuse]
   pipelines:
     traces:
       receivers: [otlp]

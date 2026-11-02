@@ -10,6 +10,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
+from openinference.semconv.trace import OpenInferenceSpanKindValues as OIKind
+from openinference.semconv.trace import SpanAttributes as OI
+
 from harness_factory import settings
 from harness_factory.observability.span import Span, SpanKind
 
@@ -35,26 +38,27 @@ def _get_otel_tracer():
     return _otel_tracer
 
 
-_OPENINFERENCE_KIND = {SpanKind.run: "AGENT", SpanKind.model_call: "LLM", SpanKind.tool_call: "TOOL",
-                       SpanKind.retrieval: "RETRIEVER", SpanKind.grade: "EVALUATOR"}
+_OPENINFERENCE_KIND = {SpanKind.run: OIKind.AGENT, SpanKind.model_call: OIKind.LLM,
+                       SpanKind.tool_call: OIKind.TOOL, SpanKind.retrieval: OIKind.RETRIEVER,
+                       SpanKind.grade: OIKind.EVALUATOR}
 
 
 def _annotate(otel, s: Span) -> None:
     """Attributes Phoenix (OpenInference) and Langfuse (gen_ai semantic conventions) both understand."""
     from opentelemetry.trace import Status, StatusCode
 
-    otel.set_attribute("openinference.span.kind", _OPENINFERENCE_KIND.get(s.kind, "CHAIN"))
+    otel.set_attribute(OI.OPENINFERENCE_SPAN_KIND, _OPENINFERENCE_KIND.get(s.kind, OIKind.CHAIN).value)
     otel.set_attribute("hf.run_key", s.run_key)
     otel.set_attribute("hf.kind", s.kind.value)
     if s.kind == SpanKind.model_call:
-        otel.set_attribute("llm.model_name", s.name)
+        otel.set_attribute(OI.LLM_MODEL_NAME, s.name)
         otel.set_attribute("gen_ai.request.model", s.name)
-        otel.set_attribute("llm.token_count.prompt", s.tokens_in)
-        otel.set_attribute("llm.token_count.completion", s.tokens_out)
+        otel.set_attribute(OI.LLM_TOKEN_COUNT_PROMPT, s.tokens_in)
+        otel.set_attribute(OI.LLM_TOKEN_COUNT_COMPLETION, s.tokens_out)
         otel.set_attribute("gen_ai.usage.input_tokens", s.tokens_in)
         otel.set_attribute("gen_ai.usage.output_tokens", s.tokens_out)
     if s.kind == SpanKind.tool_call:
-        otel.set_attribute("tool.name", s.name)
+        otel.set_attribute(OI.TOOL_NAME, s.name)
         if s.tokens_in or s.tokens_out:                # an agent tool's reported usage (EXT-10)
             otel.set_attribute("gen_ai.usage.input_tokens", s.tokens_in)
             otel.set_attribute("gen_ai.usage.output_tokens", s.tokens_out)
