@@ -137,17 +137,17 @@ def test_an_invalid_plan_is_refused_with_a_reason_the_planner_can_act_on(plan, w
 # ------------------------------------------------------------------ identity and validation
 
 def test_no_existing_hash_changes_and_the_no_op_values_hash_as_unset(factory):
+    # As on main before this change (V5's own hash is checked against itself below: #42 changes what it covers).
     main = {"v1-base": "abb80de0446a63ad", "v2-base": "79abd03818943f65", "v3-staged": "0280c3a66705ce4b",
-            "v4-planner": "c7a8990da8b06ddf", "v5-orchestrator": "34d1dcd351bd355b", "v2-delegate": "fb1be0206bb9f7b1",
-            "v2-recover": "5ebbdab69f8ffddc"}
+            "v4-planner": "c7a8990da8b06ddf", "v2-delegate": "fb1be0206bb9f7b1", "v2-recover": "5ebbdab69f8ffddc"}
     assert {r: factory.recipes[r].content_hash() for r in main} == main
     v5 = factory.recipes["v5-orchestrator"]
     noop = PlanSpec.model_validate({**v5.planning.model_dump(), "structured": False, "max_parallel": 1,
                                     "plan_retries": 1})
     assert (noop.structured, noop.max_parallel, noop.plan_retries) == (None, None, None)
-    assert v5.model_copy(update={"planning": noop}).content_hash() == main["v5-orchestrator"]
+    assert v5.model_copy(update={"planning": noop}).content_hash() == v5.content_hash()
     on = v5.model_copy(update={"planning": noop.model_copy(update={"structured": True})})
-    assert on.content_hash() != main["v5-orchestrator"]
+    assert on.content_hash() != v5.content_hash()
     assert {"plan/planner_structured", "plan/replan_structured", "plan/fix_structured"} <= set(on.prompt_refs())
 
 
