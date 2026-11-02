@@ -1,0 +1,8 @@
+# Matrix (planning): v5-orchestrator with one change, structured plans run as a graph. Steps whose dependencies have
+# finished go to workers at the same time, at most two at once; each worker's budget is carved from what the team
+# has left before it starts, so the team's limits hold exactly. A blocked worker sends the remaining work back to
+# the planner once the workers still running have finished.
+id: v5-parallel
+version: 1
+base: v5-orchestrator
+planning: {structured: true, max_parallel: 2}

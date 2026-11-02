@@ -1,0 +1,7 @@
+# Matrix (config): v2-base with one change. The tool calls of one reply run concurrently when every one of them
+# only reads (READ by declared side effect); a batch with any call that changes something runs one call after
+# another in the model's order. Results go back in the model's order either way.
+id: v2-parallel-tools
+version: 1
+base: v2-base
+config: {parallel_tool_calls: true}

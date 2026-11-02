@@ -150,6 +150,7 @@ async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[st
     if config is None:
         return "Refused: not enough budget left for a helper.", ErrorKind.BUDGET.value
     d.limits.calls += 1
+    call = d.limits.calls          # this call's number: d.limits.calls moves on while concurrent helpers run
     child = d.child.model_copy(update={"config": config})
     span.attributes.update(delegate_recipe=child.id, depth=d.depth + 1, call=d.limits.calls)
 
@@ -167,19 +168,25 @@ async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[st
         stage_prompts=d.assembler.stage_prompts(child, task, names), scope=f"delegate:{d.limits.calls}",
         delegate=grand, prompts=d.assembler.registry)
     budget.start()
-    with inst.tracer.span(SpanKind.handoff, f"delegate:{child.id}", depth=d.depth + 1):
-        result = await ShapeRegistry.get(child.variant).run(child_inst)
+    # Hold the carved budget until the usage is charged back below, so helpers running at the same time (V5 workers)
+    # are carved from what this one doesn't hold (one tool call is the delegate call itself, charged after).
+    inst.budget.reserve(config, extra_tool_calls=1)
+    try:
+        with inst.tracer.span(SpanKind.handoff, f"delegate:{child.id}", depth=d.depth + 1):
+            result = await ShapeRegistry.get(child.variant).run(child_inst)
+    finally:
+        inst.budget.release(config, extra_tool_calls=1)
 
     inst.budget.used_steps += budget.used_steps
     inst.budget.used_tokens += budget.used_tokens
     inst.budget.used_tool_calls += budget.used_tool_calls
     for v in result.violations:
         kind = "delegate_stopped" if v.kind in CHILD_STOPS else v.kind
-        inst.tools.violations.append(Violation(kind=kind, detail=f"delegate {d.limits.calls}: {v.detail}"[:300],
+        inst.tools.violations.append(Violation(kind=kind, detail=f"delegate {call}: {v.detail}"[:300],
                                                critical=v.critical))
     status = "finished" if result.finished else result.status.value     # a child is never graded on its own
     inst.snapshot.setdefault("delegations", []).append(
-        {"call": d.limits.calls, "recipe": child.id, "depth": d.depth + 1, "task": sub, "status": status,
+        {"call": call, "recipe": child.id, "depth": d.depth + 1, "task": sub, "status": status,
          "error": result.error, "output": result.output, "messages": result.messages})
     span.attributes.update(child_status=status, child_steps=budget.used_steps,
                            child_tool_calls=budget.used_tool_calls, child_tokens=budget.used_tokens)

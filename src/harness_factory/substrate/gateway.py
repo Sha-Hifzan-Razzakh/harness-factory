@@ -136,10 +136,13 @@ class ScriptedBackend:
 
 
 class LiteLLMBackend:
+    accepts_response_format = True       # ModelGateway passes JSON mode only to backends that say so
+
     def __init__(self, timeout_s: float | None = None) -> None:
         self.timeout_s = timeout_s
 
-    async def complete(self, messages, tools, slot, provider, served) -> Completion:
+    async def complete(self, messages, tools, slot, provider, served,
+                       response_format: dict[str, Any] | None = None) -> Completion:
         import litellm
 
         timeout_s = self.timeout_s
@@ -151,6 +154,8 @@ class LiteLLMBackend:
         )
         if tools:
             kwargs["tools"] = tools
+        if response_format:
+            kwargs["response_format"] = response_format
         if provider.base_url:
             kwargs["api_base"] = provider.base_url
         if provider.auth_env:
@@ -201,13 +206,21 @@ class ModelGateway:
         self.successful_calls = 0
 
     async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict],
-                       attributes: dict[str, Any] | None = None) -> Completion:
+                       attributes: dict[str, Any] | None = None,
+                       response_format: dict[str, Any] | None = None) -> Completion:
         """One model call: take a quota slot, call with a hard timeout, classify failures, retry the transient
         ones (honouring Retry-After). Spans of failed attempts stay in the trace with status error.
-        attributes: extra attributes for the model_call span (the caller's token estimate, ADR 0015)."""
+        attributes: extra attributes for the model_call span (the caller's token estimate, ADR 0015).
+
+        response_format (e.g. {"type": "json_object"}) asks for JSON mode. It is sent only when the model's caps
+        declare structured output and the backend takes it; otherwise the prompt alone asks for JSON (scripted
+        backends read the prompt). The span records which (`response_format`: the type, or "prompt_only")."""
         if not slot.canonical_model:
             raise HarnessError(ErrorKind.PROVISION, f"model slot {slot.role} has no canonical model")
         served = self.catalog.served(self.provider.id, slot.canonical_model)
+        extra: dict[str, Any] = {}
+        if response_format and served.caps.structured_output and getattr(self.backend, "accepts_response_format", False):
+            extra["response_format"] = response_format
         bucket = self.catalog.bucket(self.provider.id, slot.canonical_model)   # provider, or provider|model
         attempt = 0
         while True:
@@ -219,14 +232,16 @@ class ModelGateway:
                                   **(attributes or {})) as span:
                 if waited:
                     span.attributes["quota_wait_s"] = round(waited, 3)
+                if response_format:
+                    span.attributes["response_format"] = response_format.get("type") if extra else "prompt_only"
                 t_call = time.monotonic()
                 try:
                     if self.timeout_s:
                         # Backstop above the provider timeout: a hung backend can never hold a worker forever.
                         with anyio.fail_after(self.timeout_s + min(5.0, self.timeout_s)):
-                            comp = await self.backend.complete(messages, tools, slot, self.provider, served)
+                            comp = await self.backend.complete(messages, tools, slot, self.provider, served, **extra)
                     else:
-                        comp = await self.backend.complete(messages, tools, slot, self.provider, served)
+                        comp = await self.backend.complete(messages, tools, slot, self.provider, served, **extra)
                 except Exception as raw:  # classified below; nothing escapes untyped
                     e = raw if isinstance(raw, HarnessError) else classify_provider_error(
                         raw, mid_run=self.successful_calls > 0)

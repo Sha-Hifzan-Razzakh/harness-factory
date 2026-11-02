@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from harness_factory.env.mcp.servers import RISK_TO_TIER, TIER_ORDER, ToolCatalogFile
 from harness_factory.providers.catalog import ProviderCatalog
 from harness_factory.recipes.model import (
+    STRUCTURED_PLAN_PROMPTS,
     HarnessRecipe,
     MemoryProfile,
     RuntimeConfig,
@@ -35,8 +36,6 @@ def inert_fields(recipe: HarnessRecipe) -> list[str]:
         out.append("retrieval")
     if recipe.config.compaction_at != d_cfg.compaction_at:
         out.append("config.compaction_at")
-    if recipe.config.parallel_tool_calls != d_cfg.parallel_tool_calls:
-        out.append("config.parallel_tool_calls")
     for f in ("deferred", "defer_above_tokens", "binding"):
         if getattr(recipe.tools, f) != getattr(d_tools, f):
             out.append(f"tools.{f}")
@@ -135,6 +134,25 @@ def _context_issues(recipe: HarnessRecipe, prompts: PromptRegistry, providers: P
     return sorted({(i.rule, i.detail): i for i in out}.values(), key=lambda i: (i.rule, i.detail))
 
 
+def _structured_issues(recipe: HarnessRecipe, prompts: PromptRegistry) -> list[ValidationIssue]:
+    """Structured plans (SUB-08): max_parallel and plan_retries mean something only with JSON plans, and concurrent
+    steps only in V5 (V4's steps share one executor conversation)."""
+    pl, out = recipe.planning, []
+    if not pl.structured:
+        for f in ("max_parallel", "plan_retries"):
+            if getattr(pl, f) is not None:
+                out.append(ValidationIssue(rule="structured_plan_required",
+                                           detail=f"planning.{f} needs planning.structured: true"))
+        return out
+    if pl.max_parallel is not None and recipe.variant != Variant.V5_ORCHESTRATOR:
+        out.append(ValidationIssue(rule="max_parallel_v5_only",
+                                   detail="only V5 runs steps concurrently (V4's steps share one conversation)"))
+    for ref in STRUCTURED_PLAN_PROMPTS:
+        if not prompts.exists(ref):
+            out.append(ValidationIssue(rule="prompt_exists", detail=f"planning (structured): prompt {ref!r}"))
+    return out
+
+
 def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: PromptRegistry | None = None,
                     providers: ProviderCatalog | None = None, provider_id: str | None = None) -> list[ValidationIssue]:
     import harness_factory.shapes.builtin  # noqa: F401  (registers built-in shapes)
@@ -202,6 +220,7 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
         for ref in (pl.planner_prompt, pl.step_prompt, pl.replan_prompt, *([pl.worker_prompt] if pl.worker_prompt else [])):
             if not prompts.exists(ref):
                 issues.append(ValidationIssue(rule="prompt_exists", detail=f"planning: prompt {ref!r}"))
+        issues += _structured_issues(recipe, prompts)
         planner = recipe.model_slots.get("planner")
         if planner is not None and planner.canonical_model is not None:
             # The model is a campaign axis and only the executor's is in the RunKey: a pinned planner model would
