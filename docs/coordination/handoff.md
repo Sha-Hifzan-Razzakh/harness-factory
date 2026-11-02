@@ -39,8 +39,9 @@ Most of this is already in the repo; the starter prompt points to it.
 
 What the repo can't tell it, so the prompt says it:
 
-- **Git identity and attribution.** Commit as the repo owner (`git -c user.name=… -c user.email=…`, values from the
-  user). Commit messages and PR bodies end with the attribution lines that session's own instructions give.
+- **Git identity and attribution.** Set the repo owner as the author (`git commit --author="…"`, values from the
+  user) and leave the committer as the session's signing identity: `main` requires signed commits, and a
+  committer override (`-c user.name=… -c user.email=…`) makes the signature unverified. Commit messages and PR bodies end with the attribution lines that session's own instructions give.
 - **Secrets.** Only in `.env` or the environment. Never in code, tests, traces or PR text.
 - **Offline first.** The build and every test must pass with the `scripted` provider. Real API keys aren't needed
   and must not be assumed.
@@ -319,7 +320,12 @@ The general gates in §3 step 5 apply to every package as well.
   - [ ] the promptfoo checks run offline in CI;
   - [ ] the README has a short section.
 
+> **Re-signed branches (2 Nov).** `main` requires signed commits. When the branches were re-signed, GitHub closed
+> #34, #55, #57, #63 and #66 and won't reopen them. The same branches continue in #82, #83, #84, #85 and #86. The
+> package sections below keep their original numbers. Commits must keep the committer the session's signing
+> identity: set the author with `--author`, not `-c user.name/-c user.email`, or the signature shows as unverified.
+
 ## 5. Ready for review, not open for handover
 
-#34 (task batch 3), #35 (calibration) and #37 (test-matrix notes) are built and waiting for review. A reviewing
+#82 (task batch 3, was #34), #35 (calibration) and #37 (test-matrix notes) are built and waiting for review. A reviewing
 session may comment. Changes to them stay with `session:core` unless a handover is recorded as in §1.
