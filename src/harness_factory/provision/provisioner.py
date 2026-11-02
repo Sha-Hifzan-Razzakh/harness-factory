@@ -16,6 +16,7 @@ from typing import Any
 
 from harness_factory import settings
 from harness_factory.env.faults import FaultConfig, FaultInjector
+from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
@@ -175,6 +176,9 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                     assembler: PromptAssembler | None = None,
                     fault: FaultConfig | None = None) -> AsyncIterator[Provisioned]:
     recipe = recipe.with_model(canonical_model)
+    libs = deps.check_libraries({c.kind for c in task.oracle.checks})
+    if libs:                                  # graders read office files here, whichever sandbox the run uses
+        deps.require(libs, f"task {task.key()}'s checks")
     issues = validate_recipe(recipe, declared, providers=providers, provider_id=provider_id)
     if issues:
         raise HarnessError(ErrorKind.PROVISION, "; ".join(f"{i.rule}: {i.detail}" for i in issues))

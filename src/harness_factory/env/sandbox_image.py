@@ -11,6 +11,10 @@ and tests_pass checks), git, and the server modules. Python packages are never i
 So the same build works on CI, on a laptop, and behind a proxy that blocks package mirrors inside containers (with
 HF_SANDBOX_BASE_IMAGE pointing at a base that has git). The tag is a content hash of everything that goes in, so a
 changed server module, mcp or pytest version, or Dockerfile rebuilds.
+
+Besides mcp and pytest, the image vendors the pinned libraries of the server allow-list (env/mcp/deps.py, ADR
+0013). Their pins are part of the tag, and building needs them installed here (the `docs` extra), so that their
+own dependencies are constrained by uv.lock like mcp's are.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import threading
 from pathlib import Path
 
 from harness_factory import settings
+from harness_factory.env.mcp import deps
 from harness_factory.hashing import content_hash
 from harness_factory.substrate.errors import ErrorKind, HarnessError
 
@@ -73,7 +78,8 @@ def server_arch() -> str:
 def image_tag(base: str, python: str, arch: str) -> str:
     files = {f: (PACKAGE_ROOT / f).read_text() for f in SERVER_FILES}
     return "hf-sandbox:" + content_hash({"base": base, "python": python, "arch": arch, "dockerfile": DOCKERFILE,
-                                         "mcp": md.version("mcp"), "pytest": md.version("pytest"), "files": files}, 12)
+                                         "mcp": md.version("mcp"), "pytest": md.version("pytest"),
+                                         "libraries": deps.image_requirements(), "files": files}, 12)
 
 
 def _constraints() -> str:
@@ -85,17 +91,20 @@ def _constraints() -> str:
 def _vendor(target: Path, python: str, arch: str, workdir: Path) -> None:
     cons = workdir / "constraints.txt"
     cons.write_text(_constraints())
-    reqs = [f"mcp=={md.version('mcp')}", f"pytest=={md.version('pytest')}"]   # pytest: the code server (ADR 0012)
+    # The allow-list's dependencies (lxml, et-xmlfile, ...) are pinned by the constraints only if it is installed.
+    deps.require(tuple(deps.ALLOWED), "the sandbox image")
+    req = [f"mcp=={md.version('mcp')}", f"pytest=={md.version('pytest')}",   # pytest: the code server (ADR 0012)
+           *deps.image_requirements()]
     uv = shutil.which("uv")
     if uv:
         cmd = [uv, "pip", "install", "--quiet", "--target", str(target), "--python-version", python,
-               "--python-platform", f"{arch}-manylinux_2_28", "--only-binary", ":all:", "-c", str(cons), *reqs]
+               "--python-platform", f"{arch}-manylinux_2_28", "--only-binary", ":all:", "-c", str(cons), *req]
     else:
         cmd = [sys.executable, "-m", "pip", "install", "--quiet", "--target", str(target), "--python-version",
-               python, "--platform", f"manylinux_2_28_{arch}", "--only-binary", ":all:", "-c", str(cons), *reqs]
+               python, "--platform", f"manylinux_2_28_{arch}", "--only-binary", ":all:", "-c", str(cons), *req]
     proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
-        raise HarnessError(ErrorKind.SANDBOX, f"vendoring mcp and pytest for the sandbox failed: {proc.stderr.strip()[:800]}")
+        raise HarnessError(ErrorKind.SANDBOX, f"vendoring mcp, pytest and the server libraries for the sandbox failed: {proc.stderr.strip()[:800]}")
 
 
 def ensure_image(base: str | None = None, python: str | None = None) -> str:

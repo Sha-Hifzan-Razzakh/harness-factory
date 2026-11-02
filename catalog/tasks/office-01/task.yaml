@@ -1,0 +1,97 @@
+id: office-01
+version: 1
+domain: data
+instruction: 'Gulf Office Supply''s quotation quotes/Q-2291.pdf has been approved. Update pricing/price_list.xlsx:
+  set the unit price of each item on the quotation that is already on the price list, and set the Last updated date
+  on the Notes sheet to the quotation''s date (YYYY-MM-DD).'
+env_seed:
+  files: ../../seeds/office/files
+allowed_tools:
+- fs.list_dir
+- docs.*
+risk: R1
+expected_depth: KNOWN_PATH
+split: TEST
+status: verified
+tags:
+- docs
+- xlsx
+- pdf
+- cross-file
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: price_OS-104
+    kind: xlsx_cell
+    weight: 0.25
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: C2
+    expected: 89.0
+    tolerance: 0.005
+  - id: price_OS-221
+    kind: xlsx_cell
+    weight: 0.25
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: C4
+    expected: 54.5
+    tolerance: 0.005
+  - id: price_OS-310
+    kind: xlsx_cell
+    weight: 0.25
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: C5
+    expected: 120.0
+    tolerance: 0.005
+  - id: last_updated
+    kind: xlsx_cell
+    weight: 0.25
+    path: pricing/price_list.xlsx
+    sheet: Notes
+    cell: B2
+    expected: '2026-10-20'
+  - id: no_new_items
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: A8
+  - id: unquoted_OS-118_kept
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: C3
+    expected: 210.0
+    tolerance: 0.005
+  - id: unquoted_OS-402_kept
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: C6
+    expected: 88.0
+    tolerance: 0.005
+  - id: unquoted_OS-509_kept
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: C7
+    expected: 42.5
+    tolerance: 0.005
+  - id: skus_kept
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: pricing/price_list.xlsx
+    sheet: Prices
+    cell: A2
+    expected: OS-104

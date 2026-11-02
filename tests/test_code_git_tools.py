@@ -285,6 +285,9 @@ def test_adding_code_and_git_moved_no_existing_identity(factory):
                 data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
             c.pop("ref")
+            for k in ("sheet", "cell", "expected", "tolerance", "style"):   # check fields from #47, unset
+                if c.get(k) is None:
+                    c.pop(k, None)
         data["seed_hash"] = t.env_seed.data_hash(t.source_dir)
         return content_hash(data)
 
@@ -389,9 +392,11 @@ def test_campaigns_plan_only_recipes_that_reach_the_task_tools(factory):
     base = {s.task_id for s in plan(factory, "v2-base", "scripted", ["scripted/replay"])}
     code = {s.task_id for s in plan(factory, "v2-code", "scripted", ["scripted/replay"])}
     visible = {t.id for t in factory.tasks.all()}
-    biz = {t.id for t in factory.tasks.all() if any(p.startswith("biz.") for p in t.allowed_tools)}
-    assert {"code-02", "code-03"} <= code == visible - biz              # v2-code doesn't open biz (#46)
-    assert base == visible - {"code-02", "code-03"} - biz                # every other task, as before
+    # tasks on servers v2-code doesn't open (biz from #46, docs from #47)
+    other = {t.id for t in factory.tasks.all() if any(p.split(".")[0] not in {"fs", "sql", "code", "git"}
+                                                      for p in t.allowed_tools)}
+    assert {"code-02", "code-03"} <= code == visible - other
+    assert base == visible - {"code-02", "code-03"} - other              # every other task, as before
 
 
 async def test_real_models_need_docker_or_an_opt_in_to_run_code_locally(factory, monkeypatch):
@@ -415,12 +420,14 @@ def test_server_modules_import_only_mcp_the_stdlib_and_each_other():
     import ast
     from pathlib import Path
 
+    from harness_factory.env.mcp import deps
     from harness_factory.env.mcp.impl import proc as impl_proc
     impl = Path(impl_proc.__file__).parent
     for module in impl.glob("*.py"):
+        own = {deps.ALLOWED[d].imports for d in deps.SERVER_LIBRARIES.get(f"harness_factory.env.mcp.impl.{module.stem}", ())}
         for node in ast.walk(ast.parse(module.read_text())):
             names = [a.name for a in node.names] if isinstance(node, ast.Import) else \
                 [node.module] if isinstance(node, ast.ImportFrom) and node.module else []
-            for n in names:
-                assert (n.split(".")[0] in sys.stdlib_module_names or n.split(".")[0] == "mcp"
+            for n in names:      # + the server's own pinned libraries (ADR 0013), e.g. docx for the docs server
+                assert (n.split(".")[0] in sys.stdlib_module_names or n.split(".")[0] in {"mcp", *own}
                         or n.startswith("harness_factory.env.mcp.impl")), f"{module.name} imports {n}"

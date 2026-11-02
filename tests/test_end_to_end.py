@@ -11,8 +11,8 @@ TASK_IDS = [t.id for t in _F.tasks.all()]
 
 
 def _recipe_for(factory, task):
-    """v2-base, or the matrix recipe that adds the servers a task needs (code-02/03 need code and git, biz-* need biz)."""
-    for rid in ("v2-base", "v2-code", "v2-biz"):
+    """v2-base, or the matrix recipe that adds the servers a task needs (code-02/03 need code and git, biz-* need biz, office-* need docs)."""
+    for rid in ("v2-base", "v2-code", "v2-biz", "v2-docs"):
         if not missing_task_tools(factory.recipes[rid], task, factory.declared):
             return factory.recipes[rid]
     raise AssertionError(f"no base or matrix recipe reaches {task.id}")

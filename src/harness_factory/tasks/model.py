@@ -31,8 +31,13 @@ class Split(str, Enum):
 
 CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent", "json_valid", "sql_rows",
                     "output_regex", "tool_called", "remote_equals", "tests_pass", "git_log_contains",
-                    "biz_equals", "biz_count"]
+                    "biz_equals", "biz_count", "xlsx_cell", "docx_contains",
+                    "docx_paragraph_regex"]
 GIT_CHECKS = ("git_log_contains",)
+
+# Check fields added after the first tasks were written: left out of the task hash while unset, so adding them
+# kept every existing task hash (like _HASH_OMIT_WHEN_NONE for recipes).
+_CHECK_HASH_OMIT_WHEN_NONE = ("ref", "sheet", "cell", "expected", "tolerance", "style")
 
 
 class WeightedCheck(BaseModel):
@@ -50,11 +55,17 @@ class WeightedCheck(BaseModel):
     rows: list[list[Any]] | None = None
     pattern: str | None = None       # output_regex, file_regex (re.MULTILINE; add (?s) to cross lines);
                                      # tool_called (fnmatch on tool ref, successful calls only);
-                                     # tests_pass: a pytest -k expression; git_log_contains: a commit message regex
+                                     # tests_pass: a pytest -k expression; git_log_contains: a commit message regex;
+                                     # docx_paragraph_regex (re.search per paragraph; negate: no paragraph matches)
     # tests_pass (ADR 0012): `path` is what to run in the workspace (default "."); `text` is a hidden test module
     # run from outside the workspace instead, with the workspace importable. git_log_contains: `ref` (default HEAD)
     # must have a commit after the seed whose message matches `pattern` (and that touches `path`, if given).
     ref: str | None = None
+    sheet: str | None = None         # xlsx_cell: the sheet name (path is the workbook)
+    cell: str | None = None          # xlsx_cell: A1-style cell
+    expected: str | int | float | bool | None = None   # xlsx_cell: the value; omitted = the cell is empty
+    tolerance: float | None = Field(default=None, ge=0)  # xlsx_cell with a number: |actual - expected| <= this
+    style: str | None = None         # docx_paragraph_regex: the matching paragraph must have this style
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -64,7 +75,9 @@ class WeightedCheck(BaseModel):
                  "file_absent": ("path",), "json_valid": ("path",), "sql_rows": ("query", "rows"),
                  "output_regex": ("pattern",), "tool_called": ("pattern",),
                  "remote_equals": ("path", "text"), "tests_pass": (), "git_log_contains": ("pattern",),
-                 "biz_equals": ("path", "text"), "biz_count": ("path", "text")}[self.kind]
+                 "biz_equals": ("path", "text"), "biz_count": ("path", "text"),
+                 "xlsx_cell": ("path", "sheet", "cell"), "docx_contains": ("path", "text"),
+                 "docx_paragraph_regex": ("path", "pattern")}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -90,7 +103,19 @@ class WeightedCheck(BaseModel):
                     raise ValueError(f"check {self.id}: biz_count query is a JSON object: {e}") from e
                 if not isinstance(where, dict):
                     raise ValueError(f"check {self.id}: biz_count query is a JSON object of field values")
-        if self.pattern is not None and self.kind in ("file_regex", "output_regex", "git_log_contains"):
+        if self.kind == "xlsx_cell":
+            if not re.fullmatch(r"[A-Za-z]{1,3}[1-9]\d*", self.cell or ""):
+                raise ValueError(f"check {self.id}: xlsx_cell cell is one A1-style cell, e.g. 'C4'")
+            if self.tolerance is not None and (isinstance(self.expected, bool)
+                                               or not isinstance(self.expected, (int, float))):
+                raise ValueError(f"check {self.id}: tolerance applies only to a number expected")
+        for name in ("sheet", "cell", "expected", "tolerance"):
+            if getattr(self, name) is not None and self.kind != "xlsx_cell":
+                raise ValueError(f"check {self.id}: {name} is for xlsx_cell checks")
+        if self.style is not None and self.kind != "docx_paragraph_regex":
+            raise ValueError(f"check {self.id}: style is for docx_paragraph_regex checks")
+        if self.pattern is not None and self.kind in ("file_regex", "output_regex", "git_log_contains",
+                                                      "docx_paragraph_regex"):
             try:
                 re.compile(self.pattern)
             except re.error as e:
@@ -174,8 +199,9 @@ class Task(BaseModel):
             if data["env_seed"].get(k) is None:
                 data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
-            if c.get("ref") is None:
-                c.pop("ref", None)
+            for k in _CHECK_HASH_OMIT_WHEN_NONE:
+                if c.get(k) is None:
+                    c.pop(k, None)
         if not self.env_seed.git:
             data["env_seed"].pop("git", None)
         else:                      # how the seed repository is made is part of the task's environment

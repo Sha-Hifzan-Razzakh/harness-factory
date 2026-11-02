@@ -224,6 +224,11 @@ class ToolCatalogFile(BaseModel):
         remote = {s.id: f"{s.url}@{s.version}" for s in self.servers if s.id in server_ids and s.remote}
         if remote:                                   # only then, so local-only environments keep their hash
             data["remote"] = remote
+        from harness_factory.env.mcp.deps import requirements
+        libs = {s.id: requirements(s.module) for s in self.servers
+                if s.id in server_ids and not s.remote and requirements(s.module)}
+        if libs:                                     # a server's pinned libraries (ADR 0013); same rule as remote
+            data["libraries"] = libs
         return content_hash(data, 12)
 
     def unhashed_tools(self) -> list[str]:

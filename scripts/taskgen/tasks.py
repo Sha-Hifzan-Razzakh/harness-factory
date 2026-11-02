@@ -466,6 +466,71 @@ task("biz-02", "api", "UNKNOWN_PATH", "R0", "TEST",
      f"due yet, and Oasis Foods Trading is a different customer.",
      seed=BIZ, tags=["biz", "read", "reconcile", "trap"])
 
+# ------------------------------------------------------------------ office: docx, xlsx, pdf (docs server)
+
+import office  # the seed's data module, next to this script
+
+OFFICE = {"files": "../../seeds/office/files"}
+DOCS = ["fs.list_dir", "docs.*"]
+
+
+def doc(tool, **args):
+    return {"tool": f"docs.{tool}", "args": args}
+
+
+def cell(cid, ref, expected, weight=0.0, **kw):
+    sheet, c = ref.split("!")
+    kw = {"path": office.PRICES_PATH, "sheet": sheet, "cell": c,
+          **({"expected": expected} if expected is not None else {}), **kw}
+    return chk(cid, "xlsx_cell", weight, **kw) if weight else guard(cid, "xlsx_cell", **kw)
+
+
+quoted = {sku: float(price) for sku, _, price in office.QUOTE_LINES}
+listed = {row[0]: n for n, row in enumerate(office.PRICES, 2)}          # sku -> sheet row
+updates = [(sku, listed[sku], quoted[sku]) for sku in quoted if sku in listed]
+assert [u[0] for u in updates] == ["OS-104", "OS-221", "OS-310"] and "OS-777" not in listed
+kept = [(sku, n, office.PRICES[n - 2][2]) for sku, n in listed.items() if sku not in quoted]
+notes_row = 1 + next(i for i, (k, _) in enumerate(office.NOTES) if k == "Last updated")
+task("office-01", "data", "KNOWN_PATH", "R1", "TEST", DOCS,
+     f"Gulf Office Supply's quotation {office.QUOTE_PATH} has been approved. Update {office.PRICES_PATH}: set the "
+     "unit price of each item on the quotation that is already on the price list, and set the Last updated date "
+     "on the Notes sheet to the quotation's date (YYYY-MM-DD).",
+     [cell(f"price_{sku}", f"Prices!C{n}", price, 0.25, tolerance=0.005) for sku, n, price in updates]
+     + [cell("last_updated", f"Notes!B{notes_row}", office.QUOTE_DATE[1], 0.25),
+        cell("no_new_items", f"Prices!A{len(office.PRICES) + 2}", None),
+        *[cell(f"unquoted_{sku}_kept", f"Prices!C{n}", price, tolerance=0.005) for sku, n, price in kept],
+        cell("skus_kept", "Prices!A2", office.PRICES[0][0])],
+     [doc("pdf_text", path=office.QUOTE_PATH, pages="1-2"),
+      doc("xlsx_read", path=office.PRICES_PATH, sheet="Prices", range="A1:D20"),
+      *[doc("xlsx_write", path=office.PRICES_PATH, sheet="Prices", cell=f"C{n}", value=price)
+        for _, n, price in updates],
+      doc("xlsx_write", path=office.PRICES_PATH, sheet="Notes", cell=f"B{notes_row}", value=office.QUOTE_DATE[1])],
+     f"Updated {', '.join(u[0] for u in updates)} to the quoted prices (excluding VAT) and set Last updated to "
+     f"{office.QUOTE_DATE[1]}; OS-777 isn't on the price list, so it wasn't added.",
+     seed=OFFICE, tags=["docs", "xlsx", "pdf", "cross-file", "trap"])
+
+L = office.LETTER_PATH
+task("office-02", "docs", "KNOWN_PATH", "R1", "DEV", DOCS,
+     f"Complete the acceptance letter {L} for the approved quotation {office.QUOTE_PATH}: fill in the "
+     "[QUOTE REF] and [VALID UNTIL] placeholders (the date written as the quotation writes it), then end the "
+     f'letter with the line "{office.SIGNATURE}" in the letter\'s Signature style.',
+     [chk("title_ref", "docx_paragraph_regex", 0.15, path=L, pattern=rf"^Acceptance of quotation {office.QUOTE_REF}$"),
+      chk("body_ref", "docx_paragraph_regex", 0.15, path=L, pattern=rf"^We accept quotation {office.QUOTE_REF} for "),
+      chk("valid_until", "docx_paragraph_regex", 0.3, path=L,
+          pattern=rf"expires on {office.VALID_UNTIL}\.$"),
+      chk("signature", "docx_paragraph_regex", 0.3, path=L, pattern=rf"^{office.SIGNATURE}$", style="Signature"),
+      chk("no_placeholders", "docx_paragraph_regex", 0.1, path=L, pattern=r"\[(QUOTE REF|VALID UNTIL)\]",
+          negate=True),
+      guard("withdrawn_quote_kept", "docx_contains", path=L, text=office.LETTER[4][1][0][0]),
+      guard("greeting_kept", "docx_contains", path=L, text="Dear Ms. Haddad,")],
+     [doc("pdf_text", path=office.QUOTE_PATH, pages="1"),
+      doc("docx_read", path=L),
+      doc("docx_replace", path=L, old="[QUOTE REF]", new=office.QUOTE_REF),
+      doc("docx_replace", path=L, old="[VALID UNTIL]", new=office.VALID_UNTIL),
+      doc("docx_append_paragraph", path=L, text=office.SIGNATURE, style="Signature")],
+     f"Filled in {office.QUOTE_REF} and {office.VALID_UNTIL} and signed the letter in the Signature style.",
+     seed=OFFICE, tags=["docs", "docx", "pdf", "cross-file", "trap"])
+
 
 # ------------------------------------------------------------------ write
 
@@ -494,7 +559,8 @@ for t in TASKS:
     (d / "reference.py").write_text(ref)
     leading = next((i for i, s in enumerate(t["plan"])
                     if s["tool"] not in ("fs.list_dir", "fs.read_file", "sql.list_tables", "sql.describe_table",
-                                         "sql.query", *BIZ_READ)), len(t["plan"]))
+                                         "sql.query", *BIZ_READ, "docs.docx_read", "docs.xlsx_sheets",
+                                         "docs.xlsx_read", "docs.pdf_text", "docs.pdf_info")), len(t["plan"]))
     rest = len(t["plan"]) - min(leading, 3)
     print(f"{t['id']:8} {t['split']:8} {t['expected_depth']:12} plan={len(t['plan'])} leading_reads={leading} "
           f"v3_act={rest}{'  !! V3 caps' if leading > 3 and leading < len(t['plan']) or rest > 5 else ''}")

@@ -204,14 +204,14 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
     _print_sinks(f)
     specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds,
                  faults=[None if x == "none" else x for x in faults.split(",")] if faults else None)
-    from harness_factory.provision.provisioner import reaches
-    left_out = sorted({f"{t.id} x {r}" for t in f.tasks.all() for r in recipe.split(",")
-                       if not reaches(f.recipes[r], t, f.declared)})
-    if left_out:
-        console.print(f"left out {len(left_out)} task x recipe pair(s) whose recipe can't call every tool the "
-                      f"task allows: {', '.join(left_out[:6])}{' ...' if len(left_out) > 6 else ''}")
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
+    from harness_factory.runner.runner import skipped_pairs
+    left_out = skipped_pairs(f, recipe.split(","), f.tasks.all())
+    if left_out:
+        console.print(f"left out {len(left_out)} task x recipe pair(s) whose recipe can't call every tool the "
+                      f"task allows: {', '.join(f'{t} x {r}' for t, r in left_out[:6])}"
+                      f"{' ...' if len(left_out) > 6 else ''}")
     if dry_run or resume:
         console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
                       f"{len(status.retry)}   new {len(status.new)}"
