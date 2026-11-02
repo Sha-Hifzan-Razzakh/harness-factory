@@ -1,0 +1,7 @@
+# Matrix (runtime): v2-base run by Microsoft Agent Framework's own Agent (its FunctionInvocationLayer tool loop, MCP
+# tools through MCPStdioTool over a caller-owned client) instead of the native loop. Same prompts, tools, permissions
+# and budget; the framework's loop, tool formatting and error handling at their defaults. ADR 0016.
+id: v2-ms-agent-framework
+version: 1
+base: v2-base
+runtime: ms-agent-framework
