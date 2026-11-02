@@ -316,3 +316,57 @@ On the #44–#47 stack (29 tasks, 6 seeds):
 are now one: `provisioner.missing_task_tools` / `reaches`. A recipe is left out of a task's plan unless it can
 call every tool the task allows. `plan()`, `hfx smoke`'s "left out" line, the selector and Inspect all use it.
 
+
+---
+
+## 5. Next set: waves 5 and 6 (planned 2026-11-02)
+
+Waves 1–4 (#39–#52) cover the scoring fixes, the environment, graders, harness depth and task batch 4. This set
+covers the v1 requirements that nothing reserved yet covers. It was checked against `session:core`'s work
+packages (`docs/coordination/handoff.md`, #67) so nothing overlaps.
+
+Requirement IDs follow the snapshot `docs/requirements/requirements-v1.md` (#67). That snapshot uses `RUN-` for
+two sections, *Runners* and *Campaign runner*, so the campaign ones are written "RUN-02 (campaign)".
+
+**Wave 5: finish the environment (P1 Musts).**
+
+- **Start after:** waves 1–2 have merged.
+- **Branch from:** `main`, not the old stacks.
+- **Stacking:** #72 → #73 → #74, because each adds a server to the same files.
+
+| PR | Branch | Closes | Scope | Hash / scoring impact | ADR |
+|---|---|---|---|---|---|
+| #69 | `fix/grounded-check` | R-01 follow-up | `grounded` (`tool_called`) passes only for a successful call that touched the task's data: the tables or files the check names. `SELECT 1` no longer earns grounding. Add a trap per affected task. | **Scoring**, plus task hashes of tasks whose check gains a field | none |
+| #70 | `feat/fault-kinds` | ENV-03 | Fault kinds `latency` (a real delay, charged to the run's wall time, never excluded as infra) and `malformed` (a result that parses but is wrong in shape), per tool, per run. New profiles `slow-tools` and `malformed-results`. | New fault profiles only | none |
+| #71 | `feat/perturbations` | TSK-04 (MEM-06 later) | Generator `hfx perturb`: from a base task (`base_id`), make variants by type: tool failure (binds a fault profile), ambiguous wording, an instruction injected into the seed data, oversized tool output, slow tool. At least 2 variants per base task. Variants are tasks with their own hash, and the report groups by perturbation type. | New tasks only | none |
+| #72 | `feat/env-web-corpus` | ENV-01 (web search and fetch), KNW-01 | A `web` server: `search` and `fetch` over a recorded, versioned corpus, with no network. The corpus version and index id are recorded on every run. The ADR decides DVC versus a content-addressed corpus in the repo (MLO-04). One or two research tasks. | New server; corpus id in `env_hash` for tasks that use it | **0018**: recorded corpora and their versioning |
+| #73 | `feat/env-outbox-calendar` | ENV-01 (email/notification outbox, calendar) | An `outbox` server (`send_email`, `notify`: IRREVERSIBLE, so they exercise the gate) and a `calendar` server (list, create, move, cancel events), both over seeded state like `biz`, with checks on the end state. This brings ENV-01 to its 8 domains. | New servers only | none |
+| #74 | `feat/mcp-conformance` | MCP-11, ENV-06 | A conformance suite run in CI against every declared server: initialize, list_tools against `tools.yaml`, call_tool, error cases, ToolError messages. A health probe before each run means a run never starts against an unhealthy server (ERROR, not scored). | None | none |
+
+**Wave 6: governance, memory, profiling (P3/P4).**
+
+- **Start after:** wave 3 (#50 owns compaction, which the memory PR builds on).
+
+| PR | Branch | Closes | Scope | Hash / scoring impact | ADR |
+|---|---|---|---|---|---|
+| #75 | `feat/approval-gate` | GOV-01, GOV-03, SHP-01 (POLICY_BLOCKED) | ASK stops being DENY. A scripted approver answers from a policy file, every approval is a span, and approvals are counted. IRREVERSIBLE at tier T3 and above needs approval. A refused call yields POLICY_BLOCKED where the policy, not the model, ended the run. | **Run status logic** for recipes that use ASK | **0019**: approval gate and scripted approver |
+| #76 | `feat/clarification` | SHP-06, MCP-06 | `headless: false` is allowed. A clarification need ends a headless run as NEEDS_INPUT (unscored, like INCOMPLETE). In attended runs a scripted user answers. MCP elicitation is routed the same way. Uses the ambiguous-wording perturbations from #71. | **Run status logic**; new optional recipe field | none |
+| #77 | `feat/guardrails` | GOV-02, GOV-05, GOV-06 | Tool outputs and retrieved content are tagged as data. Guardrail sets (input, tool argument, output) are a recipe field and ablation axis. Traces are redacted before storage for configured patterns. | New optional recipe field | none |
+| #78 | `feat/memory` | MEM-01..05 (vector recall with #57) | A MemoryStore interface (working, rolling summary, structured facts) with every read and write a span. A memory seed per task, discarded at run end. A write policy (no secrets, no injected content, limits). A `memory` profile as a recipe axis. Compaction comes from #50. | New optional recipe field; tasks with a memory seed only | **0020**: memory stores and the write policy |
+| #79 | `feat/task-profiler` | PRF-01, PRF-03, PRF-04, PRF-05 | The full 10-dimension TaskProfile, with hand-authored profiles on every task. A rules-plus-LLM profiler through `ModelGateway`, an agreement report (target ≥ 80% on depth, side effects and risk), and low confidence routing to a conservative recipe. | Profiles left out of the task hash (labels, like `tags`); the task class is unchanged unless the mapping version changes | none |
+| #80 | `feat/recipe-generator` | RCP-04, RUN-02 (campaign) | `hfx recipes generate` expands a base recipe over declared axis values into matrix overlays. Hard-rule pruning gets a reason per rule (tier, capability, reach), and pruned cells are logged. Coordinate with #61 (`hfx bench`), which owns the campaign file. | Generated recipes are new recipes | none |
+| #81 | `feat/self-metrics` | NFR-08, NFR-09 | Runner, provisioner and gateway emit OTel metrics: queue depth, in-flight runs, retries, failures, quota waits, endpoint saturation. Traces are written compressed, with a retention policy (campaign traces kept, smoke traces pruned after 30 days). | None | none |
+
+**Not in this set:**
+
+- **Work that belongs to another session:**
+  - #34 (task batch 3) and #66 (promptfoo) were built, then closed when their branches lost their history.
+  - The API and UI (#30–#32) were merged into their stack branches, never into `main`.
+
+  All three need their owners, or a handover per `handoff.md`, to land them.
+- **P5, after the API lands:** MLflow registry, promotion gate and rollback (MLO-02, 03, 06–08), and live
+  routing (MOD-11, 12).
+- **Should-level items for later:**
+  - MCP resources, sampling and binding (MCP-04, 07, 09).
+  - Analysis follow-ups (ANL-03, 04), next to #63.
+- **After the first full campaigns:** the improvement loop (IMP).

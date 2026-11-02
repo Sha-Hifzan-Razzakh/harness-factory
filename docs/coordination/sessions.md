@@ -55,6 +55,19 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | draft, reserved | new optional recipe field |
 | #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | draft, reserved | new optional recipe fields |
 | #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | draft, reserved | new tasks only |
+| #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | draft, reserved (wave 5) | yes (scoring; tasks whose check gains a field) |
+| #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | draft, reserved (wave 5) | new fault profiles only |
+| #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | draft, reserved (wave 5) | new tasks only |
+| #72 | `feat/env-web-corpus` | `…KhAFMPUEPRU3mK2t2` | Web search and fetch over a recorded, versioned corpus (ENV-01, KNW-01; ADR 0018) | draft, reserved (wave 5) | new server; corpus id in env_hash |
+| #73 | `feat/env-outbox-calendar` | `…KhAFMPUEPRU3mK2t2` | Email/notification outbox and calendar servers (ENV-01) | draft, reserved (wave 5) | new servers only |
+| #74 | `feat/mcp-conformance` | `…KhAFMPUEPRU3mK2t2` | MCP conformance suite in CI and server health before runs (MCP-11, ENV-06) | draft, reserved (wave 5) | no |
+| #75 | `feat/approval-gate` | `…KhAFMPUEPRU3mK2t2` | Approval gate and scripted approver; POLICY_BLOCKED (GOV-01, GOV-03; ADR 0019) | draft, reserved (wave 6) | run status logic (recipes using ASK) |
+| #76 | `feat/clarification` | `…KhAFMPUEPRU3mK2t2` | Clarification: NEEDS_INPUT in headless runs, scripted user, elicitation (SHP-06, MCP-06) | draft, reserved (wave 6) | run status logic; new optional recipe field |
+| #77 | `feat/guardrails` | `…KhAFMPUEPRU3mK2t2` | Guardrails, data tagging and trace redaction (GOV-02, GOV-05, GOV-06) | draft, reserved (wave 6) | new optional recipe field |
+| #78 | `feat/memory` | `…KhAFMPUEPRU3mK2t2` | Memory stores, write policy and memory profiles (MEM-01..05; ADR 0020) | draft, reserved (wave 6) | new optional recipe field |
+| #79 | `feat/task-profiler` | `…KhAFMPUEPRU3mK2t2` | Task profiler: 10-dimension profiles, rules + LLM profiler, agreement (PRF-01, 03-05) | draft, reserved (wave 6) | no (profiles are labels) |
+| #80 | `feat/recipe-generator` | `…KhAFMPUEPRU3mK2t2` | Recipe generator and logged hard-rule pruning (RCP-04, RUN-02 campaign) | draft, reserved (wave 6) | new recipes only |
+| #81 | `feat/self-metrics` | `…KhAFMPUEPRU3mK2t2` | Self-metrics and compressed traces with retention (NFR-08, NFR-09) | draft, reserved (wave 6) | no |
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
 *Layout* lines), `CLAUDE.md` (one row at the end of *Where things go*), `src/harness_factory/cli/main.py` (two
@@ -71,3 +84,6 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | 0013 | `…KhAFMPUEPRU3mK2t2` | Non-stdlib MCP server dependencies (in #47) |
 | 0014 | `…KhAFMPUEPRU3mK2t2` | LLM judge and its calibration (in #49) |
 | 0015 | `…KhAFMPUEPRU3mK2t2` | Context management (in #50) |
+| 0018 | `…KhAFMPUEPRU3mK2t2` | Recorded corpora and their versioning (in #72) |
+| 0019 | `…KhAFMPUEPRU3mK2t2` | Approval gate and scripted approver (in #75) |
+| 0020 | `…KhAFMPUEPRU3mK2t2` | Memory stores and the write policy (in #78) |
