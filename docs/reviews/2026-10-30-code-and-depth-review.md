@@ -293,3 +293,26 @@ Merge in any order: the second PR rebases and re-runs CI. Two cross-PR notes:
 - **#39 and #34:** #39's catalog-wide hedge test also checks task batch 3. `b3-01`'s answer check has the same
   hedge hole, and `b3-02`'s is anchored on `^`. Whichever of #34 and #39 merges second must tighten those two
   checks.
+
+**Wave 2 (#44–#48): ready for review, CI green on each** (status 2026-11-02).
+
+#44–#47 all append to the same places: `tools.yaml`, the check kinds, the sandbox image, the CI matrix line and
+the README tables. So they are restacked into one line, with every conflict resolved once:
+
+- **Merge order:** #42 → #44 → #45 → #46 → #47. Each PR's base is the one before it.
+- **#48** builds on #41's aggregation code, so it stays on #41. It conflicts with #45 and #47 in
+  `grading/` and with #43 in `cli/main.py`, so it rebases last, after those merge.
+
+On the #44–#47 stack (29 tasks, 6 seeds):
+
+- references 29/29;
+- P0 20/20, V3/V4/V5 60/60;
+- matrix 206/206 (with `v2-fsx`, `v2-code`, `v2-biz`, `v2-docs`);
+- faults 40/40;
+- full suite 490 tests;
+- no existing task, recipe or env hash changed.
+
+**Merged while restacking.** #45, #46 and #47 each wrote their own "can this recipe reach this task" rule. They
+are now one: `provisioner.missing_task_tools` / `reaches`. A recipe is left out of a task's plan unless it can
+call every tool the task allows. `plan()`, `hfx smoke`'s "left out" line, the selector and Inspect all use it.
+

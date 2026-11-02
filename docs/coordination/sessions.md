@@ -46,11 +46,11 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #41 | `fix/aggregation` | `…KhAFMPUEPRU3mK2t2` | Aggregation: R·O, scored rows win, cost median, guard outcome, task_hash in cells (R-04..R-07, O-01, L-11, L-12) | ready for review (CI green) | no hash; aggregation changes |
 | #42 | `fix/tool-identity` | `…KhAFMPUEPRU3mK2t2` | Destructive-SQL escalation, description hashes, remote version pin, replay scope (R-08, R-09, O-04, L-05..L-07) | ready for review (CI green) | yes (every env_hash once; `v5-orchestrator` recipe hash) |
 | #43 | `fix/ops-hardening` | `…KhAFMPUEPRU3mK2t2` | MLflow off the loop, grader-id checks, quota ledger lock, CLI and fs edge cases (O-02, O-03, O-05, O-06, L-01..L-04, L-08..L-10) | ready for review (CI green) | fault profile `garbled-reads` only |
-| #44 | `feat/fs-edit-tools` | `…KhAFMPUEPRU3mK2t2` | `fsx` server: edit, append, move, mkdir, tree | draft, reserved | new server only |
-| #45 | `feat/env-code-git` | `…KhAFMPUEPRU3mK2t2` | Code runner + git servers, `tests_pass` check | draft, reserved | new servers; sandbox image tag |
-| #46 | `feat/env-business-api` | `…KhAFMPUEPRU3mK2t2` | Mock business API server (CRM, invoicing, ticketing) | draft, reserved | new server only |
-| #47 | `feat/env-docs` | `…KhAFMPUEPRU3mK2t2` | Documents server (docx, xlsx, pdf) | draft, reserved | new server; sandbox image tag |
-| #48 | `feat/graders-depth` | `…KhAFMPUEPRU3mK2t2` | Unordered rows, number tolerance, JSON schema, grader versions, re-grading | draft, reserved | scoring only for tasks adopting new kinds |
+| #44 | `feat/fs-edit-tools` | `…KhAFMPUEPRU3mK2t2` | `fsx` server: edit, append, move, mkdir, tree | ready for review (CI green), stacked on #42 | new server only |
+| #45 | `feat/env-code-git` | `…KhAFMPUEPRU3mK2t2` | Code runner + git servers, `tests_pass` check | ready for review (CI green), stacked on #44 | new servers; sandbox image tag |
+| #46 | `feat/env-business-api` | `…KhAFMPUEPRU3mK2t2` | Mock business API server (CRM, invoicing, ticketing) | ready for review (CI green), stacked on #45 | new server only |
+| #47 | `feat/env-docs` | `…KhAFMPUEPRU3mK2t2` | Documents server (docx, xlsx, pdf) | ready for review (CI green), stacked on #46 | new server; sandbox image tag |
+| #48 | `feat/graders-depth` | `…KhAFMPUEPRU3mK2t2` | Unordered rows, number tolerance, JSON schema, grader versions, re-grading | ready for review (CI green), stacked on #41 | scoring only for tasks adopting new kinds |
 | #49 | `feat/rubric-judge` | `…KhAFMPUEPRU3mK2t2` | Rubric judge with calibration | draft, reserved | scoring for tasks using it |
 | #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | draft, reserved | new optional recipe field |
 | #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | draft, reserved | new optional recipe fields |
