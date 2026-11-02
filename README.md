@@ -734,3 +734,40 @@ These prove the factory measures differences before any API budget is spent.
 - **P3:** elicitation and sampling.
 - **P3:** memory stores.
 - **P4:** profiler and selector.
+
+## Benchmarks in one file
+
+A whole benchmark fits in one readable YAML file: which tasks, recipes, models (with their provider), seeds and
+fault profiles, under which limits, and how to judge the result. `docs/design/benchmark.example.yaml` is the
+annotated example; `tests/fixtures/benchmark.scripted.yaml` is the same benchmark on scripted models (offline,
+seconds).
+
+```bash
+hfx bench docs/design/benchmark.example.yaml --dry-run   # validate, print the plan and projection, stop
+hfx bench docs/design/benchmark.example.yaml             # run it
+hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption or the 00:00 UTC quota reset
+```
+
+- **Same campaign as `smoke`.** The file becomes the plan `hfx smoke` would build (one block per provider, run
+  one provider at a time), with the same RunKeys, preflight (`limits.budget_usd`, `limits.deadline_days`, spent
+  buckets), concurrency (`limits.concurrency`, `-j` overrides it), faults and `--resume`. Results land in the same
+  store, so `hfx results --cells` and `hfx report` see them too.
+- **Tasks.** `tasks.splits` (DEV, TEST) plus an optional `tasks.tag`, or `tasks.ids` to name tasks one by one.
+  HELD_OUT is refused: held-out tasks are only run by `hfx select evaluate`.
+- **Validated before anything runs.** Unknown or misspelt keys, wrong types, unknown task ids, recipes, models,
+  providers or fault profiles are listed field by field (exit 2). So are values that are planned but not built:
+  any runner other than `native`, and `calibration.enabled: true` (calibration runs on its own).
+- **Judge.** `judge.freeze_cost_baseline: true` saves the cost baseline once every planned run is scored (an
+  unfinished plan says so and waits for `--resume`). `judge.report: true` writes the report, restricted to the
+  runs this file planned, against that baseline. `judge.compare` (`base` + `against`) adds the recipe-pair
+  section.
+- **The file is stored with its campaign.** `var/bench/<name>-<sha256[:12]>/` holds a byte-for-byte copy
+  (`benchmark.yaml`), `manifest.json` (the file's sha256, every RunKey it planned, and each invocation with its
+  counts, baseline id and report path) and `report.md`. A stored result traces back to the file through its
+  RunKey; an edited file is a different benchmark and gets its own directory.
+
+**Pairing any two recipes.** `hfx report --compare v2-base:v3-staged,v2-base:v4-planner` (or a bench file's
+`judge.compare`) adds section 3b to the report: each pair matched on task, model, provider and seed, with mean ΔE
+(the second recipe minus the first), wins/losses/ties, a bootstrap 95% interval and a verdict only when the
+interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
+recipe it extends) is unchanged.
