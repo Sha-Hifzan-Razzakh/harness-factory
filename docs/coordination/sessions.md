@@ -25,6 +25,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 |---|---|---|
 | `session_01BgTbLJZLSKyEhjaA4sxi9R` | (to be added by that session) | V5 orchestrator shape |
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
+| `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -39,6 +40,21 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #32 | `feat/ui` | `…JtRe49bgfAAmdaB6W` | Streamlit UI for authoring, runs and results (stack 4/4, base #31) | ready for review (CI green) | no |
 | #33 | `chore/session-ledger` | `…JtRe49bgfAAmdaB6W` | This ledger + CLAUDE.md pointer | open | no |
 | #34 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` (presumed; that session confirms its own row) | Task batch 3, written by an independent author | open | yes (new tasks and seeds) |
+| #38 | `docs/review-2026-10-30` | `…KhAFMPUEPRU3mK2t2` | Review doc + this session's ledger rows | ready for review | no |
+| #39 | `fix/answer-checks` | `…KhAFMPUEPRU3mK2t2` | Answer checks refuse hedged answers (R-01) | ready for review (CI green) | yes (6 task hashes: sql-01/03/04/08, ops-03, res-01 → v2) |
+| #40 | `fix/run-endings` | `…KhAFMPUEPRU3mK2t2` | Run endings: child outage, V4 step cap, V5 budget stop, child wall clock (R-02, R-03, R-10, R-11) | ready for review (CI green) | no hash; run status logic changes |
+| #41 | `fix/aggregation` | `…KhAFMPUEPRU3mK2t2` | Aggregation: R·O, scored rows win, cost median, guard outcome, task_hash in cells (R-04..R-07, O-01, L-11, L-12) | ready for review (CI green) | no hash; aggregation changes |
+| #42 | `fix/tool-identity` | `…KhAFMPUEPRU3mK2t2` | Destructive-SQL escalation, description hashes, remote version pin, replay scope (R-08, R-09, O-04, L-05..L-07) | ready for review (CI green) | yes (every env_hash once; `v5-orchestrator` recipe hash) |
+| #43 | `fix/ops-hardening` | `…KhAFMPUEPRU3mK2t2` | MLflow off the loop, grader-id checks, quota ledger lock, CLI and fs edge cases (O-02, O-03, O-05, O-06, L-01..L-04, L-08..L-10) | ready for review (CI green) | fault profile `garbled-reads` only |
+| #44 | `feat/fs-edit-tools` | `…KhAFMPUEPRU3mK2t2` | `fsx` server: edit, append, move, mkdir, tree | draft, reserved | new server only |
+| #45 | `feat/env-code-git` | `…KhAFMPUEPRU3mK2t2` | Code runner + git servers, `tests_pass` check | draft, reserved | new servers; sandbox image tag |
+| #46 | `feat/env-business-api` | `…KhAFMPUEPRU3mK2t2` | Mock business API server (CRM, invoicing, ticketing) | draft, reserved | new server only |
+| #47 | `feat/env-docs` | `…KhAFMPUEPRU3mK2t2` | Documents server (docx, xlsx, pdf) | draft, reserved | new server; sandbox image tag |
+| #48 | `feat/graders-depth` | `…KhAFMPUEPRU3mK2t2` | Unordered rows, number tolerance, JSON schema, grader versions, re-grading | draft, reserved | scoring only for tasks adopting new kinds |
+| #49 | `feat/rubric-judge` | `…KhAFMPUEPRU3mK2t2` | Rubric judge with calibration | draft, reserved | scoring for tasks using it |
+| #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | draft, reserved | new optional recipe field |
+| #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | draft, reserved | new optional recipe fields |
+| #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | draft, reserved | new tasks only |
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
 *Layout* lines), `CLAUDE.md` (one row at the end of *Where things go*), `src/harness_factory/cli/main.py` (two
@@ -51,3 +67,7 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 |---|---|---|
 | 0008 | `…JZLSKyEhjaA4sxi9R` | V5 orchestrator (in #28) |
 | 0009 | `…JtRe49bgfAAmdaB6W` | Authoring layer: one service behind CLI, API and UI |
+| 0012 | `…KhAFMPUEPRU3mK2t2` | Running code in the sandbox (in #45) |
+| 0013 | `…KhAFMPUEPRU3mK2t2` | Non-stdlib MCP server dependencies (in #47) |
+| 0014 | `…KhAFMPUEPRU3mK2t2` | LLM judge and its calibration (in #49) |
+| 0015 | `…KhAFMPUEPRU3mK2t2` | Context management (in #50) |

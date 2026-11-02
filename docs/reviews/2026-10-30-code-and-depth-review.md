@@ -276,5 +276,20 @@ and updates the requirements doc where `CLAUDE.md` asks.
 - Postgres checkpointer and Langfuse in compose.
 - Allocation planner and calibration: #36 and #35, `session:core`.
 
-**Ledger.** These rows belong in `docs/coordination/sessions.md`, which arrives with #33. Once #33 merges, this
-session adds its session row, the PR rows above and ADRs 0012–0015 in its own PR, per ledger rule 3.
+**Ledger.** This session's rows (#38–#52, ADRs 0012–0015) are in `docs/coordination/sessions.md`.
+
+### Status (2026-11-02)
+
+**Wave 1 (#39–#43): ready for review, CI green on each.** All five merged together onto `main` (at `3794b63`)
+with no text conflicts. The combined result passes:
+
+- 443 tests (7 Docker skips here);
+- `validate`, `tools freeze --check` and `reference` (23/23);
+- every CI smoke gate: P0 20/20, V3/V4/V5 60/60, matrix 120/120, faults 40/40.
+
+Merge in any order: the second PR rebases and re-runs CI. Two cross-PR notes:
+
+- **#40 and #41** both edit `runner/runner.py`, in different hunks, and they merge cleanly.
+- **#39 and #34:** #39's catalog-wide hedge test also checks task batch 3. `b3-01`'s answer check has the same
+  hedge hole, and `b3-02`'s is anchored on `^`. Whichever of #34 and #39 merges second must tighten those two
+  checks.
