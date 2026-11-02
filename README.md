@@ -350,6 +350,49 @@ run:<run-key-short>
 Spans carry OpenInference attributes (Phoenix) and `gen_ai.*` attributes (Langfuse). With no OTLP endpoint set,
 traces are still written to `var/traces/<trace_id>.jsonl`.
 
+## Changing the results schema
+
+The results store schema is versioned with Alembic. The revisions are in
+`src/harness_factory/results/migrations/versions/`. `ResultsStore()` upgrades the store to the head revision
+when it opens it, on SQLite and on Postgres, so no setup step is needed. A store already at head is not
+migrated again.
+
+- **`0001` is the baseline.** It is the schema main had before Alembic (`runs`, `cost_baselines`). A store
+  created before Alembic has no `alembic_version` table. The baseline adopts it: it creates a missing table and
+  adds a missing nullable column, as the old in-code migration did. Then it records `0001`. Never edit `0001`
+  or any other merged revision.
+- **A store written by newer code is refused.** If its revision is unknown to this checkout, the store is not
+  opened, and the error says so. Use another `HF_RESULTS_URL` per branch if your branches change the schema.
+
+To add a column or a table:
+
+1. Change the table in `results/store.py` (`metadata`).
+2. Add a revision whose `down_revision` is the current head. Use the next number as its id:
+
+   ```bash
+   HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini upgrade head
+   HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini \
+       revision --autogenerate --rev-id 0002 -m "add runs.tools_hash"
+   ```
+
+   Autogenerate compares the database with `metadata`. Read what it wrote and keep only your change. For
+   SQLite, the environment renders ALTERs in batch mode. Write a `downgrade()` too.
+3. Run `uv run pytest -q tests/test_results_store.py`. Its tests fail when `metadata` and the head revision
+   differ, when there are two heads, or when a revision does not downgrade.
+
+A new column is nullable, or it has a `server_default`, because existing rows need a value. A rename or a
+type change is a revision of its own. It is never done by editing `metadata` alone.
+
+**Two PRs, one parent.** If two open PRs each add `0002` on top of `0001`, the second one to merge gets two
+heads, and `test_migrations_have_one_head` fails. Rebase that revision: give it the next id and set its
+`down_revision` to the revision that merged first.
+
+**Postgres.** The store tests run on SQLite and Postgres. In CI, Postgres is a testcontainers container
+(`HF_REQUIRE_POSTGRES=1`, so these tests fail rather than skip there). Locally they use Docker if Docker is
+available. To use a server you already run, such as the compose `postgres` service, set
+`HF_TEST_POSTGRES_URL=postgresql+psycopg://hf:hf@localhost:5432/hf`. Each test creates its own database there
+and drops it afterwards. With neither Docker nor that variable, the Postgres variants are skipped.
+
 ## Layout
 
 ```
@@ -374,7 +417,7 @@ src/harness_factory/
   provision/              Provisioner, task class key                               (B5)
   providers/              ProviderCatalog, QuotaLedger                              (B6)
   runner/                 RunKey, CostLedger, run_one / run_reference / smoke       (B7)
-  grading/ results/       graders, EffectivenessRecord, ResultsStore                (B8)
+  grading/ results/       graders, EffectivenessRecord, ResultsStore + migrations   (B8)
   mlops/                  MLflow tracker                                            (B9)
   mcp/                    MCPClient, MCPSessionPool, ToolCatalog                    (B11)
   observability/          Span, Tracer (JSONL + OTLP)
