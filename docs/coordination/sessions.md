@@ -40,9 +40,9 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #33 | `chore/session-ledger` | `…JtRe49bgfAAmdaB6W` | This ledger + CLAUDE.md pointer | open | no |
 | #34 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3, written by an independent author | ready for review | yes (new tasks and seeds) |
 | #35 | `feat/provider-calibration` | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (P2) | ready for review | no (two nullable run columns, one table) |
-| #36 | `feat/allocation-planner` | `…JZLSKyEhjaA4sxi9R` | Allocation planner (P2) | draft, reserved | no |
+| #36 | `feat/allocation-planner` | `…JZLSKyEhjaA4sxi9R` | Allocation planner (P2) | ready for review (stacked on #35; CI green) | no |
 | #37 | `docs/test-matrix-notes` | `…JZLSKyEhjaA4sxi9R` | Test-matrix design notes, benchmark example | ready for review | no |
-| #53 | `feat/runner-axis` | `…JZLSKyEhjaA4sxi9R` | Runner axis: LangGraph prebuilt, LlamaIndex agent | draft, reserved, open for handover | no (new optional recipe field) |
+| #53 | `feat/runner-axis` | `…JZLSKyEhjaA4sxi9R` | Runner axis: LangGraph prebuilt, LlamaIndex agent | ready for review (stacked on #35; CI green) | no (new optional recipe field) |
 | #54 | `feat/runner-ms-agent-framework` | `…JZLSKyEhjaA4sxi9R` | Microsoft Agent Framework runner | draft, reserved, open for handover | no |
 | #55 | `feat/runner-sk-autogen` | `…JZLSKyEhjaA4sxi9R` | Semantic Kernel and AutoGen runners | draft, reserved, open for handover | no |
 | #56 | `feat/runner-more` | `…JZLSKyEhjaA4sxi9R` | LangGraph supervisor, CrewAI, OpenAI Agents SDK, Pydantic AI runners | draft, reserved, open for handover | no |
@@ -50,8 +50,8 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #58 | `feat/gateway-litellm-router` | `…JZLSKyEhjaA4sxi9R` | LiteLLM Router inside ModelGateway | ready for review (CI green) | no |
 | #59 | `feat/tool-call-emulation` | `…JZLSKyEhjaA4sxi9R` | Tool-call emulation with instructor | ready for review (CI green) | no |
 | #60 | `feat/langgraph-checkpointer` | `…JZLSKyEhjaA4sxi9R` | LangGraph checkpointer: pause and resume | ready for review (CI green) | no |
-| #61 | `feat/bench-file` | `…JZLSKyEhjaA4sxi9R` | `hfx bench` and recipe-vs-recipe report | draft, reserved, open for handover | no |
-| #62 | `feat/selector-pooled-cells` | `…JZLSKyEhjaA4sxi9R` | Selector on calibrated pooled cells | draft, reserved, open for handover | no |
+| #61 | `feat/bench-file` | `…JZLSKyEhjaA4sxi9R` | `hfx bench` and recipe-vs-recipe report | ready for review (stacked on #37; CI green) | no |
+| #62 | `feat/selector-pooled-cells` | `…JZLSKyEhjaA4sxi9R` | Selector on calibrated pooled cells | ready for review (stacked on #35; CI green) | no |
 | #63 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class | draft, reserved, open for handover | no |
 | #64 | `chore/storage-alembic` | `…JZLSKyEhjaA4sxi9R` | Alembic migrations, Postgres in CI | ready for review (CI green) | no |
 | #65 | `chore/langfuse-compose` | `…JZLSKyEhjaA4sxi9R` | Langfuse in compose | ready for review (CI green) | no |
