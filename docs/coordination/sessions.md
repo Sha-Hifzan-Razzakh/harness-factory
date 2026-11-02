@@ -47,15 +47,15 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #55 | `feat/runner-sk-autogen` | `…JZLSKyEhjaA4sxi9R` | Semantic Kernel and AutoGen runners | draft, reserved, open for handover | no |
 | #56 | `feat/runner-more` | `…JZLSKyEhjaA4sxi9R` | LangGraph supervisor, CrewAI, OpenAI Agents SDK, Pydantic AI runners | draft, reserved, open for handover | no |
 | #57 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex | draft, reserved, open for handover | no (new server only) |
-| #58 | `feat/gateway-litellm-router` | `…JZLSKyEhjaA4sxi9R` | LiteLLM Router inside ModelGateway | draft, reserved, open for handover | no |
-| #59 | `feat/tool-call-emulation` | `…JZLSKyEhjaA4sxi9R` | Tool-call emulation with instructor | draft, reserved, open for handover | no |
-| #60 | `feat/langgraph-checkpointer` | `…JZLSKyEhjaA4sxi9R` | LangGraph checkpointer: pause and resume | draft, reserved, open for handover | no |
+| #58 | `feat/gateway-litellm-router` | `…JZLSKyEhjaA4sxi9R` | LiteLLM Router inside ModelGateway | ready for review (CI green) | no |
+| #59 | `feat/tool-call-emulation` | `…JZLSKyEhjaA4sxi9R` | Tool-call emulation with instructor | ready for review (CI green) | no |
+| #60 | `feat/langgraph-checkpointer` | `…JZLSKyEhjaA4sxi9R` | LangGraph checkpointer: pause and resume | ready for review (CI green) | no |
 | #61 | `feat/bench-file` | `…JZLSKyEhjaA4sxi9R` | `hfx bench` and recipe-vs-recipe report | draft, reserved, open for handover | no |
 | #62 | `feat/selector-pooled-cells` | `…JZLSKyEhjaA4sxi9R` | Selector on calibrated pooled cells | draft, reserved, open for handover | no |
 | #63 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class | draft, reserved, open for handover | no |
-| #64 | `chore/storage-alembic` | `…JZLSKyEhjaA4sxi9R` | Alembic migrations, Postgres in CI | draft, reserved, open for handover | no |
-| #65 | `chore/langfuse-compose` | `…JZLSKyEhjaA4sxi9R` | Langfuse in compose | draft, reserved, open for handover | no |
-| #66 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks | draft, reserved, open for handover | no |
+| #64 | `chore/storage-alembic` | `…JZLSKyEhjaA4sxi9R` | Alembic migrations, Postgres in CI | ready for review (CI green) | no |
+| #65 | `chore/langfuse-compose` | `…JZLSKyEhjaA4sxi9R` | Langfuse in compose | ready for review (CI green) | no |
+| #66 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks | ready for review (CI green) | no |
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
 *Layout* lines), `CLAUDE.md` (one row at the end of *Where things go*), `src/harness_factory/cli/main.py` (two
