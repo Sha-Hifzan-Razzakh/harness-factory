@@ -1,0 +1,38 @@
+id: biz-02
+version: 1
+domain: api
+instruction: How much does Oasis Foods owe us on overdue invoices as of today? Answer with the amount.
+env_seed:
+  files: ../../seeds/biz/files
+  biz_state: ../../seeds/biz/state.json
+allowed_tools:
+- biz.crm_search_contacts
+- biz.crm_get_contact
+- biz.inv_list_invoices
+- biz.inv_get_invoice
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- biz
+- read
+- reconcile
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?s)^(?!.*(?<![\d.,])(?:2,?362\.50?|4,?168\.50?|2,?677\.50?)(?![\d]))(?=.*(?<![\d.,])1,?837\.50?(?![\d]))
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: biz.inv_list_invoices
+  - id: data_unchanged
+    kind: biz_equals
+    weight: 0
+    critical: true
+    path: /meta/sequences
+    text: '{"credit_note": 4, "comment": 3}'

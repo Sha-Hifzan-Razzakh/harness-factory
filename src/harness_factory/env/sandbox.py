@@ -27,6 +27,7 @@ from typing import Protocol
 from harness_factory import settings
 from harness_factory.env.mcp.impl import proc
 from harness_factory.env.mcp.servers import MCPServerSpec
+from harness_factory.env.state import BIZ_FILE
 from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.tasks.model import Task
 
@@ -38,6 +39,7 @@ SKILLS_IN_CONTAINER = "/state/skills"   # installed by the provisioner next to t
 GIT_DIR_IN_CONTAINER = "/state/git"     # a git-seeded task's repository, outside the workspace (ADR 0012)
 PROBE_MODULE = "harness_factory.env.mcp.impl.proc"
 PROBE_SLACK_S = 60                      # on top of the probe's own limit, before it counts as an infrastructure fault
+BIZ_IN_CONTAINER = f"/state/{BIZ_FILE}"  # the biz server's business state, next to the database (env_seed.biz_state)
 
 
 class Sandbox(Protocol):
@@ -88,17 +90,30 @@ class LocalSandbox:
             except proc.ProcError as e:
                 raise HarnessError(ErrorKind.SANDBOX, f"{task.key()} needs a git repository: {e}") from e
 
+        biz = task.env_seed.biz_seed(task.source_dir)
+        if biz is not None:                                # a fresh copy per run: the seed itself is never written
+            try:
+                if not isinstance(json.loads(biz.read_text()), dict):
+                    raise ValueError("not a JSON object")
+            except ValueError as e:
+                raise ValueError(f"{task.key()}: biz_state seed {biz} is not a JSON object: {e}") from e
+            shutil.copyfile(biz, self.biz_path)
+
     @property
     def git_dir(self) -> Path:
         return self.db_path.parent / "git"
 
     def env(self) -> dict[str, str]:
         return {"HF_WORKSPACE": str(self.workspace), "HF_DB": str(self.db_path), "HF_SKILLS": str(self.skills_dir),
-                "HF_GIT_DIR": str(self.git_dir)}
+                "HF_GIT_DIR": str(self.git_dir), "HF_BIZ": str(self.biz_path)}
 
     @property
     def skills_dir(self) -> Path:
         return self.db_path.parent / "skills"
+
+    @property
+    def biz_path(self) -> Path:
+        return self.db_path.parent / BIZ_FILE
 
     def launch(self, spec: MCPServerSpec) -> Launch:
         return sys.executable, ["-m", spec.module], self.env()
@@ -183,7 +198,8 @@ class DockerSandbox(LocalSandbox):
 
     def env(self) -> dict[str, str]:
         return {"HF_WORKSPACE": WORKSPACE_IN_CONTAINER, "HF_DB": DB_IN_CONTAINER, "HF_SKILLS": SKILLS_IN_CONTAINER,
-                "HF_GIT_DIR": GIT_DIR_IN_CONTAINER}
+                "HF_GIT_DIR": GIT_DIR_IN_CONTAINER,
+                "HF_BIZ": BIZ_IN_CONTAINER}
 
     def launch(self, spec: MCPServerSpec) -> Launch:
         env_flags = [x for k, v in self.env().items() for x in ("-e", f"{k}={v}")]

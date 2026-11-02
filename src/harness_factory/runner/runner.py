@@ -283,18 +283,18 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
          faults: list[str | None] | None = None) -> list[RunSpec]:
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
     faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
-    A recipe that can't call every tool a task allows is not planned on it (the selector's `reaches_task_tools`
-    would prune it anyway): v2-base never runs a task that needs the git server."""
+    A recipe that can't call every tool a task allows is not planned on it (`provisioner.reaches`, the rule the
+    selector prunes by): v2-base never runs a task that needs the git or biz server."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
-    from harness_factory.provision.provisioner import missing_task_tools
+    from harness_factory.provision.provisioner import reaches as recipe_reaches
 
     def reaches(t: Task, rid: str) -> bool:
-        return rid not in f.recipes or not missing_task_tools(f.recipes[rid], t, f.declared)
+        return rid not in f.recipes or recipe_reaches(f.recipes[rid], t, f.declared)
 
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)

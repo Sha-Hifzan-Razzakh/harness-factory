@@ -5,6 +5,7 @@ don't: each hand-written script falls into one trap, and the check that should c
 
 import pytest
 
+from harness_factory.provision.provisioner import reaches
 from harness_factory.runner.runner import run_one
 from harness_factory.substrate.gateway import ScriptedBackend
 from harness_factory.tasks.model import WeightedCheck
@@ -18,8 +19,15 @@ def say(text: str) -> dict:
     return {"content": text}
 
 
-async def failed_checks(factory, task_id, *turns, recipe: str = "v2-base") -> tuple[str, set[str]]:
-    rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes[recipe], "scripted/replay",
+def recipe_for(factory, task_id):
+    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git)."""
+    task = factory.tasks.get(task_id)
+    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code") if reaches(factory.recipes[r], task, factory.declared))
+
+
+async def failed_checks(factory, task_id, *turns, recipe: str | None = None) -> tuple[str, set[str]]:
+    rec = await run_one(factory, factory.tasks.get(task_id),
+                        factory.recipes[recipe] if recipe else recipe_for(factory, task_id), "scripted/replay",
                         "scripted", backend=ScriptedBackend([*turns, say("done")]))
     state = next(g for g in rec.grades if g["grader_id"] == "state_diff")
     return rec.status.value, {c["id"] for c in state["checks"] if not c["passed"]}
@@ -27,6 +35,15 @@ async def failed_checks(factory, task_id, *turns, recipe: str = "v2-base") -> tu
 
 GROUND = call("sql.query", sql="SELECT 1")
 SVC_READ = call("fs.read_file", path="service/config/prod.ini")
+
+
+TKT_READ = call("biz.tkt_get", id="T-2041")
+CLOSE = call("biz.tkt_close", id="T-2041", resolution="Credited the torn mats.")
+OASIS = call("biz.inv_list_invoices", customer_id="C-1004")
+
+
+def credit(amount) -> dict:
+    return call("biz.inv_create_credit_note", invoice_id="INV-1042", amount=amount, reason="T-2041: torn mats")
 
 
 def read(factory, task_id, path) -> str:
@@ -84,6 +101,20 @@ TRAPS = [
     ("code-01", "bumped the dependency pin too", ["bump_all"], {"dependency_pins_untouched"}),
     ("docs-01", "kept the chore and put 2.4.0 at the bottom", ["changelog_bottom"], {"newest_first", "no_chores"}),
     ("res-01", "trusted the base default for prod and dev", [SVC_READ, say("staging")], {"answer"}),
+    # biz-01: the ticket asks to credit two mats and the delivery; one mat was credited already (CN-0003), the
+    # policy adds VAT and never credits delivery. One torn mat is 150.00 + 5% = 157.50.
+    ("biz-01", "credited both mats", [TKT_READ, credit(315), CLOSE], {"credited_total"}),
+    ("biz-01", "left out VAT", [TKT_READ, credit(150), CLOSE], {"credited_total"}),
+    ("biz-01", "credited the delivery too", [TKT_READ, credit(157.5 + 63), CLOSE], {"credited_total"}),
+    ("biz-01", "split the credit over two notes", [TKT_READ, credit(100), credit(57.5), CLOSE], {"one_credit_note"}),
+    ("biz-01", "closed the ticket without a credit", [TKT_READ, CLOSE], {"credited_total", "one_credit_note"}),
+    ("biz-01", "credited but left the ticket open", [TKT_READ, credit(157.5)], {"ticket_closed"}),
+    # biz-02: 1,837.50 = INV-1036's balance after CN-0002 (1,050.00) + INV-1039 (787.50, the second contact)
+    ("biz-02", "ignored the credit note", [OASIS, say("AED 2,362.50")], {"answer"}),
+    ("biz-02", "only one of the two Oasis Foods contacts", [OASIS, say("AED 1,050.00")], {"answer"}),
+    ("biz-02", "counted Oasis Foods Trading too", [OASIS, say("AED 4,168.50")], {"answer"}),
+    ("biz-02", "counted the invoice that isn't due yet", [OASIS, say("AED 2,677.50")], {"answer"}),
+    ("biz-02", "hedged between two totals", [OASIS, say("Either AED 1,837.50 or AED 2,362.50")], {"answer"}),
 ]
 
 
@@ -198,7 +229,7 @@ ALL_TASKS = [t.id for t in __import__("harness_factory.tasks.registry", fromlist
 async def test_a_run_that_does_nothing_scores_zero(factory, task_id):
     """CLAUDE.md, "No free credit": checks that pass on the untouched seed (a negated check, "no duplicates",
     "valid JSON") must be guards or be tied to the change the task asks for."""
-    rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v2-base"], "scripted/replay",
+    rec = await run_one(factory, factory.tasks.get(task_id), recipe_for(factory, task_id), "scripted/replay",
                         "scripted", backend=ScriptedBackend([say("I could not complete the task.")]))
     passed = [c["id"] for g in rec.grades if g["grader_id"] == "state_diff" for c in g["checks"]
               if c["passed"] and c["weight"] > 0]

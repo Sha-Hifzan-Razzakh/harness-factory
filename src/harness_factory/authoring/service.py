@@ -44,7 +44,7 @@ from harness_factory.authoring.models import (
     SkillIn,
 )
 
-BUILTIN_SERVERS = frozenset({"fs", "fsx", "sql", "search", "skills", "code", "git"})   # code depends on them: edit in the repo
+BUILTIN_SERVERS = frozenset({"fs", "fsx", "sql", "search", "skills", "code", "git", "biz"})   # code depends on them: edit in the repo
 TOOLS_FILE = "catalog/tools.yaml"
 DIMENSIONS = ("variant", "tier", "model_slots", "tools", "skills", "prompts", "config", "policies", "memory",
               "retrieval", "workflow", "delegation", "planning")

@@ -84,6 +84,13 @@ def runs_task_code(recipe: HarnessRecipe, task: Task) -> bool:
     return CODE_SERVER in recipe.tools.mcp_servers or any(c.kind == "tests_pass" for c in task.oracle.checks)
 
 
+def reaches(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> bool:
+    """Whether the recipe can attempt the task at all: it can call every tool the task allows directly (servers
+    such as biz, code or git included). A recipe that doesn't open a task's server isn't a weaker harness for it,
+    it is no harness for it, so campaigns leave that pair out and the selector prunes it."""
+    return not missing_task_tools(recipe, task, declared)
+
+
 def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend | None:
     if provider_kind != "scripted":
         return None

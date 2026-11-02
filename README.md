@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 23 tasks and their class keys (3 held out)
+hfx tasks                 # 25 tasks and their class keys (3 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -188,6 +188,46 @@ Two servers let a task involve running code and version control:
 - **Campaigns plan only what a recipe can reach.** A recipe that can't call every tool a task allows is not
   planned on that task, the same rule the selector prunes by. So `v2-base` skips `code-02` and `code-03`, and
   `v2-code` (below) runs them.
+## Business systems
+
+The `biz` server is a local, offline mock of a company's back office, served over stdio from the sandbox like
+`fs` and `sql`. Its state is one JSON document: a task names its seed with `env_seed.biz_state`, and every run
+gets a fresh copy in its state folder (`HF_BIZ`, next to the database; never in the workspace, so `fs` can't
+edit it). New ids come from sequences in the state and "today" is the seed's `meta.today`, so runs repeat
+exactly. The seed is generated (`scripts/taskgen/biz.py`) with the server's own arithmetic.
+
+| Tool | Side effect | Notes |
+|---|---|---|
+| `crm_search_contacts`, `crm_get_contact` | READ | search by name, company or email; paged |
+| `crm_update_contact` | REVERSIBLE R1 | editable fields only; email and tier validated |
+| `inv_list_invoices`, `inv_get_invoice` | READ | filter by status and customer; balance due and overdue as of today |
+| `inv_create_credit_note` | REVERSIBLE R2 | at most what is left to credit; undone by `inv_void_credit_note` |
+| `inv_void_credit_note` | REVERSIBLE R2 | the invoice owes the amount again; undone by issuing the credit again |
+| `inv_mark_paid` | IRREVERSIBLE R3 | a recorded payment can't be removed |
+| `tkt_list`, `tkt_get` | READ | paged; the full ticket with its comments |
+| `tkt_comment` | REVERSIBLE R1 | internal note; commenting on a closed ticket reopens it |
+| `tkt_close` | REVERSIBLE R1 | with a resolution; undone by a comment |
+
+A tool is REVERSIBLE only when the mock itself can undo it. Refusals (unknown ids, a field that can't be edited,
+crediting more than is left, a payment dated in the future) are `ToolError`s with the reason, so the model can
+correct itself. List tools return at most 50 records per page, with `total` and `next_offset`.
+
+Graders read the state after the run with a JSON pointer, compared strictly on type (`1` never matches `true`,
+`"42"` never matches `42`):
+
+```yaml
+- {id: credited_total, kind: biz_equals, weight: 0.5, path: /invoices/INV-1042/credited, text: "315.0"}
+- {id: one_credit_note, kind: biz_count, weight: 0.2, path: /credit_notes,
+   query: '{"invoice_id": "INV-1042", "status": "issued"}', text: "2"}
+- {id: others_untouched, kind: biz_equals, weight: 0, critical: true, path: /invoices/INV-1041, text: '{...}'}
+```
+
+The state diff lists changed records (`+biz credit_notes/CN-0004; ~biz invoices/INV-1042`).
+
+**A remote variant** (not built): the same tools behind `transport: streamable_http` with a `tenant:` would
+exercise the test-tenant path end to end. Its `_tenant_reset(state)` would load `env_seed.mock_api_state[<id>]`
+(the same JSON document) into a per-tenant dict instead of a file, `_tenant_export()` would return it, and
+`remote_equals` checks would read it, so a task could be graded the same way on either transport.
 
 ## Remote MCP servers
 
@@ -396,6 +436,7 @@ catalog/                  data, versioned with the code
   seeds/shop/             shop database (customers, products, price history, orders, refunds) + tickets, CSVs
   seeds/service/          a service repo: configs per environment, feature flags, logs, changelog, runbook
   seeds/pricing/          a small Python package with tests, committed as a git repository by the sandbox
+  seeds/biz/              back-office state (contacts, invoices, credit notes, tickets) + the refund policy
   tasks/<id>/             task.yaml (instruction, allowance, oracle) + reference.py (PLAN, FINAL)
 prompts/                  Jinja2 prompt layers (system/, task/)
 observability/            OTel collector config
@@ -484,6 +525,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 |---|---|---|
 | prompt | `v2-plan-check` | System prompt asks for a numbered plan with the first tool call and a check before the final answer (`prompts/system/plan_check.j2`) |
 | config | `v2-recover` | When the provider rejects a reply as malformed (a call to a tool that doesn't exist, Phase 1's `code-01`), re-ask with the error and the real tool list, at most twice per run (`config.recover_malformed`) |
+| tools | `v2-biz` | Adds the `biz` server: a mock back office with CRM, invoicing and ticketing tools over the run's business state (see [Business systems](#business-systems)) |
 | tools | `v2-search` | Adds the `search` server: `search.find` (files by name) and `search.grep` (contents, `path:line: text`). Phase 1's `code-01` model reached for a search tool that wasn't there |
 | tools | `v2-fsx` | Adds the `fsx` server: `fsx.edit` (exact-string replace), `fsx.append`, `fsx.move`, `fsx.mkdir` and `fsx.tree`. `fs` can only rewrite a whole file |
 | skills | `v2-skills-upfront` | Every skill's how-to appended to the system prompt (about 5k characters) |
@@ -749,7 +791,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-23 tasks over three seeds. The first five are the P0 smoke set. The other eighteen each hide a trap that a
+25 tasks over four seeds. The first five are the P0 smoke set. The other twenty each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -778,6 +820,13 @@ careless harness falls into: the right answer and the plausible wrong one differ
 
 `code-02` and `code-03` (ADR 0012) use a fourth seed, `pricing` (a small package with tests, in a git
 repository), and run under `v2-code`.
+| `biz-01` | unknown path, irreversible, R2 | DEV | The ticket asks to credit two torn mats and the delivery; one mat was credited already, VAT is added, delivery never is |
+| `biz-02` | unknown path, read, R0 | TEST | Overdue total for a company: two contacts, a credit note, a look-alike company, an invoice not yet due |
+
+The `biz-*` tasks need the `biz` server, which only `v2-biz` opens. Campaigns leave out a task x recipe pair
+whose recipe can't call every tool the task allows, a server it doesn't open included (`provisioner.reaches`; `hfx smoke` lists what it left out),
+so `v2-base` still runs the same 20 visible tasks. `biz-01` is irreversible by class because its allowance
+(`biz.*`) includes `inv_mark_paid`, which the policy says support must never call.
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
@@ -797,6 +846,7 @@ Oracle checks, with weights summing to 1:
 - `git_log_contains` (ADR 0012): a commit on `ref` (default `HEAD`) after the seed commit, whose message matches
   `pattern` and which touches `path` if one is given. With `negate` it means no such commit, which is the
   "leave `main` alone" guard. The task needs `env_seed.git: true`.
+- `biz_equals` and `biz_count`: the business state after the run (see [Business systems](#business-systems)).
 
 A check with `weight: 0, critical: true` is a **guard**: it earns nothing, but failing it zeroes the run. Use
 guards for "don't touch anything else", so a run that does nothing can't collect preservation credit.

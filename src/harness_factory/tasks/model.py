@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from enum import Enum
 from pathlib import Path
@@ -29,7 +30,8 @@ class Split(str, Enum):
 
 
 CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent", "json_valid", "sql_rows",
-                    "output_regex", "tool_called", "remote_equals", "tests_pass", "git_log_contains"]
+                    "output_regex", "tool_called", "remote_equals", "tests_pass", "git_log_contains",
+                    "biz_equals", "biz_count"]
 GIT_CHECKS = ("git_log_contains",)
 
 
@@ -39,10 +41,12 @@ class WeightedCheck(BaseModel):
     weight: float = Field(ge=0, le=1)  # 0 = guard check: earns nothing, but failing it is critical
     critical: bool = False
     path: str | None = None          # file_* checks, relative to the workspace; remote_equals: "<server>:<JSON
-                                     # pointer>" into that server's test tenant after the run (EXT-07)
-    text: str | None = None          # file_equals / file_contains; remote_equals: the value (a string, or JSON)
-    negate: bool = False             # file_contains / file_regex: must NOT match
-    query: str | None = None         # sql_rows
+                                     # pointer>" into that server's test tenant after the run (EXT-07);
+                                     # biz_equals / biz_count: a JSON pointer into the business state after the run
+    text: str | None = None          # file_equals / file_contains; remote_equals / biz_equals: the value (a string,
+                                     # or JSON, compared strictly on type); biz_count: the expected count
+    negate: bool = False             # file_contains / file_regex / remote_equals / biz_equals: must NOT match
+    query: str | None = None         # sql_rows; biz_count: optional JSON object of field values a record must have
     rows: list[list[Any]] | None = None
     pattern: str | None = None       # output_regex, file_regex (re.MULTILINE; add (?s) to cross lines);
                                      # tool_called (fnmatch on tool ref, successful calls only);
@@ -59,7 +63,8 @@ class WeightedCheck(BaseModel):
         needs = {"file_equals": ("path", "text"), "file_contains": ("path", "text"), "file_regex": ("path", "pattern"),
                  "file_absent": ("path",), "json_valid": ("path",), "sql_rows": ("query", "rows"),
                  "output_regex": ("pattern",), "tool_called": ("pattern",),
-                 "remote_equals": ("path", "text"), "tests_pass": (), "git_log_contains": ("pattern",)}[self.kind]
+                 "remote_equals": ("path", "text"), "tests_pass": (), "git_log_contains": ("pattern",),
+                 "biz_equals": ("path", "text"), "biz_count": ("path", "text")}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -73,6 +78,18 @@ class WeightedCheck(BaseModel):
         if self.kind == "tests_pass" and self.path and self.text:
             raise ValueError(f"check {self.id}: tests_pass runs either `path` (in the workspace) or `text` (hidden "
                              f"tests), not both")
+        if self.kind in ("biz_equals", "biz_count") and self.path and not self.path.startswith("/"):
+            raise ValueError(f"check {self.id}: {self.kind} path is a JSON pointer, e.g. '/invoices/INV-1042/status'")
+        if self.kind == "biz_count":
+            if not (self.text or "").isdigit():
+                raise ValueError(f"check {self.id}: biz_count text is the expected count, a whole number")
+            if self.query is not None:
+                try:
+                    where = json.loads(self.query)
+                except ValueError as e:
+                    raise ValueError(f"check {self.id}: biz_count query is a JSON object: {e}") from e
+                if not isinstance(where, dict):
+                    raise ValueError(f"check {self.id}: biz_count query is a JSON object of field values")
         if self.pattern is not None and self.kind in ("file_regex", "output_regex", "git_log_contains"):
             try:
                 re.compile(self.pattern)
@@ -101,15 +118,24 @@ class EnvSeed(BaseModel):
     # A git repository over the seed files with one commit, made identically everywhere (ADR 0012). Hashed only
     # when set, so tasks without it keep their hash.
     git: bool = False
+    biz_state: str | None = None      # JSON file: the biz server's business state (a fresh copy each run)
 
     def resolve(self, task_dir: Path) -> tuple[Path | None, Path | None]:
         f = (task_dir / self.files).resolve() if self.files else None
         s = (task_dir / self.sqlite).resolve() if self.sqlite else None
         return f, s
 
+    def biz_seed(self, task_dir: Path) -> Path | None:
+        return (task_dir / self.biz_state).resolve() if self.biz_state else None
+
     def data_hash(self, task_dir: Path) -> str:
         f, s = self.resolve(task_dir)
-        return hash_paths([p for p in (f, s) if p is not None])
+        return hash_paths([p for p in (f, s, self.biz_seed(task_dir)) if p is not None])
+
+
+# Seed fields added after tasks were first hashed: left out of the task hash while unset, so existing task hashes
+# stay the same (like recipes' _HASH_OMIT_WHEN_NONE).
+_SEED_OMIT_WHEN_NONE = ("biz_state",)
 
 
 class Task(BaseModel):
@@ -144,6 +170,9 @@ class Task(BaseModel):
     def content_hash(self) -> str:
         data = self.model_dump(mode="json", exclude={"status", "split", "tags"})   # labels, not identity
         # Fields added after tasks were first hashed: dropped when unset, so existing task hashes don't change.
+        for k in _SEED_OMIT_WHEN_NONE:
+            if data["env_seed"].get(k) is None:
+                data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
             if c.get("ref") is None:
                 c.pop("ref", None)

@@ -32,7 +32,7 @@ from inspect_ai.scorer import Score, Target, bootstrap_stderr, mean, scorer
 from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.tool import ToolCall
 
-from harness_factory.provision.provisioner import task_class
+from harness_factory.provision.provisioner import reaches, task_class
 from harness_factory.runner.runner import Factory, run_one
 from harness_factory.substrate.tools import tool_ref
 
@@ -111,6 +111,7 @@ def harness_factory(recipe: str = "v2-base", model: str = "scripted/replay", pro
     """One factory cell sweep as an Inspect task. `tasks` is an optional comma-separated list of task ids."""
     f = Factory.load()
     chosen = [f.tasks.get(t) for t in tasks.split(",")] if tasks else f.tasks.all()
+    chosen = [t for t in chosen if reaches(f.recipes[recipe], t, f.declared)]   # as campaigns plan them
     samples = [Sample(id=t.id, input=t.instruction,
                       metadata={"task_id": t.id, "task_version": t.key(), "task_class": task_class(t, f.declared)})
                for t in chosen]

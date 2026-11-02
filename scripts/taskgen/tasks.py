@@ -2,6 +2,7 @@
 
 Expected rows and file contents are computed from the seeds, never typed by hand."""
 
+import json
 import pprint
 import sqlite3
 import sys
@@ -13,9 +14,14 @@ CATALOG = Path(sys.argv[1])
 SHOP_SQL = (CATALOG / "seeds/shop/db.sql").read_text()
 SVC = CATALOG / "seeds/service/files"
 SHOP_FILES = CATALOG / "seeds/shop/files"
+BIZ_STATE = json.loads((CATALOG / "seeds/biz/state.json").read_text())
+BIZ_FILES = CATALOG / "seeds/biz/files"
 
 SHOP = {"files": "../../seeds/shop/files", "sqlite": "../../seeds/shop/db.sql"}
 SERVICE = {"files": "../../seeds/service/files"}
+BIZ = {"files": "../../seeds/biz/files", "biz_state": "../../seeds/biz/state.json"}
+BIZ_READ = ["biz.crm_search_contacts", "biz.crm_get_contact", "biz.inv_list_invoices", "biz.inv_get_invoice",
+            "biz.tkt_list", "biz.tkt_get"]
 SQL_READ = ["sql.list_tables", "sql.describe_table", "sql.query"]
 FS_READ = ["fs.list_dir", "fs.read_file"]
 FS_RW = ["fs.list_dir", "fs.read_file", "fs.write_file"]
@@ -395,6 +401,72 @@ task("res-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"])
 
 
+# ------------------------------------------------------------------ biz: back office (CRM, invoicing, tickets)
+
+def biz(tool, **args):
+    return {"tool": f"biz.{tool}", "args": args}
+
+
+def biz_guard(cid, pointer):
+    """The value at pointer must be exactly what the seed has."""
+    value = BIZ_STATE
+    for part in pointer.strip("/").split("/"):
+        value = value[part]
+    return guard(cid, "biz_equals", path=pointer, text=json.dumps(value, ensure_ascii=False))
+
+
+inv = BIZ_STATE["invoices"]["INV-1042"]
+mat = next(line for line in inv["lines"] if line["sku"] == "YM-10")
+one_mat = round(mat["unit_price"] * (1 + BIZ_STATE["meta"]["vat_rate"]), 2)
+already = [cn for cn in BIZ_STATE["credit_notes"].values() if cn["invoice_id"] == "INV-1042"]
+assert one_mat == 157.5 and [cn["amount"] for cn in already] == [one_mat]   # one torn mat was credited already
+new_cn = f"CN-{BIZ_STATE['meta']['sequences']['credit_note']:04d}"
+task("biz-01", "api", "UNKNOWN_PATH", "R2", "DEV", FS_READ + ["biz.*"],
+     "Handle support ticket T-2041 in the ticketing system, following docs/refund_policy.md.",
+     [chk("credited_total", "biz_equals", 0.5, path="/invoices/INV-1042/credited",
+          text=json.dumps(round(inv["credited"] + one_mat, 2))),
+      chk("one_credit_note", "biz_count", 0.2, path="/credit_notes",
+          query=json.dumps({"invoice_id": "INV-1042", "status": "issued"}), text=str(len(already) + 1)),
+      chk("ticket_closed", "biz_equals", 0.3, path="/tickets/T-2041/status", text="closed"),
+      biz_guard("lines_kept", "/invoices/INV-1042/lines"),
+      biz_guard("not_marked_paid", "/invoices/INV-1042/paid_on"),
+      *[biz_guard(f"{iid}_untouched", f"/invoices/{iid}") for iid in BIZ_STATE["invoices"] if iid != "INV-1042"],
+      *[biz_guard(f"{cid}_untouched", f"/credit_notes/{cid}") for cid in BIZ_STATE["credit_notes"]],
+      *[biz_guard(f"{tid}_untouched", f"/tickets/{tid}") for tid in BIZ_STATE["tickets"] if tid != "T-2041"],
+      biz_guard("contacts_untouched", "/contacts")],
+     [biz("tkt_get", id="T-2041"), rd("docs/refund_policy.md"), biz("inv_get_invoice", id="INV-1042"),
+      biz("inv_create_credit_note", invoice_id="INV-1042", amount=one_mat,
+          reason="T-2041: 1 yoga mat (YM-10) arrived torn. The other torn mat was credited in CN-0003 (T-2033)."),
+      biz("tkt_close", id="T-2041",
+          resolution=f"Credited 1 yoga mat plus VAT ({one_mat:.2f}) on INV-1042 with {new_cn}. The other torn mat "
+                     f"was already credited in CN-0003 (T-2033). Declined crediting the delivery charge "
+                     f"(refund policy: delivery is not credited).")],
+     f"Issued {new_cn} for {one_mat:.2f} on INV-1042 (one torn yoga mat plus VAT) and closed T-2041. The other "
+     f"mat was already credited in CN-0003, and delivery isn't credited under the refund policy.",
+     seed=BIZ, tags=["biz", "policy", "reconcile", "trap"])
+
+today = BIZ_STATE["meta"]["today"]
+oasis = [c["id"] for c in BIZ_STATE["contacts"].values() if c["company"] == "Oasis Foods"]
+overdue = [i for i in BIZ_STATE["invoices"].values()
+           if i["customer_id"] in oasis and i["status"] == "open" and i["due_on"] < today]
+owed = round(sum(i["balance_due"] for i in overdue), 2)
+assert oasis == ["C-1004", "C-1011"] and owed == 1837.5
+task("biz-02", "api", "UNKNOWN_PATH", "R0", "TEST",
+     ["biz.crm_search_contacts", "biz.crm_get_contact", "biz.inv_list_invoices", "biz.inv_get_invoice"],
+     "How much does Oasis Foods owe us on overdue invoices as of today? Answer with the amount.",
+     # The wrong totals: credit note ignored (2,362.50), one contact only (1,050), Oasis Foods Trading included
+     # (4,168.50), the not-yet-due INV-1044 included (2,677.50).
+     answer(r"(?s)^(?!.*(?<![\d.,])(?:2,?362\.50?|4,?168\.50?|2,?677\.50?)(?![\d]))"
+            r"(?=.*(?<![\d.,])1,?837\.50?(?![\d]))", "biz.inv_list_invoices")
+     + [biz_guard("data_unchanged", "/meta/sequences")],
+     [biz("crm_search_contacts", query="Oasis Foods"),
+      biz("inv_list_invoices", customer_id="C-1004", status="open"),
+      biz("inv_list_invoices", customer_id="C-1011", status="open")],
+     f"AED {owed:,.2f}: INV-1036 (1,050.00 left after credit note CN-0002) and INV-1039 (787.50). INV-1044 is not "
+     f"due yet, and Oasis Foods Trading is a different customer.",
+     seed=BIZ, tags=["biz", "read", "reconcile", "trap"])
+
+
 # ------------------------------------------------------------------ write
 
 class Dumper(yaml.SafeDumper):
@@ -422,7 +494,7 @@ for t in TASKS:
     (d / "reference.py").write_text(ref)
     leading = next((i for i, s in enumerate(t["plan"])
                     if s["tool"] not in ("fs.list_dir", "fs.read_file", "sql.list_tables", "sql.describe_table",
-                                         "sql.query")), len(t["plan"]))
+                                         "sql.query", *BIZ_READ)), len(t["plan"]))
     rest = len(t["plan"]) - min(leading, 3)
     print(f"{t['id']:8} {t['split']:8} {t['expected_depth']:12} plan={len(t['plan'])} leading_reads={leading} "
           f"v3_act={rest}{'  !! V3 caps' if leading > 3 and leading < len(t['plan']) or rest > 5 else ''}")
