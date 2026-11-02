@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from harness_factory.substrate.emulation import latest_tool_result, latest_user_text, unframed
 from harness_factory.substrate.tools import model_name
 from harness_factory.tasks.model import Task
 
@@ -88,10 +89,12 @@ class PlanBackend:
 
     @staticmethod
     def _last_tool_failed(messages: list[dict]) -> bool:
-        """What a careful model would notice: the last tool result is an error, or empty."""
-        if not messages or messages[-1].get("role") != "tool":
+        """What a careful model would notice: the last tool result is an error, or empty. Tool results are native
+        (role tool) or, for an emulated model, the "[Tool result ...]" messages the emulation writes."""
+        text = latest_tool_result(messages)
+        if text is None:
             return False
-        text = (messages[-1].get("content") or "").strip()
+        text = text.strip()
         return not text or text.lower().startswith(("error", "permission denied")) or "timed out" in text.lower()
 
     def _msg(self, name: str | None = None, args: dict | None = None, content: str | None = None) -> dict:
@@ -114,7 +117,7 @@ class PlanBackend:
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if self.delegate_pending and self.DELEGATE in offered:
             self.delegate_pending = False
-            ask = next((m.get("content") or "" for m in reversed(messages) if m.get("role") == "user"), "")
+            ask = latest_user_text(messages)
             msg = self._msg(self.DELEGATE, {"task": ask.removeprefix("Task: ")})
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if self.invent_pending and offered:
@@ -128,11 +131,11 @@ class PlanBackend:
             msg = self._msg(model_name(self.last_step["tool"]), self.last_step["args"])
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         self.retries = 0
-        marker = next((m.get("content") for m in reversed(messages)
+        marker = next((unframed(m.get("content") or "") for m in reversed(messages)
                        if m.get("role") == "user" and self._STEP.search(m.get("content") or "")), None)
         if marker != self.step_marker:
             self.step_marker, self.step_start = marker, self.i
-        if marker and self.i > self.step_start and messages[-1].get("role") == "tool":
+        if marker and self.i > self.step_start and latest_tool_result(messages) is not None:
             msg = self._msg(content=self.final if self.i >= len(self.plan) else self.STEP_DONE)
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         nxt = model_name(self.plan[self.i]["tool"]) if self.i < len(self.plan) else None

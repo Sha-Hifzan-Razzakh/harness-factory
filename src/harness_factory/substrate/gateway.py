@@ -191,6 +191,8 @@ class ModelGateway:
         self.backend = backend or (LiteLLMBackend(timeout_s) if self.provider.kind == "litellm" else None)
         if self.backend is None:
             raise HarnessError(ErrorKind.PROVISION, f"provider {provider_id} needs an explicit backend")
+        from harness_factory.substrate.emulation import ToolEmulation
+        self.backend = ToolEmulation.wrap(self.backend, self.provider)    # caps.tool_calling: emulated (SUB-02)
         self.retries = retries
         self.backoff_s = backoff_s
         self.infra_wait_s = 0.0          # quota waits, retry backoff, failed attempts: not the harness's time
