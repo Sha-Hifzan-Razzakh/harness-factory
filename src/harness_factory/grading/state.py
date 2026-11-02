@@ -7,6 +7,7 @@ import re
 import sqlite3
 from fnmatch import fnmatch
 
+from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.impl import proc
 from harness_factory.grading.base import CheckResult, Grade, GradeContext
 from harness_factory.observability.span import SpanKind
@@ -45,6 +46,40 @@ def _same(actual, expected: str) -> bool:
         return False
 
 
+def _office_paragraphs(path):
+    """(style, text) of a Word document's body paragraphs, then of the paragraphs in its table cells."""
+    import docx
+    d = docx.Document(str(path))
+    out = [(p.style.name if p.style is not None else "", p.text) for p in d.paragraphs]
+    for table in d.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                out += [(p.style.name if p.style is not None else "", p.text) for p in cell.paragraphs]
+    return out
+
+
+def _xlsx_value(path, sheet: str, cell: str):
+    """The cell's value as a reader of the saved file sees it: a formula counts as its last saved result."""
+    import openpyxl
+    wb = openpyxl.load_workbook(str(path), data_only=True)
+    if sheet not in wb.sheetnames:
+        return _MISSING, f"no sheet {sheet!r} (sheets: {', '.join(wb.sheetnames)})"
+    return wb[sheet][cell.upper()].value, ""
+
+
+def _cell_matches(actual, c: WeightedCheck) -> bool:
+    expected = c.expected
+    if expected is None:
+        return actual is None or actual == ""
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return actual is expected
+    if isinstance(expected, (int, float)):
+        if not isinstance(actual, (int, float)):
+            return False                         # "89.00" typed as text is not the number 89
+        return abs(actual - expected) <= (c.tolerance if c.tolerance is not None else 1e-9)
+    return isinstance(actual, str) and actual == expected
+
+
 class StateDiffGrader:
     id = "state_diff"
 
@@ -72,6 +107,8 @@ class StateDiffGrader:
             found = (c.text or "") in body
             ok = (not found) if c.negate else found
             return ok, ("found" if found else "not found") + (" (negated)" if c.negate else "")
+        if c.kind in ("xlsx_cell", "docx_contains", "docx_paragraph_regex"):
+            return self._office(c, ctx)
         if c.kind == "sql_rows":
             try:
                 with sqlite3.connect(f"file:{ctx.db_path}?mode=ro", uri=True) as conn:
@@ -137,6 +174,33 @@ class StateDiffGrader:
             shown = f"{len(commits)} new commit(s) on {ref}, {len(hits)} matching"
         ok = (not found) if c.negate else found
         return ok, shown + (" (negated)" if c.negate else "")
+    def _office(self, c: WeightedCheck, ctx: GradeContext) -> tuple[bool, str]:
+        """Office files are read in the factory process with the docs extra's libraries (ADR 0013); the
+        provisioner refuses a task with these checks when they are missing, so a run is never scored without them."""
+        deps.require(deps.CHECK_LIBRARIES[c.kind], f"check kind {c.kind!r}")
+        p = (ctx.workspace / (c.path or "")).resolve()
+        if not p.is_relative_to(ctx.workspace.resolve()) or not p.is_file():
+            return False, f"missing file {c.path}"
+        try:
+            if c.kind == "xlsx_cell":
+                actual, problem = _xlsx_value(p, c.sheet or "", c.cell or "")
+            else:
+                paragraphs, problem = _office_paragraphs(p), ""
+        except Exception as e:  # noqa: BLE001  (a file the run broke is a failed check, not a crash)
+            return False, f"cannot read {c.path}: {type(e).__name__}: {str(e)[:120]}"
+        if problem:
+            return False, problem
+        if c.kind == "xlsx_cell":
+            found = _cell_matches(actual, c)
+            ok = (not found) if c.negate else found
+            return ok, ("equal" if found else f"{c.sheet}!{c.cell} is {actual!r}") + (" (negated)" if c.negate else "")
+        if c.kind == "docx_contains":
+            found = (c.text or "") in "\n".join(text for _, text in paragraphs)
+        else:
+            rx = re.compile(c.pattern or "")
+            found = any(rx.search(text) and (c.style is None or style == c.style) for style, text in paragraphs)
+        ok = (not found) if c.negate else found
+        return ok, ("found" if found else "not found") + (" (negated)" if c.negate else "")
 
     def grade(self, ctx: GradeContext) -> Grade:
         checks, violations = [], []

@@ -20,9 +20,9 @@ def say(text: str) -> dict:
 
 
 def recipe_for(factory, task_id):
-    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git)."""
+    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git, office-* need docs)."""
     task = factory.tasks.get(task_id)
-    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code") if reaches(factory.recipes[r], task, factory.declared))
+    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code", "v2-docs") if reaches(factory.recipes[r], task, factory.declared))
 
 
 async def failed_checks(factory, task_id, *turns, recipe: str | None = None) -> tuple[str, set[str]]:
@@ -44,6 +44,18 @@ OASIS = call("biz.inv_list_invoices", customer_id="C-1004")
 
 def credit(amount) -> dict:
     return call("biz.inv_create_credit_note", invoice_id="INV-1042", amount=amount, reason="T-2041: torn mats")
+PRICES, LETTER = "pricing/price_list.xlsx", "letters/acceptance.docx"
+QUOTE = call("docs.pdf_text", path="quotes/Q-2291.pdf", pages="1-2")
+NOTES_DATE = call("docs.xlsx_write", path=PRICES, sheet="Notes", cell="B2", value="2026-10-20")
+SIGN = call("docs.docx_append_paragraph", path=LETTER, text="Procurement, Dubai office", style="Signature")
+
+
+def prices(**cells) -> list[dict]:
+    return [call("docs.xlsx_write", path=PRICES, sheet="Prices", cell=c, value=v) for c, v in cells.items()]
+
+
+def letter(old: str, new: str) -> dict:
+    return call("docs.docx_replace", path=LETTER, old=old, new=new)
 
 
 def read(factory, task_id, path) -> str:
@@ -116,6 +128,26 @@ TRAPS = [
     ("biz-02", "counted the invoice that isn't due yet", [OASIS, say("AED 2,677.50")], {"answer"}),
     ("biz-02", "hedged between two totals", [OASIS, say("Either AED 1,837.50 or AED 2,362.50")], {"answer"}),
     ("biz-02", "a wrong total on the line before the right one", [OASIS, say("AED 2,362.50\nAED 1,837.50")], {"answer"}),
+    ("office-01", "added VAT to the quoted prices",
+     [QUOTE, *prices(C2=93.45, C4=57.23, C5=126.0), NOTES_DATE], {"price_OS-104", "price_OS-221", "price_OS-310"}),
+    ("office-01", "added the laptop stand, which isn't on the price list",
+     [QUOTE, *prices(C2=89.0, C4=54.5, C5=120.0, A8="OS-777", B8="Laptop Stand", C8=75.0), NOTES_DATE],
+     {"no_new_items"}),
+    ("office-01", "took the withdrawn quotation's prices from page 2",
+     [QUOTE, *prices(C2=92.0, C4=54.5, C5=128.0), NOTES_DATE], {"price_OS-104", "price_OS-310"}),
+    ("office-01", "typed a price as text", [QUOTE, *prices(C2="89.00", C4=54.5, C5=120.0), NOTES_DATE],
+     {"price_OS-104"}),
+    ("office-01", "dated it by the expiry instead of the quote date",
+     [QUOTE, *prices(C2=89.0, C4=54.5, C5=120.0),
+      call("docs.xlsx_write", path=PRICES, sheet="Notes", cell="B2", value="2026-11-30")], {"last_updated"}),
+    ("office-02", "used the quote date for the expiry",
+     [QUOTE, letter("[QUOTE REF]", "Q-2291"), letter("[VALID UNTIL]", "20 October 2026"), SIGN], {"valid_until"}),
+    ("office-02", "replaced the withdrawn quotation's number too",
+     [QUOTE, letter("[QUOTE REF]", "Q-2291"), letter("[VALID UNTIL]", "30 November 2026"),
+      letter("Q-2290", "Q-2291"), SIGN], {"withdrawn_quote_kept"}),
+    ("office-02", "signed in the default style",
+     [QUOTE, letter("[QUOTE REF]", "Q-2291"), letter("[VALID UNTIL]", "30 November 2026"),
+      call("docs.docx_append_paragraph", path=LETTER, text="Procurement, Dubai office")], {"signature"}),
 ]
 
 
