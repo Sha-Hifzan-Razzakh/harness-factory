@@ -93,6 +93,12 @@ jobs:
       - name: Runner gate, Microsoft Agent Framework (ADR 0016)
         run: uv run --no-sync hfx smoke --recipe v2-ms-agent-framework --models scripted/replay --strict -j 8
 
+      - name: Runner gate, AutoGen AgentChat, and its migration check against Agent Framework (ADR 0016, RUN-11)
+        run: |
+          uv run --no-sync hfx smoke --recipe v2-autogen-agentchat --models scripted/replay --strict -j 8
+          uv run --no-sync hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20 -j 8 | tee transfer.txt
+          grep -q '^equivalent:' transfer.txt
+
       - name: Fault injection (clean runs gate; faulted runs feed R)
         run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict -j 8
 

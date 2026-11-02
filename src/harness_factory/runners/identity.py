@@ -16,11 +16,15 @@ RUNNER_PACKAGES: dict[str, tuple[str, ...]] = {
     "langgraph-prebuilt": ("langchain", "langchain-core", "langgraph", "langgraph-prebuilt"),
     "llamaindex-agent": ("llama-index-core", "llama-index-workflows", "llama-index-tools-mcp"),
     "ms-agent-framework": ("agent-framework-core",),       # Agent, its tool loop, MCPStdioTool: one distribution
+    # AssistantAgent + RoundRobinGroupChat (agentchat), BaseTool/StaticStreamWorkbench/schema_to_pydantic_model (core),
+    # the OpenAI message and tool converters (ext)
+    "autogen-agentchat": ("autogen-agentchat", "autogen-core", "autogen-ext"),
 }
 
 # The optional extra that installs each runner (pyproject.toml).
 RUNNER_EXTRAS: dict[str, str] = {"langgraph-prebuilt": "langgraph-prebuilt", "llamaindex-agent": "llamaindex"}
 RUNNER_EXTRAS["ms-agent-framework"] = "ms-agent-framework"
+RUNNER_EXTRAS["autogen-agentchat"] = "autogen-agentchat"
 
 
 def package_version(dist: str) -> str | None:

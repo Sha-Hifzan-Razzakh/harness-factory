@@ -198,3 +198,119 @@ the same way. Requirements RUN-10, FWK-01 to FWK-04. Matrix recipe `v2-ms-agent-
 - **Deviation:** the gateway has no `tool_choice`. A request with `tool_choice="none"` is sent with no tools
   offered, which leaves the model the same choice: answer in text. Any other forced choice is refused (not used at
   the defaults).
+
+## Addendum: `autogen-agentchat`, Semantic Kernel left out, the migration check (package #55)
+
+For teams already on AutoGen or Semantic Kernel, and for their move to Microsoft Agent Framework. Requirements RUN-10,
+RUN-11, FWK-01 to FWK-04. Matrix recipe `v2-autogen-agentchat` (`base: v2-base` plus `runtime`), extra
+`autogen-agentchat` (in `dev`), its own CI step (runner gate, then the migration check), tests in
+`tests/test_runners_sk_autogen.py`. No existing recipe hash changes (`v2-base` is still `79abd03818943f65`).
+
+### Semantic Kernel: left out
+
+No Semantic Kernel release can be installed next to the factory's lock (pydantic 2.14.1, MCP 2.3.0), so there is no
+`semantic-kernel` runtime, no matrix recipe `v2-semantic-kernel` and no SK-vs-MAF check. The exact pins:
+
+- semantic-kernel 1.42.0 to 1.46.0 (1.46.0 is the latest, 28 Oct 2026): `pydantic>=2.0,!=2.10.0,!=2.10.1,!=2.10.2,
+  !=2.10.3,<2.14`; 1.45.0 and 1.46.0 also `mcp>=1.26.0,<2.0` (a core dependency, and `mcp>=1.8,<2.0` in its `mcp`
+  extra);
+- 1.30 to 1.41: `pydantic ... <2.12` or `<2.13`. MCP 2.3 itself needs `pydantic>=2.12`;
+- the `main` branch's `python/pyproject.toml` has the same pins, so no fix is pending.
+
+Installing it would mean downgrading pydantic below 2.14 and MCP below 2, both core. A test
+(`test_semantic_kernel_is_not_a_runner_while_...`) records the decision; revisit when a release lifts the pins. The
+runner would be a `ChatCompletionAgent` with a `ChatCompletionClientBase` service calling the gateway, and SK's MCP
+plugin or kernel functions over `ExecutorSession` for the tools.
+
+### `autogen-agentchat`
+
+AutoGen AgentChat 0.7.5 (`autogen-agentchat`, `autogen-core`, `autogen-ext`, all 0.7.5, the last release, 30 Sep
+2025). AutoGen has been in maintenance mode since October 2025. This runner is for existing deployments and the
+migration check, not a default pick.
+
+- **Packages.** The extra adds four locked packages (autogen-agentchat, autogen-core, autogen-ext, aiofiles) and moves
+  two: **protobuf 7.36.2 → 5.29.6** and googleapis-common-protos 1.76.0 → 1.75.0, because every autogen-core release
+  pins `protobuf~=5.29.3`. These are not core pins (mcp, pydantic, litellm and openai don't move), but uv locks one
+  version for every install, so the factory's OTLP exporter also runs on protobuf 5.29.6. It encodes and exports
+  traces unchanged (the suite and the OTLP encoder pass on it). Dropping the extra restores the old lock.
+- **Agent:** `autogen_agentchat.agents.AssistantAgent(name="assistant", model_client=..., tools=...,
+  system_message=<recipe system prompt>)` with every other option at its default: `max_tool_iterations` 1,
+  `reflect_on_tool_use` off, no streaming, `UnboundedChatCompletionContext`, no memory and no handoffs. Each
+  `AssistantAgent` turn makes one model call, runs the reply's calls concurrently through its `StaticStreamWorkbench`,
+  and answers with a `ToolCallSummaryMessage`, or with a `TextMessage` when the reply has no tool calls.
+- **Loop:** `RoundRobinGroupChat([agent], termination_condition=TextMessageTermination("assistant"))`, with no
+  `max_turns`. This is the single-agent team AutoGen documents for running an agent until it answers in text (the
+  `McpWorkbench` docstring's Playwright example). The other way, `agent.run()` with `max_tool_iterations` > 1, needs
+  a number the framework doesn't choose. The default of 1 can't finish a multi-step task. So the framework has no
+  turn cap of its own, and a run that never answers ends on the recipe's budget, as for native.
+- **Model client (a):** `GatewayChatCompletionClient`, an autogen-core `ChatCompletionClient`. Its `create` converts
+  the request with autogen-ext's own OpenAI converters, `to_oai_type` and `convert_tools`, at the defaults of
+  `OpenAIChatCompletionClient` (with consecutive system messages merged first, as that client does), then calls
+  `RunnerContext.model`. It parses the reply the way that client parses a chat completion: `FunctionCall`s with
+  normalised names and the raw argument string, and text next to tool calls kept as the `thought`. The OpenAI client
+  itself isn't used: it posts through the OpenAI SDK. `create_stream` (unused at the defaults) yields the one
+  result. `count_tokens` is refused: tokens are counted at the gateway, and the default model context never asks.
+  AutoGen's usage fields carry the budget's token delta.
+- **Tools (b):** autogen-ext's MCP tools can't be used. autogen-ext 0.7.5 imports
+  `mcp.shared.context.RequestContext` and reads `Tool.inputSchema` and `CallToolResult.isError`, which MCP 2.x
+  removed or renamed (`input_schema`, `is_error`), so `autogen_ext.tools.mcp` fails at import beside MCP 2.3; its
+  `main` branch is unchanged. Instead each tool `ExecutorSession.list_tools` announces becomes an `ExecutorTool`, an
+  autogen-core `BaseTool` (the base of `FunctionTool`, and of autogen-ext's `McpToolAdapter`). The tool is built as
+  `McpToolAdapter` builds one: argument model from `schema_to_pydantic_model(input_schema)`, MCP name and
+  description. It calls `ExecutorSession.call_tool(name, args.model_dump(exclude_unset=True))`, which goes to
+  ToolExecutor, and raises a plain `Exception` with the server's text for an `isError` result, as the adapter does.
+  It returns the result's text. The agent's own `StaticStreamWorkbench` does argument validation
+  (`BaseTool.run_json`), invocation, error capture and result text.
+- **What it adds** (recorded, not tuned):
+  - **Prompt text: none.** AutoGen's default system message ("You are a helpful AI assistant. ... Reply with
+    TERMINATE ...") is replaced by the recipe's, which is sent first and unchanged on every call. The task is the
+    one user message. The OpenAI conversion adds `"name": "user"` to it.
+  - **Tool schemas:** pydantic's JSON schema of the generated argument model: a `title` on every field,
+    `additionalProperties: false` unless the schema says otherwise, optional fields without a default as
+    `anyOf [..., null]` with default null, and `strict: false` on every tool.
+  - **Tool results:** the text, as native.
+  - **Tool errors:** the server's message, as native (the workbench's `str(exception)`). Unlike Agent Framework's
+    "Error: Function failed.", the model sees why a call failed.
+  - **Invalid calls:**
+    - Arguments that aren't JSON get `Error: <JSONDecodeError>` from the agent.
+    - Arguments that fail the generated model get the pydantic validation error from the workbench.
+    - A tool that isn't offered gets "Error: tool '...' not found in any workbench".
+    - None of these reach ToolExecutor, so none has a span (the same limit as `ToolNode`'s refusal above).
+  - **History:** unbounded.
+  - Offline, with `scripted/replay` on the 20 visible tasks: 20/20 SUCCESS, the same model and tool calls as
+    `v2-base`, tokens ×1.01 (the `name` field).
+- **How runs end:**
+  - **Text reply:** DONE.
+  - **Budget:** as for the other runners. A stop inside a tool call becomes an error result in the workbench. The
+    next model call is refused with the recorded stop, the team re-raises it, and the first stop decides.
+  - **The framework's bound:** none, as described under Loop.
+- **Identity:** `RUNNER_PACKAGES["autogen-agentchat"]` is autogen-agentchat, autogen-core and autogen-ext (the
+  converters are autogen-ext's).
+
+### Concurrent tool calls and max_tool_calls (all runners)
+
+Agent Framework and AutoGen start every call of a reply at once. A call is charged to the budget when it ends, so a
+batch of three calls with one call left in the budget ran all three. `RunnerContext.tool` now also counts calls still
+running against `max_tool_calls`, so a batch never runs more calls than the budget has left, as the native loop
+(sequential) never does. This changes nothing for runs whose batches fit the budget: every offline result and every
+hash is unchanged. It is tested for both frameworks.
+
+### Migration check (RUN-11)
+
+The transfer check can now compare two runners. `transfer(..., between_runners=True)` and `hfx transfer run <runner>
+--baseline <runner recipe>`:
+
+- **The recipes:** both must be runner recipes on different runtimes that differ only in `runtime`.
+- **Pairing, the verdict rule and freezing:** unchanged, with the baseline in place of native.
+- **The record** adds `baseline_runtime` and `baseline_framework`, and the `native_*` fields hold the baseline side.
+  Both new fields are left out of the id when unset, so native checks keep their record shape and their ids.
+
+```bash
+hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20
+```
+
+Offline, with `scripted/replay` on the 20 visible tasks: `equivalent` (20 pairs, all ties, mean +0.000, calls ×1.00,
+tokens ×1.00). The scripted model plays the same plan whatever the framework sends, so this offline verdict only
+shows that the check runs. With real models, tool errors are where a migration from AutoGen to Agent Framework is
+most likely to differ: AutoGen shows the server's message and Agent Framework shows "Error: Function failed.". The
+Semantic Kernel side of the check waits for an installable Semantic Kernel (above).
