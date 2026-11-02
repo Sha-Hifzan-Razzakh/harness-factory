@@ -22,7 +22,13 @@ from harness_factory.env.faults import NO_FAULTS, FaultConfig, load_fault_profil
 from harness_factory.env.mcp.servers import ToolCatalogFile, load_tool_catalog
 from harness_factory.env.sandbox import make_sandbox
 from harness_factory.env.state import StateInspector
-from harness_factory.grading.base import Grade, GradeContext, GradingPipeline, default_pipeline
+from harness_factory.grading.base import (
+    Grade,
+    GradeContext,
+    GradingPipeline,
+    combine_families,
+    default_pipeline,
+)
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.mlops.tracker import ExperimentTracker
 from harness_factory.observability.span import SpanKind
@@ -33,6 +39,7 @@ from harness_factory.provision.provisioner import provision
 from harness_factory.recipes.model import HarnessRecipe, load_recipes
 from harness_factory.results.model import EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.results.store import UNSCORED, ResultsStore
+from harness_factory.runner.endstate import save_endstate
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import ShapeRegistry
@@ -107,16 +114,34 @@ def overran(result: RunResult) -> bool:
 
 
 def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -> RunStatus:
-    """Every scored run gets its status from the environment. Unscored runs keep INCOMPLETE / ERROR."""
+    """Every scored run gets its status from the environment (the outcome family: state_diff, plus any grader
+    registered to feed it). Unscored runs keep INCOMPLETE / ERROR."""
     if not result.scored:
         return result.status
-    state = next((g for g in grades if g.grader_id == "state_diff"), None)
+    outcome = combine_families(grades).outcome
     critical = any(v.critical for g in grades for v in g.violations) or any(v.critical for v in result.violations)
-    if state is None or critical:
+    if outcome is None or critical:
         return RunStatus.FAIL
-    if state.score >= threshold and not overran(result):
+    if outcome >= threshold and not overran(result):
         return RunStatus.SUCCESS
-    return RunStatus.PARTIAL if state.score > 0 else RunStatus.FAIL
+    return RunStatus.PARTIAL if outcome > 0 else RunStatus.FAIL
+
+
+def run_scores(result: RunResult, grades: list[Grade]) -> tuple[FamilyScores, list[Violation], bool]:
+    """FamilyScores, every violation, and whether one is critical: O and Q from the graders feeding them."""
+    fam = combine_families(grades)
+    violations = list(result.violations) + [v for g in grades for v in g.violations]
+    critical = any(v.critical for v in violations)
+    # A critical violation (a guard broken, a forbidden write) fails the run outright: its outcome is 0, not
+    # the share of checks it passed, so it can't lift the cell's robustness R (an average of outcomes).
+    scores = FamilyScores(
+        outcome=(fam.outcome * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
+                 if fam.outcome is not None and result.scored and not critical else 0.0),
+        trajectory=fam.trajectory if fam.trajectory is not None else 1.0,
+        efficiency=0.0,   # normalized against the class median at aggregation time (P2)
+        safety=len(violations),
+    )
+    return scores, violations, critical
 
 
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
@@ -159,30 +184,21 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                 inst.snapshot["tenant_state"] = remote
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
+            ctx = GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
+                               workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
+                               spans=list(inst.tracer.spans), max_steps=recipe.config.max_steps, remote=remote)
             with inst.tracer.span(SpanKind.grade, "pipeline"):
-                grades = f.graders.run(GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
-                                                    workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
-                                                    spans=list(inst.tracer.spans),
-                                                    max_steps=recipe.config.max_steps, remote=remote))
+                grades = f.graders.run(ctx)
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
         result.trajectory = list(inst.tracer.spans)
         result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0)
         trace_path = inst.tracer.write_jsonl()
         transcript_path = write_transcript(trace_path, inst, result)
+        endstate_path = await asyncio.to_thread(save_endstate, trace_path, ctx, task_class=p.task_class,
+                                                weight_profile=p.weight_profile)
 
-        by_id = {g.grader_id: g for g in grades}
-        violations = list(result.violations) + [v for g in grades for v in g.violations]
-        critical = any(v.critical for v in violations)
-        # A critical violation (a guard broken, a forbidden write) fails the run outright: its outcome is 0, not
-        # the share of checks it passed, so it can't lift the cell's robustness R (an average of outcomes).
-        scores = FamilyScores(
-            outcome=(by_id["state_diff"].score * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
-                     if "state_diff" in by_id and result.scored and not critical else 0.0),
-            trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
-            efficiency=0.0,   # normalized against the class median at aggregation time (P2)
-            safety=len(violations),
-        )
+        scores, violations, critical = run_scores(result, grades)
         weights = ScoreWeights.for_profile(p.weight_profile)
         rec = EffectivenessRecord(
             run_key=inst.run_key, task_class=p.task_class, recipe_id=recipe.id, status=result.status,
@@ -195,6 +211,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             messages=result.messages,
             transcript_path=str(transcript_path),
             fault=fault,
+            endstate_path=endstate_path,
         )
     if f.store:
         f.store.add(rec)

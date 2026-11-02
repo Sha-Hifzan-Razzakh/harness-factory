@@ -60,6 +60,29 @@ runs = Table(
     Column("output", Text),                                  # added after v1: nullable, see _migrate()
     Column("transcript_path", String),
     Column("fault", String),                                 # fault profile id; NULL = clean run
+    Column("grader_versions", JSON),                         # grader id -> version; NULL = before versions
+    Column("endstate_path", String),                         # end-state bundle (runner/endstate.py), if kept
+)
+
+# Re-grades (hfx regrade): the current graders over a stored run's end state. A row here never changes the run's
+# own row, and aggregation reads only `runs`: a re-grade shows what a grader or check change would do to stored
+# runs; new runs are what put the change into the numbers.
+regrades = Table(
+    "regrades", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("run_id", Integer, nullable=False, index=True),   # runs.id
+    Column("run_key", String, nullable=False),
+    Column("task_version", String, nullable=False),          # the task definition graded against (current)
+    Column("task_hash", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("outcome", Float, nullable=False),
+    Column("trajectory", Float, nullable=False),
+    Column("composite", Float, nullable=False),              # E0, like runs.composite
+    Column("violations", JSON, nullable=False),
+    Column("grades", JSON, nullable=False),
+    Column("grader_versions", JSON, nullable=False),
+    Column("changed", Integer, nullable=False),              # 1 = status, O, Q or E0 differs from the run's row
+    Column("created_at", DateTime, nullable=False),
 )
 
 cost_baselines = Table(
@@ -87,7 +110,13 @@ def record_row(rec: EffectivenessRecord) -> dict:
         violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
         created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path, fault=rec.fault,
+        grader_versions=grader_versions(rec.grades), endstate_path=rec.endstate_path,
     )
+
+
+def grader_versions(grades: list[dict]) -> dict[str, str]:
+    """grader id -> version of every grade that records one."""
+    return {g["grader_id"]: g["version"] for g in grades if g.get("version")}
 
 
 def task_hash_of(row: dict) -> str:
@@ -242,6 +271,23 @@ class ResultsStore:
     def add(self, rec: EffectivenessRecord) -> int:
         with self.engine.begin() as c:
             return c.execute(insert(runs).values(**record_row(rec))).inserted_primary_key[0]
+
+    def add_regrade(self, row: dict) -> int:
+        with self.engine.begin() as c:
+            return c.execute(insert(regrades).values(**json.loads(json.dumps(row, default=str)) |
+                                                     {"created_at": datetime.now(UTC)})).inserted_primary_key[0]
+
+    def regrade_rows(self, run_id: int | None = None) -> list[dict]:
+        q = select(regrades).order_by(regrades.c.id)
+        if run_id is not None:
+            q = q.where(regrades.c.run_id == run_id)
+        with self.engine.connect() as c:
+            return [dict(r) for r in c.execute(q).mappings()]
+
+    def run_by_id(self, run_id: int) -> dict | None:
+        with self.engine.connect() as c:
+            r = c.execute(select(runs).where(runs.c.id == run_id)).mappings().first()
+        return dict(r) if r else None
 
     def recent(self, limit: int = 50) -> list[dict]:
         with self.engine.connect() as c:

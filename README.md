@@ -745,6 +745,55 @@ Every task ships a `reference.py`. `hfx reference` must pass before the task is 
   catalog. A check that passes on the untouched seed ("no duplicates", "valid JSON", a negated "never mentions
   X") is a guard (`weight: 0, critical: true`) or is tied to the change, never weighted on its own.
 
+### More check kinds
+
+| Kind | Fields | Passes when |
+|---|---|---|
+| `sql_rows_unordered` | `query`, `rows` | the query returns these rows in any order, duplicates counted (a multiset) |
+| `number_close` | `value`, `abs_tol` / `rel_tol`; the number from `query` (one SQL value), `path` (+ optional `pattern`), or the final answer (optional `pattern`) | \|actual − value\| ≤ max(`abs_tol`, `rel_tol` × max(\|actual\|, \|value\|)); neither tolerance set = `rel_tol` 1e-9. NULL, NaN, no rows, several values or text that isn't a number fail |
+| `json_schema` | `path`, `json_schema` (inline) | the file is JSON and validates against the schema (checked at load time) |
+| `output_exact` | `text`, `normalize: [whitespace, case]` | the final answer equals `text` after trimming both ends, and optionally collapsing whitespace and ignoring case |
+
+`sql_rows` stays an exact, ordered comparison. Use it when an `ORDER BY` fixes the order and the values are
+integers or text. Use `sql_rows_unordered` for a query without a defined order, and `number_close` for anything
+computed in floating point (`0.1 + 0.2` is not `0.3`). A `pattern` in `number_close` uses its first group, or
+the whole match; `1,866.88` style thousands separators are accepted.
+
+## Graders: versions, families and re-grading
+
+A grader is registered with `@register_grader` (`grading/base.py`) and declares:
+
+- `id`: the name tasks list in `grader_ids`;
+- `version`: stored with every grade it gives (`grades[].version` and the run's `grader_versions` column).
+  Changing a grader's behaviour means a new version, and that is a scoring change;
+- `family`: what it feeds. `outcome` feeds O and the run's status, `trajectory` feeds Q, `safety` adds a
+  violation when its grade fails, and `None` stores the grade without scoring it;
+- `combine`: how it combines with the task's other graders of that family. `product` (default) or `min` for
+  outcome and trajectory; `count` (default) or `critical` (a failed grade zeroes E and FAILs the run) for safety.
+
+`default_pipeline()` holds every registered grader, so a new one needs no core edit. `state_diff` (outcome) and
+`trajectory` (trajectory) are the built-ins. A task with only these two scores exactly as before.
+
+**End states.** After grading, each run keeps what it left behind next to its trace, in
+`<trace>.endstate.zip`: the workspace files, the task database, the before-state, the spans the graders saw and
+how the run ended. The run's `endstate_path` column points to it.
+
+- `HF_KEEP_ENDSTATE=0` turns this off.
+- `HF_ENDSTATE_MAX_MB` (default 50) skips runs whose workspace and database together are bigger.
+
+**Re-grading.** `hfx regrade` runs the current graders, and the task's current checks, over stored end states:
+
+```bash
+hfx regrade --run-id 12 --run-id 13   # specific runs (ids from hfx results)
+hfx regrade --task sql-03             # the latest run of each RunKey of one task
+hfx regrade --all --changed           # everything; list only the runs whose grade changed
+```
+
+Each re-grade is a new row in the `regrades` table, with grader versions and a `changed` flag. The run's own row
+is never touched, and aggregation still reads only runs. A re-grade shows what a grader or check change would do
+to stored results; new runs are what put that change into the numbers. Runs stored before this change have no
+end state and are reported as skipped.
+
 ## Offline models
 
 The `scripted` provider follows each task's reference plan through the real shape, MCP servers and graders. It

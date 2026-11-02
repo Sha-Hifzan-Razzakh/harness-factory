@@ -77,6 +77,7 @@ class EffectivenessRecord(BaseModel):
     output: str | None = None                                       # the run's final answer text
     transcript_path: str | None = None                              # full conversation, next to the trace
     fault: str | None = None                                        # fault profile id; None = clean run
+    endstate_path: str | None = None                                # end-state bundle for re-grading
     messages: list[dict] = Field(default_factory=list, repr=False)  # full transcript; not written to the store
 
 
