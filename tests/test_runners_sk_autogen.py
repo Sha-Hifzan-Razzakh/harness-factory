@@ -302,12 +302,12 @@ async def test_the_migration_command_reports_a_verdict(tmp_path, monkeypatch, p0
     from harness_factory.runner.runner import Factory
     monkeypatch.setattr(settings, "RESULTS_URL", f"sqlite:///{tmp_path / 'results.db'}")
     monkeypatch.setattr(settings, "QUOTA_STATE", tmp_path / "quota.json")
+    monkeypatch.setattr(cli.console, "width", 300)          # the shared console was sized when it was imported
     f = Factory.load()
     result = await run_campaign(f, plan(f, [MAF, RID], "scripted", [MODEL], task_ids=p0_tasks), concurrency=6)
     assert not result.errors
     out = CliRunner().invoke(cli.app, ["transfer", "run", RID, "--baseline", MAF, "--model", MODEL,
-                                       "--provider", "scripted", "--min-pairs", str(len(p0_tasks))],
-                             env={"COLUMNS": "300"})
+                                       "--provider", "scripted", "--min-pairs", str(len(p0_tasks))])
     assert out.exit_code == 0, out.output
     assert "equivalent: the 95% interval" in out.output and "(ms-agent-framework)" in out.output
     bad = CliRunner().invoke(cli.app, ["transfer", "run", RID, "--baseline", "v2-base", "--model", MODEL,
