@@ -1,0 +1,49 @@
+id: rag-02
+version: 1
+domain: research
+instruction: The knowledge base is in corpus/. Which TCP port does the payments-gateway service listen on in production
+  today? Answer with the port number and the id of the document that establishes it (kb-NNN).
+env_seed:
+  files: ../../seeds/kb/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- retrieval
+- research
+- multi-hop
+- distractors
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.7
+    pattern: (?<![\d,.])9443(?!\d)
+  - id: source
+    kind: output_regex
+    weight: 0.3
+    pattern: \bkb-015\b
+  - id: kb-015_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: corpus/kb-015.md
+    text: |
+      # Change notice CN-2026-014: payments-gateway production port
+
+      Document: kb-015
+      Updated: 2026-03-02
+
+      Status: completed on 2 March 2026.
+
+      Change. From 2 March 2026 the payments-gateway service in production listens on TCP 9443 instead of 8443. The old
+      port is released so that payments-ledger can take it (see CN-2026-019). Load balancer rules and firewall entries
+      were updated in the same window. Staging is unchanged.
+
+      Owner: Payments Platform.

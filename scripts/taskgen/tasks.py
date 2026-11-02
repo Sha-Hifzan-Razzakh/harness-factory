@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 
 import yaml
+from kb import ID as KB_ID
+from kb import TEXT as KB_TEXT
+from kb import path as kb
 
 CATALOG = Path(sys.argv[1])
 SHOP_SQL = (CATALOG / "seeds/shop/db.sql").read_text()
@@ -16,6 +19,7 @@ SHOP_FILES = CATALOG / "seeds/shop/files"
 
 SHOP = {"files": "../../seeds/shop/files", "sqlite": "../../seeds/shop/db.sql"}
 SERVICE = {"files": "../../seeds/service/files"}
+KB = {"files": "../../seeds/kb/files"}
 SQL_READ = ["sql.list_tables", "sql.describe_table", "sql.query"]
 FS_READ = ["fs.list_dir", "fs.read_file"]
 FS_RW = ["fs.list_dir", "fs.read_file", "fs.write_file"]
@@ -77,6 +81,15 @@ def rd(path):
 
 def ls(path="."):
     return {"tool": "fs.list_dir", "args": {"path": path}}
+
+
+def rt(query):
+    """A retrieval call (ADR 0017). Optional: recipes without retrieval skip it, and the plan still solves the task."""
+    return {"tool": "retrieve.search", "args": {"query": query}, "optional": True}
+
+
+def kb_guard(key):
+    return guard(f"{KB_ID[key]}_untouched", "file_equals", path=kb(key), text=KB_TEXT[KB_ID[key]])
 
 
 def wr(path, content):
@@ -395,6 +408,48 @@ task("res-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"])
 
 
+# ------------------------------------------------------------------ knowledge base: retrieval (ADR 0017)
+# 60 documents under opaque names in corpus/: a recipe with the retrieval tool searches, one without reads files.
+# Each answer sits next to plausible wrong ones (superseded, draft, cancelled, stale owner, similar incident id).
+
+task("rag-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
+     "The knowledge base is in corpus/. Under the customer refund policy that is in effect now, what is the "
+     "largest refund a support agent may approve without a manager's sign-off? Answer with the amount in AED and "
+     "the id of the document you took it from (kb-NNN).",
+     [chk("answer", "output_regex", 0.7, pattern=r"(?<![\d,.])750(?![\d,])"),
+      chk("source", "output_regex", 0.3, pattern=rf"\b{KB_ID['refunds-2026']}\b"),
+      kb_guard("refunds-2026")],
+     [rt("refund approval limit for a support agent without a manager"), rd(kb("refunds-2026"))],
+     f"750 AED, from the refund policy version 3 in effect since 1 March 2026 ({KB_ID['refunds-2026']}).",
+     seed=KB, tags=["retrieval", "research", "distractors", "trap"])
+
+task("rag-02", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
+     "The knowledge base is in corpus/. Which TCP port does the payments-gateway service listen on in production "
+     "today? Answer with the port number and the id of the document that establishes it (kb-NNN).",
+     [chk("answer", "output_regex", 0.7, pattern=r"(?<![\d,.])9443(?!\d)"),
+      chk("source", "output_regex", 0.3, pattern=rf"\b{KB_ID['cn-2026-014']}\b"),
+      kb_guard("cn-2026-014")],
+     [rt("payments-gateway production port change"), rd(kb("svc-payments-gateway")), rd(kb("cn-2026-014"))],
+     f"9443: the catalog entry ({KB_ID['svc-payments-gateway']}) still says 8443, but change notice CN-2026-014 "
+     f"({KB_ID['cn-2026-014']}) moved it to 9443 on 2 March 2026; the later move to 10443 was cancelled.",
+     seed=KB, tags=["retrieval", "research", "multi-hop", "distractors", "trap"])
+
+task("rag-03", "research", "UNKNOWN_PATH", "R0", "HELD_OUT", FS_READ,
+     "The knowledge base is in corpus/. What was the root cause of incident INC-2291, and which team owns the "
+     "component that has to be fixed? Answer with the root cause in a few words, the team name, and the id of the "
+     "incident review (kb-NNN).",
+     [chk("cause", "output_regex", 0.4, pattern=r"(?i)\b(spool|disk)"),
+      chk("team", "output_regex", 0.4, pattern=r"(?i)\bwarehouse systems\b"),
+      chk("source", "output_regex", 0.2, pattern=rf"\b{KB_ID['inc-2291']}\b"),
+      kb_guard("inc-2291"), kb_guard("org-changes-2026")],
+     [rt("INC-2291 root cause"), rd(kb("inc-2291")), rt("label-printer service owner"),
+      rd(kb("svc-label-printer")), rd(kb("org-changes-2026"))],
+     f"Root cause: label-printer's spool files were never rotated and filled the disk ({KB_ID['inc-2291']}). "
+     f"label-printer moved from Fulfilment Apps to Warehouse Systems on 15 January 2026 "
+     f"({KB_ID['org-changes-2026']}), so Warehouse Systems owns the fix.",
+     seed=KB, tags=["retrieval", "research", "multi-hop", "distractors", "trap"])
+
+
 # ------------------------------------------------------------------ write
 
 class Dumper(yaml.SafeDumper):
@@ -422,7 +477,7 @@ for t in TASKS:
     (d / "reference.py").write_text(ref)
     leading = next((i for i, s in enumerate(t["plan"])
                     if s["tool"] not in ("fs.list_dir", "fs.read_file", "sql.list_tables", "sql.describe_table",
-                                         "sql.query")), len(t["plan"]))
+                                         "sql.query", "retrieve.search")), len(t["plan"]))
     rest = len(t["plan"]) - min(leading, 3)
     print(f"{t['id']:8} {t['split']:8} {t['expected_depth']:12} plan={len(t['plan'])} leading_reads={leading} "
           f"v3_act={rest}{'  !! V3 caps' if leading > 3 and leading < len(t['plan']) or rest > 5 else ''}")

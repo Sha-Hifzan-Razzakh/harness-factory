@@ -1,0 +1,70 @@
+id: rag-03
+version: 1
+domain: research
+instruction: The knowledge base is in corpus/. What was the root cause of incident INC-2291, and which team owns
+  the component that has to be fixed? Answer with the root cause in a few words, the team name, and the id of the
+  incident review (kb-NNN).
+env_seed:
+  files: ../../seeds/kb/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- retrieval
+- research
+- multi-hop
+- distractors
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: cause
+    kind: output_regex
+    weight: 0.4
+    pattern: (?i)\b(spool|disk)
+  - id: team
+    kind: output_regex
+    weight: 0.4
+    pattern: (?i)\bwarehouse systems\b
+  - id: source
+    kind: output_regex
+    weight: 0.2
+    pattern: \bkb-049\b
+  - id: kb-049_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: corpus/kb-049.md
+    text: |
+      # Post-incident review INC-2291: label printing stopped at Al Quoz
+
+      Document: kb-049
+      Updated: 2026-05-14
+
+      Incident date: 12 May 2026, 06:10 to 09:05. Impact: no shipping labels printed at the Al Quoz warehouse for about
+      three hours; 412 parcels missed the morning pickup.
+
+      Root cause. The label-printer service's spool directory filled the disk: old spool files were never rotated, and
+      once the disk was full new print jobs failed silently.
+
+      Component: label-printer. Fix: add spool rotation and a disk usage alert. Action owner: the team that owns
+      label-printer.
+  - id: kb-052_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: corpus/kb-052.md
+    text: |
+      # Service ownership changes in 2026
+
+      Document: kb-052
+      Updated: 2026-01-15
+
+      These changes override the owners recorded at the November 2025 catalog review.
+
+      On 15 January 2026 the label-printer service moved from Fulfilment Apps to Warehouse Systems. On the same date
+      notification-hub moved from Web Platform to Customer Messaging. Fulfilment Apps keeps route-planner.

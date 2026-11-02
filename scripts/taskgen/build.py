@@ -1,4 +1,4 @@
-"""Regenerate the shop and service seeds and the second task batch from these data modules.
+"""Regenerate the shop, service and kb seeds and the generated tasks from these data modules.
 
     uv run python scripts/taskgen/build.py            # writes into catalog/
     uv run python scripts/taskgen/build.py <catalog>  # or into another catalog (tests use a copy)
@@ -16,7 +16,8 @@ HERE = Path(__file__).parent
 
 def build(catalog: Path) -> None:
     (catalog / "seeds/shop/files").mkdir(parents=True, exist_ok=True)
-    for script, arg in [("shop.py", catalog / "seeds/shop/db.sql"), ("files.py", catalog), ("tasks.py", catalog)]:
+    for script, arg in [("shop.py", catalog / "seeds/shop/db.sql"), ("files.py", catalog), ("kb.py", catalog),
+                        ("tasks.py", catalog)]:
         subprocess.run([sys.executable, str(HERE / script), str(arg)], check=True, stdout=subprocess.DEVNULL)
 
 

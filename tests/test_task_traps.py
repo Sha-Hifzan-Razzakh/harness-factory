@@ -26,6 +26,12 @@ async def failed_checks(factory, task_id, *turns) -> tuple[str, set[str]]:
 
 
 GROUND = call("sql.query", sql="SELECT 1")
+
+
+def kb_read(kid: str) -> dict:
+    return call("fs.read_file", path=f"corpus/{kid}.md")
+
+
 SVC_READ = call("fs.read_file", path="service/config/prod.ini")
 
 
@@ -84,6 +90,17 @@ TRAPS = [
     ("code-01", "bumped the dependency pin too", ["bump_all"], {"dependency_pins_untouched"}),
     ("docs-01", "kept the chore and put 2.4.0 at the bottom", ["changelog_bottom"], {"newest_first", "no_chores"}),
     ("res-01", "trusted the base default for prod and dev", [SVC_READ, say("staging")], {"answer"}),
+    # Retrieval tasks (ADR 0017): the corpus ids come from scripts/taskgen/kb.py (fixed shuffle seed).
+    ("rag-01", "took the superseded 2024 policy", [kb_read("kb-030"), say("500 AED (kb-030)")], {"answer", "source"}),
+    ("rag-01", "took the unapproved draft", [kb_read("kb-053"), say("1,000 AED, per kb-053")], {"answer", "source"}),
+    ("rag-01", "took the wholesale desk's limit", [kb_read("kb-001"), say("2,000 AED (kb-001)")], {"answer", "source"}),
+    ("rag-02", "trusted the stale catalog entry", [kb_read("kb-020"), say("8443 (kb-020)")], {"answer", "source"}),
+    ("rag-02", "took the cancelled change", [kb_read("kb-026"), say("Port 10443, see kb-026")], {"answer", "source"}),
+    ("rag-03", "trusted the stale owner", [kb_read("kb-049"), kb_read("kb-006"),
+                                           say("Spool files filled the disk; Fulfilment Apps owns it (kb-049).")],
+     {"team"}),
+    ("rag-03", "read the incident with the similar number",
+     [kb_read("kb-023"), say("An expired TLS certificate; Web Platform (kb-023).")], {"cause", "team", "source"}),
 ]
 
 

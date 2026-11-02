@@ -2,18 +2,23 @@
 
 Order per call: name resolves -> tool is allowed -> args parse and validate -> permission policy ->
 MCP call with timeout (through the session pool) -> result shrunk if large. Every step is traced.
+
+A LocalTool is a harness-side tool (it runs in the factory process, e.g. retrieval, ADR 0017). It takes the same
+path, only its last step calls a Python function instead of an MCP server, so it can't escape the allowance, the
+policy, faults, the span or the budget.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import anyio
 
 from harness_factory.env.faults import FaultInjector
-from harness_factory.env.mcp.servers import USAGE_META, AgentTool, SideEffect, ToolCatalogFile
+from harness_factory.env.mcp.servers import USAGE_META, AgentTool, SideEffect, ToolCatalogFile, ToolSpec
 from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import ToolResult
 from harness_factory.mcp.pool import MCPSessionPool
@@ -37,13 +42,26 @@ def tool_ref(model_tool_name: str) -> str:
     return model_tool_name.replace("__", ".", 1)
 
 
+@dataclass
+class LocalTool:
+    """A tool the harness serves itself, in the factory process. Its spec (side effect, risk, timeout) is checked
+    exactly like a declared MCP tool's; `call` gets the validated arguments and returns a ToolResult (an input the
+    tool refuses is `is_error=True`; anything it raises is a factory crash, as for a local MCP server)."""
+    spec: ToolSpec
+    description: str
+    input_schema: dict[str, Any]
+    call: Callable[[dict[str, Any]], Awaitable[ToolResult]]
+
+
 class ToolExecutor:
     def __init__(self, pool: MCPSessionPool, declared: ToolCatalogFile, allowed: set[str], policy: PolicySet,
                  budget: BudgetGuard, tracer: Tracer, run_key: str, faults: FaultInjector | None = None,
-                 agent_calls: dict[str, int] | None = None) -> None:
+                 agent_calls: dict[str, int] | None = None, local: dict[str, LocalTool] | None = None) -> None:
         """agent_calls: calls made so far to each agent tool. Shared with delegated helpers, so an agent tool's
-        max_calls is per run, not per helper."""
+        max_calls is per run, not per helper. local: harness-side tools by ref; a ref still has to be in `allowed`
+        to be offered or called."""
         self.faults = faults
+        self.local = local or {}
         self.agent_calls = agent_calls if agent_calls is not None else {}
         self.pool = pool
         self.declared = declared
@@ -63,7 +81,7 @@ class ToolExecutor:
         assert self.pool.catalog is not None
         out = []
         for ref in sorted(self.narrowed(restrict)):
-            t = self.pool.catalog.tools.get(ref)
+            t = self.local.get(ref) or self.pool.catalog.tools.get(ref)
             if t is None:
                 continue
             out.append({"type": "function", "function": {"name": model_name(ref), "description": t.description,
@@ -105,14 +123,15 @@ class ToolExecutor:
         except (ValueError, TypeError) as e:
             span.error = ErrorKind.TOOL_ARGS.value
             return ToolResult(text=f"Invalid arguments for {ref}: {e}", is_error=True)
-        schema = self.pool.catalog.tools[ref].input_schema if self.pool.catalog else {}
+        local = self.local.get(ref)
+        schema = local.input_schema if local else self.pool.catalog.tools[ref].input_schema if self.pool.catalog else {}
         missing = [k for k in schema.get("required", []) if k not in args]
         if missing:
             span.error = ErrorKind.TOOL_ARGS.value
             return ToolResult(text=f"Missing required arguments for {ref}: {', '.join(missing)}", is_error=True)
         span.attributes["args_hash"] = content_hash(args, 12)
         span.attributes["args"] = json.dumps(args, default=str)[:ARGS_CHARS]
-        spec = self.declared.spec(ref)
+        spec = local.spec if local else self.declared.spec(ref)
         span.attributes["side_effect"] = spec.side_effect.value
         mode = self.policy.permission_mode.get(spec.side_effect.value, "DENY")
         span.attributes["permission"] = mode
@@ -142,12 +161,12 @@ class ToolExecutor:
             span.attributes["agent_call"] = self.agent_calls[ref]
         try:
             with anyio.fail_after(spec.timeout_s):
-                result = await self.pool.call(ref, args)
+                result = await (local.call(args) if local else self.pool.call(ref, args))
         except TimeoutError:
             span.error = ErrorKind.TOOL_TIMEOUT.value
             return ToolResult(text=f"{ref} timed out after {spec.timeout_s}s", is_error=True)
         except Exception as e:
-            if not self.declared.server(ref.split(".")[0]).remote:
+            if local or not self.declared.server(ref.split(".")[0]).remote:
                 raise
             span.error = ErrorKind.TOOL_ERROR.value          # a remote server failing in transit: environment,
             span.attributes["infra"] = type(e).__name__      # not the model, so excluded from Q like a fault

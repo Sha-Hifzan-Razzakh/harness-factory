@@ -26,6 +26,7 @@ from typing import Any
 
 from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import HarnessRecipe, PolicySet, RuntimeConfig
+from harness_factory.retrieval import tool as retrieval
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
 from harness_factory.shapes.result import RunStatus, Violation
 from harness_factory.substrate.budget import BudgetGuard
@@ -154,10 +155,14 @@ async def _delegate(inst: HarnessInstance, raw_args, restrict, span) -> tuple[st
     span.attributes.update(delegate_recipe=child.id, depth=d.depth + 1, call=d.limits.calls)
 
     allowed = {r for r in inst.tools.allowed if child.tools.allows(r) and r.split(".")[0] in child.tools.mcp_servers}
+    # Harness-side tools (retrieval, ADR 0017) narrow the same way: the helper gets the run's tool only when its own
+    # recipe asks for that dimension too. It searches the run's index (the parent's config).
+    local = {r: t for r, t in inst.tools.local.items() if r in inst.tools.allowed and retrieval.active(child)}
+    allowed |= set(local)
     budget = BudgetGuard(config, excluded_s=inst.budget.excluded_s)
     tools = ToolExecutor(inst.tools.pool, inst.tools.declared, allowed, stricter(inst.tools.policy, child.policies),
                          budget, inst.tracer, inst.tools.run_key, faults=inst.tools.faults,
-                         agent_calls=inst.tools.agent_calls)
+                         agent_calls=inst.tools.agent_calls, local=local)
     task = d.task.model_copy(update={"instruction": sub})
     grand = context_for(child, d.task, d.assembler, d.limits, d.depth + 1, d.chain)
     names = sorted(model_name(r) for r in allowed) + ([DELEGATE_NAME] if grand and grand.depth < d.limits.max_depth else [])

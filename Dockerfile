@@ -23,8 +23,9 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/app/.venv
 WORKDIR /app
-# Optional extras, space-separated: postgres (results store in Postgres), mlops (MLflow), inspect (Inspect AI).
-ARG EXTRAS="postgres"
+# Optional extras, space-separated: postgres (results store in Postgres), retrieval (LlamaIndex retrieval dimension,
+# ADR 0017; the retrieval tasks' reference plans need it), mlops (MLflow), inspect (Inspect AI).
+ARG EXTRAS="postgres retrieval"
 COPY pyproject.toml uv.lock README.md ./
 # Dependencies first, so editing the code does not reinstall them.
 RUN --mount=type=cache,target=/root/.cache/uv \
