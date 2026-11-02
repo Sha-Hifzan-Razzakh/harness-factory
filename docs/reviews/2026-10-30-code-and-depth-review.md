@@ -317,6 +317,31 @@ are now one: `provisioner.missing_task_tools` / `reaches`. A recipe is left out 
 call every tool the task allows. `plan()`, `hfx smoke`'s "left out" line, the selector and Inspect all use it.
 
 
+
+**Wave 3 (#49–#51): ready for review** (status 2026-11-02).
+
+| PR | What it adds | Base | Notes |
+|---|---|---|---|
+| #49 | Rubric judge (ADR 0014) | #48 | An uncalibrated judge carries weight 0 until it has ≥ 100 hand-scored items and kappa ≥ 0.7. New task `docs-03`. |
+| #50 | Context management (ADR 0015) | `main` | Token estimate before every call, overflow stop, output spill with `spill__read`, `config.compaction`, `v2-compact`. |
+| #51 | Shape depth | #50 | Structured JSON plans, concurrent V5 workers (`planning.max_parallel`), parallel READ tool calls. Recipes `v4-structured`, `v5-parallel`, `v2-parallel-tools`. |
+
+#50 and #51 were stacked because they collided in `model_turn` and the gateway signature. On the stack:
+
+- 201 affected tests pass;
+- references 23/23;
+- gates: V3/V4/V5 60/60, matrix 200/200, P0 20/20;
+- no existing recipe hash changes.
+
+**Still needed outside the code:**
+
+- the real calibration set (≥ 100 hand-scored items) and the choice of a judge model (#49);
+- per-model tuning of the token estimate (#50);
+- with `max_parallel > 1`, `wall_time_s` is lenient (#51).
+
+**Merge order:** wave 1, then #42 → #44 → #45 → #46 → #47, then #48 → #49 and #50 → #51. #50 and #51
+still need a rebase onto `main` after #40 and #42; #50 is mergeable today.
+
 ---
 
 ## 5. Next set: waves 5 and 6 (planned 2026-11-02)

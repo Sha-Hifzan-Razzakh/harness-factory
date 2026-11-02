@@ -51,9 +51,9 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #46 | `feat/env-business-api` | `…KhAFMPUEPRU3mK2t2` | Mock business API server (CRM, invoicing, ticketing) | ready for review (CI green), stacked on #45 | new server only |
 | #47 | `feat/env-docs` | `…KhAFMPUEPRU3mK2t2` | Documents server (docx, xlsx, pdf) | ready for review (CI green), stacked on #46 | new server; sandbox image tag |
 | #48 | `feat/graders-depth` | `…KhAFMPUEPRU3mK2t2` | Unordered rows, number tolerance, JSON schema, grader versions, re-grading | ready for review (CI green), stacked on #41 | scoring only for tasks adopting new kinds |
-| #49 | `feat/rubric-judge` | `…KhAFMPUEPRU3mK2t2` | Rubric judge with calibration | draft, reserved | scoring for tasks using it |
-| #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | draft, reserved | new optional recipe field |
-| #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | draft, reserved | new optional recipe fields |
+| #49 | `feat/rubric-judge` | `…KhAFMPUEPRU3mK2t2` | Rubric judge with calibration | ready for review (CI green), stacked on #48 | scoring for tasks using it |
+| #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | ready for review (CI green) | new optional recipe field |
+| #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | ready for review, stacked on #50 | new optional recipe fields |
 | #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | draft, reserved | new tasks only |
 | #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | draft, reserved (wave 5) | yes (scoring; tasks whose check gains a field) |
 | #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | draft, reserved (wave 5) | new fault profiles only |
