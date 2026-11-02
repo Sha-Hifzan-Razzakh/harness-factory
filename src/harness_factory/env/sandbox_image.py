@@ -1,14 +1,16 @@
 """SandboxImage (B1): the container image DockerSandbox runs MCP servers in.
 
-The image holds only what the MCP servers need: Python, the `mcp` package closure, and the server modules.
-It is built without network access inside the build:
+The image holds only what the MCP servers need: Python, the `mcp` package closure, pytest (for the code server
+and tests_pass checks), git, and the server modules. Python packages are never installed inside the build:
 
   1. dependencies are resolved on the host for the image's Python version and CPU (uv, or pip as a fallback),
      constrained to the versions installed in the factory's own environment (which came from uv.lock);
-  2. the Dockerfile only COPYs them in; there is no RUN step.
+  2. the Dockerfile COPYs them in. Its one RUN step installs git from the base image's package manager, and only
+     when the base image lacks it (ADR 0012): a base with git preinstalled builds with no network at all.
 
-So the same build works on CI, on a laptop, and behind a proxy that blocks package mirrors inside containers.
-The tag is a content hash of everything that goes in, so a changed server module or mcp version rebuilds.
+So the same build works on CI, on a laptop, and behind a proxy that blocks package mirrors inside containers (with
+HF_SANDBOX_BASE_IMAGE pointing at a base that has git). The tag is a content hash of everything that goes in, so a
+changed server module, mcp or pytest version, or Dockerfile rebuilds.
 """
 
 from __future__ import annotations
@@ -71,7 +73,7 @@ def server_arch() -> str:
 def image_tag(base: str, python: str, arch: str) -> str:
     files = {f: (PACKAGE_ROOT / f).read_text() for f in SERVER_FILES}
     return "hf-sandbox:" + content_hash({"base": base, "python": python, "arch": arch, "dockerfile": DOCKERFILE,
-                                         "mcp": md.version("mcp"), "files": files}, 12)
+                                         "mcp": md.version("mcp"), "pytest": md.version("pytest"), "files": files}, 12)
 
 
 def _constraints() -> str:
@@ -83,17 +85,17 @@ def _constraints() -> str:
 def _vendor(target: Path, python: str, arch: str, workdir: Path) -> None:
     cons = workdir / "constraints.txt"
     cons.write_text(_constraints())
-    req = f"mcp=={md.version('mcp')}"
+    reqs = [f"mcp=={md.version('mcp')}", f"pytest=={md.version('pytest')}"]   # pytest: the code server (ADR 0012)
     uv = shutil.which("uv")
     if uv:
         cmd = [uv, "pip", "install", "--quiet", "--target", str(target), "--python-version", python,
-               "--python-platform", f"{arch}-manylinux_2_28", "--only-binary", ":all:", "-c", str(cons), req]
+               "--python-platform", f"{arch}-manylinux_2_28", "--only-binary", ":all:", "-c", str(cons), *reqs]
     else:
         cmd = [sys.executable, "-m", "pip", "install", "--quiet", "--target", str(target), "--python-version",
-               python, "--platform", f"manylinux_2_28_{arch}", "--only-binary", ":all:", "-c", str(cons), req]
+               python, "--platform", f"manylinux_2_28_{arch}", "--only-binary", ":all:", "-c", str(cons), *reqs]
     proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
-        raise HarnessError(ErrorKind.SANDBOX, f"vendoring mcp for the sandbox failed: {proc.stderr.strip()[:800]}")
+        raise HarnessError(ErrorKind.SANDBOX, f"vendoring mcp and pytest for the sandbox failed: {proc.stderr.strip()[:800]}")
 
 
 def ensure_image(base: str | None = None, python: str | None = None) -> str:
@@ -145,10 +147,12 @@ def _ensure_locked(key: str, base: str, python: str) -> str:
                                    f"HF_SANDBOX=local.") from e
         servers = [f"harness_factory.{f[:-3].replace('/', '.')}" for f in SERVER_FILES if f.startswith("env/mcp/impl/")
                    and not f.endswith("__init__.py")]
-        probe = docker("run", "--rm", "--network", "none", tag, "python", "-c", "import mcp, " + ", ".join(servers),
-                       check=False, timeout=120)
+        check = ("import shutil, subprocess, sys, mcp, pytest, " + ", ".join(servers)
+                 + "; git = shutil.which('git') or sys.exit('git is missing')"
+                 + "; subprocess.run([git, '--version'], check=True, capture_output=True)")
+        probe = docker("run", "--rm", "--network", "none", tag, "python", "-c", check, check=False, timeout=120)
         if probe.returncode != 0:
-            raise HarnessError(ErrorKind.SANDBOX, f"sandbox image {tag} cannot import the MCP servers "
+            raise HarnessError(ErrorKind.SANDBOX, f"sandbox image {tag} cannot import the MCP servers or run git "
                                                   f"(base {base}, python {python}): {probe.stderr.strip()[:500]}")
     _ensured[key] = tag
     return tag

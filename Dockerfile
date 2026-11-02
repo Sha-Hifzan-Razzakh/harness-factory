@@ -38,6 +38,8 @@ FROM ${PYTHON_IMAGE}
 # uv vendors the MCP closure into the sandbox image; the Docker CLI talks to the host daemon (HF_SANDBOX=docker).
 COPY --from=uv /uv /usr/local/bin/uv
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+# git: the git server and git-seeded tasks run it in local sandboxes, and seed repositories are made here (ADR 0012).
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 hf
 WORKDIR /app
 COPY --from=build /app/.venv ./.venv

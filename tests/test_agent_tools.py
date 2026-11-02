@@ -102,7 +102,7 @@ def test_an_agent_tool_needs_a_remote_server():
 def test_the_agent_field_keeps_existing_env_hashes_and_its_prices_are_not_hashed(factory):
     plain = ToolSpec(name="read_file", side_effect=SideEffect.READ, risk="R0", schema_hash="abc")
     assert plain.hashed() == plain.model_dump(mode="json", exclude={"granted_by", "agent", "description_hash",
-                                                                    "escalation"})            # as before EXT-10
+                                                                    "escalation", "observes"})  # as before EXT-10
     d = factory.declared
     h = lambda agent: d.model_copy(update={"servers": [*d.servers, agent_spec("https://a.example/mcp", agent=agent)]}
                                    ).env_hash(["fs", "sql", "analyst"], "m")

@@ -69,6 +69,21 @@ def allowed_tools(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) 
             if recipe.tools.allows(r) and r.split(".")[0] in recipe.tools.mcp_servers}
 
 
+def missing_task_tools(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> list[str]:
+    """Tools the task allows directly that the recipe can't call (granted extras such as search are optional).
+    The selector prunes such a recipe for the task (`reaches_task_tools`), and campaigns don't plan the pair."""
+    direct = {r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)}
+    return sorted(direct - allowed_tools(recipe, task, declared))
+
+
+CODE_SERVER = "code"
+
+
+def runs_task_code(recipe: HarnessRecipe, task: Task) -> bool:
+    """Whether the run executes code from the workspace: the code server, or a tests_pass check (ADR 0012)."""
+    return CODE_SERVER in recipe.tools.mcp_servers or any(c.kind == "tests_pass" for c in task.oracle.checks)
+
+
 def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend | None:
     if provider_kind != "scripted":
         return None
@@ -163,6 +178,11 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} opens remote MCP server(s) {', '.join(remote)}: live "
                                                 f"remote calls are opt-in (set HF_ALLOW_REMOTE=1), or replay a "
                                                 f"recording (HF_REMOTE_MODE=replay)")
+    if (runs_task_code(recipe, task) and providers.get(provider_id).kind != "scripted" and settings.SANDBOX == "local"
+            and not settings.allow_local_code()):
+        raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} on {task.key()} runs code the model wrote, and a local "
+                                                f"sandbox doesn't contain it: use HF_SANDBOX=docker, or opt in with "
+                                                f"HF_ALLOW_LOCAL_CODE=1 (ADR 0012)")
     run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers,
                           fault=fault)
     for slot in recipe.model_slots.values():          # the seed is a campaign axis: the run's seed is the one sent

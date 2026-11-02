@@ -184,3 +184,31 @@ async def test_skills_on_demand_inside_the_container(factory, docker_required, m
                         "scripted/replay", "scripted", backend=ScriptedBackend(script))
     tool = next(m for m in rec.messages if m["role"] == "tool")
     assert "List the tables and describe" in tool["content"]
+
+
+async def test_code_and_git_tasks_inside_the_container(factory, docker_required, monkeypatch):
+    """ADR 0012: the code and git servers, the git seed and the tests_pass / git_log_contains probes all work in
+    the container, and the agent's code runs there (the container's Python, no network), not on the host."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    for task_id in ("code-02", "code-03"):
+        rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v2-code"], "scripted/replay",
+                            "scripted")
+        assert rec.status.value == "SUCCESS", rec.grades
+        assert next(g for g in rec.grades if g["grader_id"] == "state_diff")["snapshot"]["sandbox"] == "docker"
+    sb = DockerSandbox("dk-code")
+    try:
+        sb.reset(factory.tasks.get("code-02"))
+        (sb.workspace / "where.py").write_text(
+            "import socket, sys\nprint(sys.executable)\ntry:\n    socket.create_connection(('1.1.1.1', 53), "
+            "timeout=3); print('CONNECTED')\nexcept OSError:\n    print('offline')\n")
+        async with MCPSessionPool(factory.declared, ["code", "git"], sb.env(), sb.launch) as pool:
+            out = json.loads((await pool.call("code.run_python", {"path": "where.py"})).text)["output"]
+            assert out.split() == ["/usr/local/bin/python", "offline"]
+            tests = json.loads((await pool.call("code.run_tests", {"path": "tests"})).text)
+            assert tests["exit_code"] == 1 and tests["counts"]["failed"] == 2
+            assert (await pool.call("git.status", {})).text.splitlines()[0] == "## main"
+        answer = sb.probe({"op": "pytest", "targets": ["tests/test_discount.py"]}, 60)
+        assert answer["exit_code"] == 1 and answer["counts"]["failed"] == 1
+        assert sb.probe({"op": "git_commits", "ref": "main", "since": sb.git_seed}, 30) == {"commits": []}
+    finally:
+        sb.teardown()

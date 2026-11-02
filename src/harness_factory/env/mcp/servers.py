@@ -86,11 +86,15 @@ class ToolSpec(BaseModel):
     # fs.read_file + fs.write_file); it is granted only under ToolCatalogFile.grantable's stricter rule.
     granted_by: list[str] | None = None
     agent: AgentTool | None = None   # set when the tool is another agent (EXT-10)
+    # A tool called for what it reports about the current state as much as for its effect (running the tests,
+    # ADR 0012). The trajectory grader counts a repeat as wasted only when nothing changed since the same call, as
+    # for a read, so test -> fix -> test is not waste; the call may still change files, so later reads aren't stale.
+    observes: bool | None = None
 
     def hashed(self) -> dict:
         """What of this spec is part of env_hash: unset optional fields are left out (so adding one keeps every
         existing hash), and so are prices."""
-        optional = ("granted_by", "agent", "description_hash", "escalation")
+        optional = ("granted_by", "agent", "description_hash", "escalation", "observes")
         data = self.model_dump(mode="json", exclude={k for k in optional if getattr(self, k) is None})
         if self.agent is not None:
             data["agent"] = {"max_calls": self.agent.max_calls}

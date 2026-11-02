@@ -71,6 +71,12 @@ def allow_remote() -> bool:
     return os.environ.get("HF_ALLOW_REMOTE") == "1"
 
 
+def allow_local_code() -> bool:
+    """Code a real model wrote runs on this machine in a local sandbox (the code server, tests_pass checks): opt-in
+    with HF_ALLOW_LOCAL_CODE=1, or use HF_SANDBOX=docker (ADR 0012). Scripted runs never need it. Read at call time."""
+    return os.environ.get("HF_ALLOW_LOCAL_CODE") == "1"
+
+
 def remote_mode() -> str:
     """How remote MCP servers are answered (EXT-08): live (default), record (live, and every answer saved) or
     replay (from the recording: offline, no token, no opt-in needed). HF_REMOTE_MODE, read at call time."""
