@@ -632,6 +632,48 @@ Why an overrun is graded at all, but penalised:
 Cells are keyed by **task class × recipe × model × provider × environment hash**. Provider and environment stay
 separate until cross-provider equivalence is calibrated (P2).
 
+## Pausing and resuming a run (checkpoints)
+
+V2–V5 shapes are LangGraph graphs. With checkpointing on, each graph is compiled with one of LangGraph's own
+savers and run under one LangGraph thread per run, so the graph state is saved after every node. A paused run
+then resumes from the node that was next instead of starting over. It is opt-in. With it off (the default), runs
+execute exactly as before. Nothing about scoring or run identity changes either way: no hash moves, and a resumed
+run must end with the same status, outcome, calls, tokens and conversation as the same run left alone
+(`tests/test_checkpoint.py`).
+
+```bash
+HF_CHECKPOINT=sqlite hfx run --task sql-02 --recipe v3-staged --model scripted/replay --provider scripted
+hfx run ... --checkpoint sqlite --pause-after 3      # pause after 3 nodes, resume from the checkpoint
+hfx smoke ... --checkpoint sqlite                     # checkpoint every run of a campaign
+```
+
+| Setting | Values |
+|---|---|
+| `HF_CHECKPOINT` / `--checkpoint` | `off` (default), `sqlite` (`AsyncSqliteSaver`, offline), `postgres` (`AsyncPostgresSaver`, needs `uv sync --extra checkpoint-postgres`) |
+| `HF_CHECKPOINT_URL` | sqlite: a file path (default `var/checkpoints.db`); postgres: a conninfo string (required; keep it in `.env`) |
+
+What a resume restores, and from where:
+
+- **Graph state** (messages, stage or plan position, retries, the stop): the checkpoint. The thread id is the
+  RunKey's short hash plus an attempt suffix, and is recorded in the run's snapshot (`checkpoint`).
+- **Recursion limit**: the checkpoint's step counter. The limit counts nodes across pauses, so a checkpointed
+  run hits it at exactly the node a plain run does.
+- **Budget used so far, spans, tool violations, the snapshot (V4/V5 plans), delegate call count, the model
+  backend**: the `HarnessInstance`, which is the same object. Nothing is reset, so a resume gets no free steps,
+  tool calls or tokens and counts nothing twice. The trace stays one trace, plus a `resume` handoff span that no
+  grader or cost counts.
+- **Sandbox files, database, MCP sessions**: the same live sandbox.
+
+Pauses happen only between nodes, before the next node starts, so no model or tool call is repeated. A pause
+comes from a pause rule (`run_one(..., pause=...)`, `--pause-after`), and the runner resumes the run at once.
+
+Not supported:
+
+- **Resuming in another process.** The sandbox is torn down when the run ends, and the per-run objects above are
+  not in the checkpoint. The checkpoint itself stays in the saver's database, but a new run starts a new thread.
+- **Checkpoints inside a node.** An exception raised inside a node is a crash (ERROR), as before. A delegate's
+  own graph runs inside its parent's node and is not checkpointed. V1 has no graph.
+
 ## Run identity
 
 A RunKey changes whenever any of these changes:

@@ -12,6 +12,7 @@ from langgraph.graph import END, START, StateGraph
 
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
+from harness_factory.shapes.checkpoint import run_graph
 from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult
 
@@ -54,12 +55,12 @@ class ToolLoopShape:
         g.add_edge(START, "call_model")
         g.add_conditional_edges("call_model", after, {"next": "run_tools", END: END})
         g.add_conditional_edges("run_tools", after, {"next": "call_model", END: END})
-        return g.compile()
+        return g
 
     async def run(self, inst: HarnessInstance) -> RunResult:
         # The runner owns the root "run" span; everything here nests under it.
-        final: LoopState = await self._build(inst).ainvoke(
-            {"messages": inst.messages, "stop": None, "output": None, "error": None},
-            config={"recursion_limit": inst.recipe.config.max_steps * 2 + 10},
+        final: LoopState = await run_graph(
+            inst, self._build(inst), {"messages": inst.messages, "stop": None, "output": None, "error": None},
+            recursion_limit=inst.recipe.config.max_steps * 2 + 10,
         )
         return finish(inst, final["messages"], final.get("stop"), final.get("output"), final.get("error"))

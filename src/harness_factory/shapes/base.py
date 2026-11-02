@@ -33,6 +33,7 @@ class HarnessInstance:
     delegate: Any = None                                          # shapes.delegate.DelegateContext, or None
     prompts: Any = None                                           # substrate.prompts.PromptRegistry (V4 renders
                                                                   # its step and replan prompts during the run)
+    checkpoint: Any = None                                        # shapes.checkpoint.Checkpoint, or None (off)
 
 
 class Harness(Protocol):

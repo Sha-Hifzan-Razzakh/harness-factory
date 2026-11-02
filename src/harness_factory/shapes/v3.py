@@ -18,6 +18,7 @@ from langgraph.graph import END, START, StateGraph
 from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
+from harness_factory.shapes.checkpoint import run_graph
 from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult, Violation
 
@@ -109,15 +110,16 @@ class WorkflowGraphShape:
                                 {"run_tools": "run_tools", "stage_done": "stage_done", END: END})
         g.add_conditional_edges("run_tools", after_tools, {"call_model": "call_model", END: END})
         g.add_conditional_edges("stage_done", after_stage, {"enter_stage": "enter_stage", END: END})
-        return g.compile()
+        return g
 
     async def run(self, inst: HarnessInstance) -> RunResult:
         wf = inst.recipe.workflow
         per_pass = sum(st.max_steps * 2 + 4 for st in wf.stages)
-        final: FlowState = await self._build(inst).ainvoke(
+        final: FlowState = await run_graph(
+            inst, self._build(inst),
             {"messages": inst.messages, "stage": 0, "stage_steps": 0, "retries": 0, "reply": None, "trail": [],
              "stop": None, "output": None, "error": None},
-            config={"recursion_limit": per_pass * (wf.max_retries + 1) + 10},
+            recursion_limit=per_pass * (wf.max_retries + 1) + 10,
         )
         result = finish(inst, final["messages"], final.get("stop"), final.get("output"), final.get("error"))
         inst.snapshot["stage_trail"] = final["trail"]

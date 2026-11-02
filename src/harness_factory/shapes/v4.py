@@ -22,6 +22,7 @@ from harness_factory.hashing import content_hash
 from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import ModelSlot, Variant
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
+from harness_factory.shapes.checkpoint import run_graph
 from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult, Violation
 
@@ -61,7 +62,7 @@ class Planner:
                                                   "description": t["function"]["description"]} for t in tools])
         self.task_messages = [m for m in inst.messages if m.get("role") != "system"]
         inst.snapshot["planner_prompt_hash"] = content_hash([self.system])
-        inst.snapshot["plans"] = []
+        inst.snapshot.setdefault("plans", [])      # kept when a resumed run builds its graph again
 
     async def plan(self) -> tuple[list[str] | None, dict]:
         return await self._ask([], "plan")
@@ -193,15 +194,16 @@ class PlannerShape:
                                 {"run_tools": "run_tools", "step_done": "step_done", END: END})
         g.add_conditional_edges("run_tools", after_tools, {"call_model": "call_model", END: END})
         g.add_conditional_edges("step_done", after_plan, {"enter_step": "enter_step", END: END})
-        return g.compile()
+        return g
 
     async def run(self, inst: HarnessInstance) -> RunResult:
         pl = inst.recipe.planning
         per_plan = 2 + pl.max_plan_steps * (pl.step_max_steps * 2 + 4)
-        final: PlanState = await self._build(inst).ainvoke(
+        final: PlanState = await run_graph(
+            inst, self._build(inst),
             {"messages": inst.messages, "steps": [], "shown": False, "step_no": 0, "step_calls": 0, "replans": 0,
              "reply": None, "done": [], "stop": None, "output": None, "error": None},
-            config={"recursion_limit": per_plan * (pl.max_replans + 1) + 10},
+            recursion_limit=per_plan * (pl.max_replans + 1) + 10,
         )
         result = finish(inst, final["messages"], final.get("stop"), final.get("output"), final.get("error"))
         inst.snapshot["plan_trail"] = final["done"]
