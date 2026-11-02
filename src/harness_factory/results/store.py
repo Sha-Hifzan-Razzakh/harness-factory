@@ -62,6 +62,7 @@ runs = Table(
     Column("fault", String),                                 # fault profile id; NULL = clean run
     Column("grader_versions", JSON),                         # grader id -> version; NULL = before versions
     Column("endstate_path", String),                         # end-state bundle (runner/endstate.py), if kept
+    Column("judge_usage", JSON),                             # the rubric judge's calls (ADR 0014); never in usd
 )
 
 # Re-grades (hfx regrade): the current graders over a stored run's end state. A row here never changes the run's
@@ -82,6 +83,23 @@ regrades = Table(
     Column("grades", JSON, nullable=False),
     Column("grader_versions", JSON, nullable=False),
     Column("changed", Integer, nullable=False),              # 1 = status, O, Q or E0 differs from the run's row
+    Column("created_at", DateTime, nullable=False),
+    Column("judge_usage", JSON),                             # the rubric judge's calls for this re-grade
+)
+
+# Judge calibrations (ADR 0014): how far a rubric judge (by judge hash) agrees with hand-scored items.
+judge_calibrations = Table(
+    "judge_calibrations", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("judge_hash", String, nullable=False, index=True),
+    Column("provider", String, nullable=False),
+    Column("model", String, nullable=False),
+    Column("set_name", String, nullable=False),
+    Column("set_hash", String, nullable=False),
+    Column("n", Integer, nullable=False),                    # items the judge graded
+    Column("failed", Integer, nullable=False),               # items it could not grade (not in n)
+    Column("kappa", Float),                                  # Cohen's kappa on pass/fail; NULL = undefined
+    Column("mae", Float),                                    # mean absolute error of the scores
     Column("created_at", DateTime, nullable=False),
 )
 
@@ -111,6 +129,7 @@ def record_row(rec: EffectivenessRecord) -> dict:
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
         created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path, fault=rec.fault,
         grader_versions=grader_versions(rec.grades), endstate_path=rec.endstate_path,
+        judge_usage=rec.judge_usage,
     )
 
 
@@ -260,7 +279,7 @@ class ResultsStore:
 
     def _migrate(self) -> None:
         """Additive only: add nullable columns that newer code defines and an older store lacks."""
-        for table in (runs, cost_baselines):
+        for table in (runs, cost_baselines, regrades, judge_calibrations):
             existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
             with self.engine.begin() as c:
                 for col in table.columns:
@@ -283,6 +302,20 @@ class ResultsStore:
             q = q.where(regrades.c.run_id == run_id)
         with self.engine.connect() as c:
             return [dict(r) for r in c.execute(q).mappings()]
+
+    def add_calibration(self, rec) -> int:
+        """A judge calibration record (grading/calibration.CalibrationRecord)."""
+        with self.engine.begin() as c:
+            return c.execute(insert(judge_calibrations).values(**rec.model_dump())).inserted_primary_key[0]
+
+    def calibrations(self, judge_hash: str | None = None) -> list:
+        """CalibrationRecords, oldest first; of one judge hash, or all."""
+        from harness_factory.grading.calibration import CalibrationRecord
+        q = select(judge_calibrations).order_by(judge_calibrations.c.id)
+        if judge_hash is not None:
+            q = q.where(judge_calibrations.c.judge_hash == judge_hash)
+        with self.engine.connect() as c:
+            return [CalibrationRecord(**{k: v for k, v in r.items() if k != "id"}) for r in c.execute(q).mappings()]
 
     def run_by_id(self, run_id: int) -> dict | None:
         with self.engine.connect() as c:

@@ -29,6 +29,7 @@ from harness_factory.grading.base import (
     combine_families,
     default_pipeline,
 )
+from harness_factory.grading.judge import RubricJudge, apply_judge_failure, judge_usage
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.mlops.tracker import ExperimentTracker
 from harness_factory.observability.span import SpanKind
@@ -63,16 +64,19 @@ class Factory:
     faults: dict[str, FaultConfig] = field(default_factory=dict)
     tracker: ExperimentTracker = field(default_factory=ExperimentTracker)
     graders: GradingPipeline = field(default_factory=default_pipeline)
+    judge: RubricJudge | None = None            # rubric checks (ADR 0014); None = ungraded, weight 0
 
     @staticmethod
     def load(store: bool = True, results_url: str | None = None, quota_state: Path | None = None) -> Factory:
         """quota_state: where provider usage is persisted (default settings.QUOTA_STATE). Tests pass a temp path."""
         providers = load_provider_catalog(settings.PROVIDERS_FILE)
+        ledger = QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE)
+        results = ResultsStore(results_url) if store else None
         return Factory(tasks=TaskRegistry(), recipes=load_recipes(settings.RECIPES_DIR),
-                       declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers,
-                       ledger=QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE),
-                       store=ResultsStore(results_url) if store else None,
-                       faults=load_fault_profiles(settings.FAULTS_DIR))
+                       declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers, ledger=ledger,
+                       store=results, faults=load_fault_profiles(settings.FAULTS_DIR),
+                       judge=RubricJudge.from_catalog(providers, ledger,
+                                                      results.calibrations if results is not None else None))
 
     def fault(self, fault_id: str | None) -> FaultConfig | None:
         if fault_id in (None, NO_FAULTS):
@@ -187,16 +191,24 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             ctx = GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
                                workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
                                spans=list(inst.tracer.spans), max_steps=recipe.config.max_steps, remote=remote)
+            judge_s = 0.0
             with inst.tracer.span(SpanKind.grade, "pipeline"):
+                if f.judge is not None and task.oracle.rubric_checks():
+                    # The judge's calls are on its own tracer and its time is not the run's: neither is in C.
+                    t_judge = time.monotonic()
+                    ctx.judgements = await f.judge.judge_checks(ctx)
+                    judge_s = time.monotonic() - t_judge
                 grades = f.graders.run(ctx)
+            pre_judge = apply_judge_failure(result, ctx.judgements)
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
         result.trajectory = list(inst.tracer.spans)
-        result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0)
+        result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0 - judge_s)
         trace_path = inst.tracer.write_jsonl()
         transcript_path = write_transcript(trace_path, inst, result)
         endstate_path = await asyncio.to_thread(save_endstate, trace_path, ctx, task_class=p.task_class,
-                                                weight_profile=p.weight_profile)
+                                                weight_profile=p.weight_profile,
+                                                **({"pre_judge": pre_judge} if pre_judge else {}))
 
         scores, violations, critical = run_scores(result, grades)
         weights = ScoreWeights.for_profile(p.weight_profile)
@@ -212,6 +224,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             transcript_path=str(transcript_path),
             fault=fault,
             endstate_path=endstate_path,
+            judge_usage=judge_usage(ctx.judgements, wall_s=judge_s),
         )
     if f.store:
         f.store.add(rec)
@@ -222,7 +235,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
 
 
 async def run_reference(f: Factory, task: Task) -> Grade:
-    """TSK-04: the reference plan must pass the task's own oracle."""
+    """TSK-04: the reference plan must pass the task's own oracle. Rubric checks are judged too, and a judged
+    rubric check the reference fails fails the reference (even at weight 0): its rubric or its text is wrong."""
     ref = load_reference(task)
     servers = sorted({step["tool"].split(".")[0] for step in ref.plan}) or ["fs"]
     with make_sandbox(label=f"ref-{task.id}") as sb:
@@ -240,10 +254,17 @@ async def run_reference(f: Factory, task: Task) -> Grade:
         after = insp.capture()
         dummy = RunResult(run_key=RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash="ref",
                                          canonical_model="reference", provider="none"),
-                          output=ref.final, finished=True)
+                          output=ref.final, finished=True, scored=True)
         ctx = GradeContext(task=task, result=dummy, before=before, after=after, diff=StateInspector.diff(before, after),
                            workspace=sb.workspace, db_path=sb.db_path, spans=tracer.spans, max_steps=10_000)
-        return f.graders.graders["state_diff"].grade(ctx)
+        if f.judge is not None and task.oracle.rubric_checks():
+            ctx.judgements = await f.judge.judge_checks(ctx)
+        grade = f.graders.graders["state_diff"].grade(ctx)
+        rejected = [v.check_id for v in ctx.judgements.values() if v.available and not v.passed]
+        if rejected:
+            grade.passed = False
+            grade.detail = f"the judge fails the reference on {', '.join(rejected)}; " + grade.detail
+        return grade
 
 
 class RunSpec(BaseModel):

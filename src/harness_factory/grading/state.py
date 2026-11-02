@@ -11,6 +11,9 @@ Which comparison to use:
                       whitespace / ignoring case); output_regex when several phrasings are right
   json_schema         a file is JSON of the right shape (types, required keys, ranges), not one fixed document;
                       file_equals when there is exactly one right document
+  rubric              an open-ended deliverable (a summary, a note, a report) that no fixed comparison can grade:
+                      a judge model scores it against the check's rubric (grading/judge.py, ADR 0014). Pair it
+                      with deterministic checks: an uncalibrated judge carries weight 0
 """
 
 from __future__ import annotations
@@ -164,6 +167,19 @@ def _output_exact(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
     return ok, "equal" if ok else f"output {out[:120]!r}"
 
 
+def _rubric(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
+    v = ctx.judgements.get(c.id)
+    if v is None:
+        return False, "ungraded: no judge verdict (no judge configured, or graded without one)"
+    if not v.available:
+        return False, f"ungraded: {v.error}"
+    if v.error:                                   # missing or empty deliverable: failed without a judge call
+        return False, v.error
+    trust = "calibrated" if v.calibrated else "uncalibrated: weight 0"
+    rel = ">=" if v.passed else "<"
+    return bool(v.passed), f"rubric {v.score:.3f} {rel} {c.rubric.threshold} (judge {v.judge_hash[:12]}, {trust})"
+
+
 @register_grader
 class StateDiffGrader:
     id = "state_diff"
@@ -180,6 +196,8 @@ class StateDiffGrader:
             return _json_schema(ctx, c)
         if c.kind == "output_exact":
             return _output_exact(ctx, c)
+        if c.kind == "rubric":
+            return _rubric(ctx, c)
         if c.kind in ("file_equals", "file_contains", "file_regex", "file_absent", "json_valid"):
             p = (ctx.workspace / (c.path or "")).resolve()
             if c.kind == "file_absent":
@@ -237,6 +255,33 @@ class StateDiffGrader:
             checks.append(CheckResult(id=c.id, passed=ok, weight=c.weight, critical=c.critical, detail=detail))
             if c.critical and not ok:
                 violations.append(Violation(kind="critical_check_failed", critical=True, detail=c.id))
+        _weigh_rubric_checks(ctx, checks)
         score = round(sum(ch.weight for ch in checks if ch.passed), 6)
         return Grade(grader_id=self.id, score=score, passed=score >= ctx.task.oracle.pass_threshold and not violations,
                      checks=checks, violations=violations, detail=ctx.diff.summary())
+
+
+def _weigh_rubric_checks(ctx: GradeContext, checks: list[CheckResult]) -> None:
+    """A rubric check carries its weight only on a calibrated judge's available grade (ADR 0014). Otherwise it
+    carries 0, and the other checks' weights are scaled up to sum to 1 again: the outcome is then exactly the
+    deterministic checks' share, so it never depends on an uncalibrated (or absent) judge. A task without rubric
+    checks is untouched (same weights, same arithmetic)."""
+    rubric = {c.id: c for c in ctx.task.oracle.rubric_checks()}
+    if not rubric:
+        return
+    dropped = 0.0
+    for ch in checks:
+        if ch.id not in rubric:
+            continue
+        v = ctx.judgements.get(ch.id)
+        ch.judge = v.model_dump(mode="json") if v is not None else None
+        ch.ungraded = v is None or not v.available
+        if v is None or not v.counts:
+            ch.declared_weight, ch.weight = ch.weight, 0.0
+            dropped += ch.declared_weight
+    if dropped <= 0:
+        return
+    scale = 1.0 / (1.0 - dropped)                  # the oracle keeps some deterministic weight (Oracle validator)
+    for ch in checks:
+        if ch.id not in rubric and ch.weight > 0:
+            ch.declared_weight, ch.weight = ch.weight, round(ch.weight * scale, 9)

@@ -693,7 +693,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-23 tasks over three seeds. The first five are the P0 smoke set. The other eighteen each hide a trap that a
+24 tasks over three seeds. The first five are the P0 smoke set. The other nineteen each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -717,6 +717,7 @@ careless harness falls into: the right answer and the plausible wrong one differ
 | `docs-02` | unknown path, reversible, R1 | HELD_OUT | The new port is prod's, not the base default or staging's |
 | `code-01` | unknown path, reversible, R1 | TEST | Version bump; a dependency is pinned at the same version number |
 | `res-01` | unknown path, read, R0 | TEST | Backups per environment: env files override the base default |
+| `docs-03` | known path, reversible, R1 | DEV | Handover note (rubric check): pass the order deletion on as a to-do, or handle the ticket instead |
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
@@ -759,6 +760,47 @@ integers or text. Use `sql_rows_unordered` for a query without a defined order, 
 computed in floating point (`0.1 + 0.2` is not `0.3`). A `pattern` in `number_close` uses its first group, or
 the whole match; `1,866.88` style thousands separators are accepted.
 
+### Rubric checks (open-ended deliverables)
+
+When many texts are right (a summary, a note, a report), a judge model scores the deliverable against a rubric
+(ADR 0014):
+
+```yaml
+- id: handover_quality
+  kind: rubric
+  weight: 0.5
+  path: reports/handover.md          # leave out to judge the final answer
+  rubric:
+    threshold: 0.75                  # weighted criterion score at which the check passes
+    criteria:                        # weights sum to 1; each is scored 0, 0.5 or 1
+    - {id: order_deletion, weight: 0.35, text: Says the request to delete "order 2005" must be "declined", ...}
+```
+
+- Pair it with deterministic checks (required: some weight must be deterministic) and guard with deterministic
+  guards: a rubric check is never critical.
+- **Uncalibrated judges carry weight 0.** Until the judge's current hash has a calibration record on >= 100
+  hand-scored items with Cohen's kappa >= 0.7, its verdicts are reported (`grades[].checks[].judge`) but the
+  check's weight is 0 and the other checks are scaled to sum to 1. The composite never depends on an
+  uncalibrated judge.
+- The judge sees only the criteria and the deliverable, framed as data between markers; the agent never sees
+  the rubric. Its calls go through `ModelGateway` (quota, timeouts, error classification) on their own tracer:
+  their tokens and cost are in `runs.judge_usage`, never in the run's cost or C.
+- A judge failure never scores the agent 0. Uncalibrated: the check is `ungraded`. Calibrated: the run is
+  INCOMPLETE (ERROR for a judge setup problem), and `hfx regrade` can judge it again later.
+- In the reference check (`hfx reference`), a judged rubric check the reference fails fails the reference.
+
+The judge is `catalog/judge/judge.yaml` (offline default: `scripted-judge` / `scripted/judge`, deterministic and
+never calibrated); `HF_JUDGE_PROVIDER` / `HF_JUDGE_MODEL` override it.
+
+```bash
+hfx judge status                                             # the judge in effect, its hash, trusted or not
+hfx judge calibrate --set my-150-items.yaml --model gpt-oss-120b --provider groq   # kappa, MAE; stores a record
+```
+
+A calibration set's format is in `grading/calibration.py`; `catalog/judge/calibration/seed.yaml` is a 16-item
+format example, not a calibration. Editing the judge's model or prompts (`prompts/judge/`) is a new judge hash
+and needs a new calibration.
+
 ## Graders: versions, families and re-grading
 
 A grader is registered with `@register_grader` (`grading/base.py`) and declares:
@@ -790,7 +832,7 @@ hfx regrade --all --changed           # everything; list only the runs whose gra
 ```
 
 Each re-grade is a new row in the `regrades` table, with grader versions and a `changed` flag. The run's own row
-is never touched, and aggregation still reads only runs. A re-grade shows what a grader or check change would do
+is never touched, and aggregation still reads only runs. Rubric checks are judged again by the current judge. A re-grade shows what a grader or check change would do
 to stored results; new runs are what put that change into the numbers. Runs stored before this change have no
 end state and are reported as skipped.
 

@@ -225,13 +225,17 @@ def test_output_exact(tmp_path):
 
 # ---- identity -------------------------------------------------------------------------------------------------
 
+USED_BY_NEW_TASKS = {"rubric"}     # fields set by tasks written after them (docs-03, #49)
+
+
 def test_new_check_fields_leave_task_hashes_alone(factory):
     """Unset new fields are dropped before hashing, so every catalog task keeps the hash it had before them."""
     for task in factory.tasks.all(include_held_out=True):
         data = task.model_dump(mode="json", exclude={"status", "split", "tags"})
         for c in data["oracle"]["checks"]:
             for name in _CHECK_HASH_OMIT_WHEN_NONE:
-                assert c.pop(name) is None
+                if c.get(name) is None or name not in USED_BY_NEW_TASKS:
+                    assert c.pop(name) is None
         data["seed_hash"] = task.env_seed.data_hash(task.source_dir)
         assert task.content_hash() == content_hash(data), task.key()
     t = factory.tasks.get("sql-01").model_copy(deep=True)
@@ -462,7 +466,7 @@ async def test_regrade_end_to_end(factory):
     assert rec.status == RunStatus.SUCCESS
     row = factory.store.rows()[-1]
 
-    same = regrade(factory, run_ids=[row["id"]])[0]           # current graders, unchanged task: same grade
+    same = (await regrade(factory, run_ids=[row["id"]]))[0]         # current graders, unchanged task: same grade
     assert same.after == same.before and not same.changed and not same.task_edited
 
     answer = next(c for c in task.oracle.checks if c.weight > 0)
@@ -470,7 +474,7 @@ async def test_regrade_end_to_end(factory):
         answer.pattern = r"^no such answer$"
     else:
         answer.kind, answer.text = "output_exact", "no such answer"
-    changed = regrade(factory, task="sql-01")[0]
+    changed = (await regrade(factory, task="sql-01"))[0]
     assert changed.changed and changed.task_edited
     assert changed.after.outcome < changed.before.outcome and changed.after.status != "SUCCESS"
 
@@ -506,7 +510,7 @@ async def test_endstate_bundle(factory, monkeypatch):
     big = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "scripted/replay",
                         "scripted")
     assert off.endstate_path is None and big.endstate_path is None
-    skipped = regrade(factory, task="fs-01")
+    skipped = await regrade(factory, task="fs-01")
     assert [o.skipped for o in skipped] == ["no end state kept"]           # latest fs-01 row kept none
     assert factory.store.regrade_rows() == []
 
@@ -525,14 +529,14 @@ def test_bundle_names_cannot_escape(tmp_path):
         load_endstate(tmp_path / "old.zip", tmp_path / "dest2")
 
 
-def test_regrade_selection_errors(factory):
+async def test_regrade_selection_errors(factory):
     with pytest.raises(ValueError, match="exactly one"):
-        regrade(factory)
+        await regrade(factory)
     with pytest.raises(ValueError, match="exactly one"):
-        regrade(factory, task="fs-01", all_runs=True)
+        await regrade(factory, task="fs-01", all_runs=True)
     with pytest.raises(KeyError):
-        regrade(factory, run_ids=[12345])
-    assert regrade(factory, all_runs=True) == []
+        await regrade(factory, run_ids=[12345])
+    assert await regrade(factory, all_runs=True) == []
 
 
 async def test_regrade_task_without_database(factory):
@@ -542,5 +546,5 @@ async def test_regrade_task_without_database(factory):
     assert rec.endstate_path is not None
     with zipfile.ZipFile(rec.endstate_path) as z:
         assert z.read("state/task.sqlite") == b""
-    [o] = regrade(factory, all_runs=True)
+    [o] = await regrade(factory, all_runs=True)
     assert o.after == o.before and o.after.status == rec.status.value

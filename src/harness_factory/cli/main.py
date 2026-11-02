@@ -147,7 +147,25 @@ def validate() -> None:
         for i in issues:
             console.print(f"    {i.rule}: {i.detail}")
         bad += bool(issues)
+    bad += _validate_judge(f)
     raise typer.Exit(code=1 if bad else 0)
+
+
+def _validate_judge(f) -> bool:
+    """The rubric judge (ADR 0014): its provider serves its model and both prompts exist. False when fine."""
+    from harness_factory.grading.judge import RubricJudge, load_judge_config
+    try:
+        cfg = load_judge_config()
+        if cfg is None:
+            if any(t.oracle.rubric_checks() for t in f.tasks.all(include_held_out=True)):
+                console.print("[yellow]warn[/] judge: no catalog/judge/judge.yaml; rubric checks stay ungraded")
+            return False
+        judge = RubricJudge(cfg, f.providers, f.ledger)
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        console.print(f"[red]FAIL[/] judge: {e}")
+        return True
+    console.print(f"[green]ok[/] judge {cfg.provider}/{cfg.model} ({judge.hash})")
+    return False
 
 
 @app.command()
@@ -161,7 +179,7 @@ def reference(task_id: str | None = typer.Argument(None)) -> None:
         g = asyncio.run(run_reference(f, task))
         console.print(f"{'[green]pass' if g.passed else '[red]FAIL'}[/] {task.key()} score={g.score:.2f}  {g.detail}")
         for c in g.checks:
-            if not c.passed:
+            if not c.passed or c.judge:
                 console.print(f"    {c.id}: {c.detail}")
         failed += not g.passed
     raise typer.Exit(code=1 if failed else 0)
@@ -555,3 +573,7 @@ _register_authoring(app)
 from harness_factory.cli.regrade import register as _register_regrade  # hfx regrade
 
 _register_regrade(app)
+
+from harness_factory.cli.judge import register as _register_judge  # hfx judge status / calibrate
+
+_register_judge(app)

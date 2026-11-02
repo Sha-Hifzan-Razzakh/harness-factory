@@ -23,9 +23,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from harness_factory.env.state import EnvState, StateDiff
+from harness_factory.grading.verdict import RubricVerdict
 from harness_factory.observability.span import Span
 from harness_factory.shapes.result import RunResult, Violation
 from harness_factory.tasks.model import Task
@@ -47,14 +48,27 @@ class GradeContext:
     spans: list[Span]
     max_steps: int
     remote: dict[str, Any] = field(default_factory=dict)   # server -> its test tenant's state after the run
+    judgements: dict[str, RubricVerdict] = field(default_factory=dict)   # rubric check id -> the judge's verdict
 
 
 class CheckResult(BaseModel):
     id: str
     passed: bool
-    weight: float
+    weight: float                      # the weight it carried in the score (see StateDiffGrader.grade)
     critical: bool = False
     detail: str = ""
+    # Rubric checks only (ADR 0014); left out of the stored grade when unset, so other checks store as before.
+    declared_weight: float | None = None   # the task's weight, when the check carried another (0: uncalibrated)
+    ungraded: bool | None = None           # the judge gave no grade
+    judge: dict[str, Any] | None = None    # the RubricVerdict: identity, calibration, criteria, usage
+
+    @model_serializer(mode="wrap")
+    def _drop_unset(self, handler):
+        out = handler(self)
+        for k in ("declared_weight", "ungraded", "judge"):
+            if out.get(k) is None:
+                out.pop(k, None)
+        return out
 
 
 class Grade(BaseModel):
@@ -156,6 +170,13 @@ class GradingPipeline:
 
     def versions(self, grader_ids: list[str] | None = None) -> dict[str, str]:
         return {gid: g.version for gid, g in self.graders.items() if grader_ids is None or gid in grader_ids}
+
+    async def arun(self, ctx: GradeContext, judge: Any = None) -> list[Grade]:
+        """run(), after the rubric judge (grading/judge.RubricJudge, or None) has scored the task's rubric checks
+        into ctx.judgements. Judging is async (model calls); graders stay synchronous and only read verdicts."""
+        if judge is not None and ctx.task.oracle.rubric_checks():
+            ctx.judgements = await judge.judge_checks(ctx)
+        return self.run(ctx)
 
     def run(self, ctx: GradeContext) -> list[Grade]:
         chosen = []

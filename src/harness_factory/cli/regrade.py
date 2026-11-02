@@ -16,11 +16,13 @@ def regrade(run_id: list[int] = RUN_IDS,
             changed_only: bool = typer.Option(False, "--changed", help="list only runs whose grade changed")) -> None:
     """Re-grade stored runs with the current graders and task checks. Each new grade is stored as its own row
     (the run's row is kept as it was); the table shows which runs changed."""
+    import asyncio
+
     from harness_factory.runner.regrade import regrade as do_regrade
     from harness_factory.runner.runner import Factory
     f = Factory.load()
     try:
-        outcomes = do_regrade(f, run_ids=run_id or None, task=task, all_runs=all_runs)
+        outcomes = asyncio.run(do_regrade(f, run_ids=run_id or None, task=task, all_runs=all_runs))
     except (ValueError, KeyError) as e:
         console.print(f"[red]{e}")
         raise typer.Exit(code=1) from e
