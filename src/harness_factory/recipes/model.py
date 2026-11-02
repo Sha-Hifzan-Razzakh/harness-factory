@@ -42,7 +42,7 @@ class Variant(str, Enum):
 
 
 class ModelSlot(BaseModel):
-    role: Literal["planner", "executor", "judge", "profiler"] = "executor"
+    role: Literal["planner", "executor", "judge", "profiler", "compactor"] = "executor"
     canonical_model: str | None = None
     temperature: float = 0.0
     max_output_tokens: int = 4096
@@ -71,6 +71,16 @@ class PromptLayers(BaseModel):
     task: str = "task/default"
 
 
+class CompactionSpec(BaseModel):
+    """Context compaction (MEM-05, ADR 0015): before a model call whose estimated prompt passes `at` x the model's
+    context_len, the older turns are replaced by a summary that the model writes (prompt `prompt`, through the
+    gateway, charged to the run like any call). The last `keep_last_turns` assistant turns stay verbatim, with
+    their tool results; a tool call is never separated from its result."""
+    at: float = Field(0.75, gt=0, lt=1)               # fraction of the model's context_len
+    keep_last_turns: int = Field(2, ge=1)
+    prompt: str = "compaction/summary"
+
+
 class RuntimeConfig(BaseModel):
     max_steps: int = Field(30, gt=0)
     max_tool_calls: int = Field(50, gt=0)
@@ -84,6 +94,7 @@ class RuntimeConfig(BaseModel):
     # After the provider rejects a reply as malformed (e.g. a call to a tool that doesn't exist), re-ask the model
     # with the error and the real tool list, at most this many times per run. None/0 = the run ends there.
     recover_malformed: int | None = Field(None, ge=0)
+    compaction: CompactionSpec | None = None          # summarise old turns near the context limit (ADR 0015)
 
 
 class PolicySet(BaseModel):
@@ -161,6 +172,7 @@ class PlanSpec(BaseModel):
 # Optional fields added after results were first recorded. When unset they are dropped before hashing, so
 # adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
 _HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_prompt", "config.call_timeout_s", "config.recover_malformed")
+_HASH_OMIT_WHEN_NONE += ("config.compaction",)                                                  # ADR 0015
 
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
@@ -221,6 +233,8 @@ class HarnessRecipe(BaseModel):
             refs += [self.planning.planner_prompt, self.planning.step_prompt, self.planning.replan_prompt]
             if self.planning.worker_prompt:
                 refs.append(self.planning.worker_prompt)
+        if self.config.compaction:
+            refs.append(self.config.compaction.prompt)
         return refs
 
     def content_hash(self, prompts: PromptSources | None = None, skills: dict | None = None) -> str:

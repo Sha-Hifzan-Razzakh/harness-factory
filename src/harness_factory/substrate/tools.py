@@ -23,6 +23,7 @@ from harness_factory.recipes.model import PolicySet
 from harness_factory.shapes.result import Violation
 from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind
+from harness_factory.substrate.spill import SPILL_REF, SpillStore
 
 MAX_INLINE_CHARS = 16_000
 PREVIEW_CHARS = 500          # span previews; the full text is in the run's transcript file
@@ -40,9 +41,10 @@ def tool_ref(model_tool_name: str) -> str:
 class ToolExecutor:
     def __init__(self, pool: MCPSessionPool, declared: ToolCatalogFile, allowed: set[str], policy: PolicySet,
                  budget: BudgetGuard, tracer: Tracer, run_key: str, faults: FaultInjector | None = None,
-                 agent_calls: dict[str, int] | None = None) -> None:
+                 agent_calls: dict[str, int] | None = None, spill: SpillStore | None = None) -> None:
         """agent_calls: calls made so far to each agent tool. Shared with delegated helpers, so an agent tool's
-        max_calls is per run, not per helper."""
+        max_calls is per run, not per helper. spill: where oversized outputs go (ADR 0015); None = cut them."""
+        self.spill = spill
         self.faults = faults
         self.agent_calls = agent_calls if agent_calls is not None else {}
         self.pool = pool
@@ -79,7 +81,9 @@ class ToolExecutor:
         """restrict/scope narrow the allowance for this call (a V3 stage passes its own tool filter and id)."""
         ref = tool_ref(name)
         with self.tracer.span(SpanKind.tool_call, ref, **({"scope": scope} if scope else {})) as span:
-            if ref in self.allowed and restrict is not None and not restrict(ref):
+            if ref == SPILL_REF and self.spill is not None and self.spill.active:     # harness-side (ADR 0015)
+                result = self.spill.read(raw_args, span)
+            elif ref in self.allowed and restrict is not None and not restrict(ref):
                 span.error = ErrorKind.TOOL_NOT_ALLOWED.value
                 self.violations.append(Violation(kind="tool_not_allowed", detail=f"{ref} (outside {scope})"))
                 result = ToolResult(text=f"Tool {ref} is not available in this stage.", is_error=True)
@@ -159,6 +163,8 @@ class ToolExecutor:
             result = self._meter(ref, spec.agent, result, span)
         if fault == "garbled":                               # it really ran; the answer came back cut off
             result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
+        if self.spill is not None:
+            return result.model_copy(update={"text": self.spill.shrink(result.text, span)})
         if len(result.text) > MAX_INLINE_CHARS:
             span.attributes["truncated_from"] = len(result.text)
             result = result.model_copy(update={"text": result.text[:MAX_INLINE_CHARS] + "\n[truncated]"})

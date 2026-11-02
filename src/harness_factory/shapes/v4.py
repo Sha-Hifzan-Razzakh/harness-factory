@@ -144,9 +144,9 @@ class PlannerShape:
                 return {"reply": ""}
             turn = await model_turn(inst, executor, state["messages"], tools)
             if turn.stop:
-                return {"messages": state["messages"] + turn.added, "stop": turn.stop, "error": turn.error}
+                return {"messages": turn.apply(state["messages"]), "stop": turn.stop, "error": turn.error}
             msg = turn.message
-            update: dict[str, Any] = {"messages": state["messages"] + turn.added,
+            update: dict[str, Any] = {"messages": turn.apply(state["messages"]),
                                       "step_calls": state["step_calls"] + turn.calls}     # rejected replies count
             if not msg.get("tool_calls"):
                 update["reply"] = msg.get("content") or ""

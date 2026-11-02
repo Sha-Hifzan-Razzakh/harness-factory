@@ -11,10 +11,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from harness_factory.recipes.model import ModelSlot
-from harness_factory.shapes import delegate
+from harness_factory.shapes import compaction, delegate
 from harness_factory.shapes.base import HarnessInstance
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
+from harness_factory.substrate.context import estimate_tokens, window_for
 from harness_factory.substrate.errors import INFRA_KINDS, ErrorKind, HarnessError
+from harness_factory.substrate.spill import SPILL_NAME
+from harness_factory.substrate.spill import tool_spec as spill_spec
 
 DONE = "done"
 
@@ -26,11 +29,18 @@ RECOVERY_NOTE = ("Your last reply was rejected and not run: {error}\n"
 @dataclass
 class Turn:
     """One model turn. `added` are the messages to append, in order: any recovery notes, then the reply (absent
-    when the turn stopped). `calls` counts model calls made, a recovered turn makes more than one."""
+    when the turn stopped). `calls` counts model calls made, a recovered turn makes more than one.
+    `history` is set when the turn compacted the conversation (ADR 0015): it replaces the messages the turn was
+    given, so shapes take the new conversation from `apply()` rather than appending `added` themselves."""
     added: list[dict[str, Any]] = field(default_factory=list)
     stop: str | None = None
     error: str | None = None
     calls: int = 0
+    history: list[dict[str, Any]] | None = None
+
+    def apply(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The conversation after this turn."""
+        return (self.history if self.history is not None else messages) + self.added
 
     @property
     def message(self) -> dict[str, Any] | None:
@@ -46,13 +56,36 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
     rejected reply still costs a step, and the trajectory grader counts it as an invalid call, so recovering is
     never free: it can only beat stopping, not a clean run."""
     turn = Turn()
+    tools = with_spill(inst, tools)
+    window = window_for(inst.gateway.catalog, inst.gateway.provider.id, slot.canonical_model, slot.max_output_tokens)
+    compacted = False
     while True:
         limit = inst.budget.exceeded_by()
         if limit:
             turn.stop = f"budget:{limit}"
             return turn
+        prompt = turn.apply(messages)
+        est = estimate_tokens(prompt, tools)               # ADR 0015: before every call, offline
+        spec = inst.recipe.config.compaction
+        if spec is not None and window is not None and not compacted and est > window.trigger(spec.at):
+            compacted = True                               # at most one summary per turn
+            history = turn.history if turn.history is not None else messages
+            c = await compaction.compact(inst, slot, history, spec, window, est, tools)
+            turn.calls += c.calls
+            if c.stop:
+                turn.stop, turn.error = c.stop, c.error
+                return turn
+            if c.history is not None:
+                turn.history = c.history
+                continue                                   # the summary used a step: check the budget again
+        if window is not None and est > window.limit:      # a harness stop, before spending the call
+            turn.stop = f"error:{ErrorKind.BUDGET.value}"
+            turn.error = (f"context_overflow: the prompt is estimated at {est} tokens, over {window.limit} "
+                          f"({window.context_len} context - {window.reply} reply)")
+            return turn
         try:
-            comp = await inst.gateway.complete(slot, messages + turn.added, tools)
+            comp = await inst.gateway.complete(slot, prompt, tools, attributes={
+                "est_tokens_in": est, **({"context_len": window.context_len} if window else {})})
         except HarnessError as e:
             if e.kind == ErrorKind.MODEL_PARSE and inst.recoveries < (inst.recipe.config.recover_malformed or 0):
                 inst.recoveries += 1
@@ -68,6 +101,15 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
         turn.calls += 1
         turn.added.append(comp.message)
         return turn
+
+
+def with_spill(inst: HarnessInstance, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add the spill reader (ADR 0015) to a turn that offers tools, once this run has spilled an output. Per turn,
+    not in offered_tools(): V2 and V4 compute their tool list once, and a spill happens mid-run."""
+    spill = inst.tools.spill
+    if not tools or spill is None or not spill.active or any(t["function"]["name"] == SPILL_NAME for t in tools):
+        return tools
+    return [*tools, spill_spec()]
 
 
 def offered_tools(inst: HarnessInstance, restrict: Callable[[str], bool] | None = None) -> list[dict[str, Any]]:

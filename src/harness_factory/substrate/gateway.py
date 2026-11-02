@@ -117,6 +117,10 @@ class ScriptedBackend:
         self.i = 0
 
     async def complete(self, messages, tools, slot, provider, served) -> Completion:
+        if getattr(slot, "role", None) == "compactor":                  # ADR 0015: answered outside the script
+            from harness_factory.substrate.context import scripted_summary
+            msg = {"role": "assistant", "content": scripted_summary(messages)}
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         turn = self.turns[self.i] if self.i < len(self.turns) else {"content": "done"}
         self.i += 1
         if "reject" in turn:
@@ -196,9 +200,11 @@ class ModelGateway:
         self.infra_wait_s = 0.0          # quota waits, retry backoff, failed attempts: not the harness's time
         self.successful_calls = 0
 
-    async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict]) -> Completion:
+    async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict],
+                       attributes: dict[str, Any] | None = None) -> Completion:
         """One model call: take a quota slot, call with a hard timeout, classify failures, retry the transient
-        ones (honouring Retry-After). Spans of failed attempts stay in the trace with status error."""
+        ones (honouring Retry-After). Spans of failed attempts stay in the trace with status error.
+        attributes: extra attributes for the model_call span (the caller's token estimate, ADR 0015)."""
         if not slot.canonical_model:
             raise HarnessError(ErrorKind.PROVISION, f"model slot {slot.role} has no canonical model")
         served = self.catalog.served(self.provider.id, slot.canonical_model)
@@ -209,7 +215,8 @@ class ModelGateway:
             waited = await self.ledger.acquire(bucket, reserve)    # paces to the bucket's limits; may raise
             self.infra_wait_s += waited
             with self.tracer.span(SpanKind.model_call, slot.canonical_model, provider=self.provider.id,
-                                  provider_model_id=served.provider_model_id, attempt=attempt) as span:
+                                  provider_model_id=served.provider_model_id, attempt=attempt,
+                                  **(attributes or {})) as span:
                 if waited:
                     span.attributes["quota_wait_s"] = round(waited, 3)
                 t_call = time.monotonic()

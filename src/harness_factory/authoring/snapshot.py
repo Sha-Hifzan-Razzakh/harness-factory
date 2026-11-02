@@ -23,6 +23,7 @@ LAYER_VARS: dict[str, set[str]] = {
     "task": {"task"},
     "stage": {"task", "stage", "tools"},
     "skills": {"skills"},
+    "compaction": set(),
 }
 
 
@@ -103,6 +104,14 @@ def take() -> dict[str, Any]:
                 "unhashed": [t.ref(s.id) for t in s.tools if not t.schema_hash],
             }
 
+    # Providers: validation checks reply budgets against context_len, as `hfx validate` does (ADR 0015).
+    from harness_factory.providers.catalog import load_provider_catalog
+    providers = None
+    try:
+        providers = load_provider_catalog(settings.PROVIDERS_FILE)
+    except Exception as e:  # noqa: BLE001  (a finding, not a crash)
+        err("providers", "providers.yaml", str(e))
+
     # Recipes: raw files (paths, bases) and the resolved, validated recipes.
     raw: dict[str, dict[str, Any]] = {}
     for p in sorted(settings.RECIPES_DIR.rglob("*.yaml")) if settings.RECIPES_DIR.is_dir() else []:
@@ -122,7 +131,7 @@ def take() -> dict[str, Any]:
         issues = []
         if declared is not None:
             try:
-                issues = [i.model_dump() for i in validate_recipe(r, declared)]
+                issues = [i.model_dump() for i in validate_recipe(r, declared, providers=providers)]
             except Exception as e:  # noqa: BLE001  (a finding, not a crash)
                 issues = [{"rule": "validator_crashed", "detail": f"{type(e).__name__}: {e}"}]
         out["recipes"][rid] = {

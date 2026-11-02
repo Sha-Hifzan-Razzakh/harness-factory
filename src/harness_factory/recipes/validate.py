@@ -94,6 +94,47 @@ def _delegation_issues(recipe: HarnessRecipe) -> list[ValidationIssue]:
     return []
 
 
+def _context_issues(recipe: HarnessRecipe, prompts: PromptRegistry, providers: ProviderCatalog | None,
+                    provider_id: str | None) -> list[ValidationIssue]:
+    """RCP-05 (context part, ADR 0015). The compaction prompt exists and its slot is unpinned; with a provider
+    catalog, every slot's reply budget leaves room for a prompt in the model's context_len. At provisioning that is
+    the run's model; in `hfx validate` (no model yet) every model the catalog serves."""
+    out: list[ValidationIssue] = []
+    spec = recipe.config.compaction
+    if spec is not None and not prompts.exists(spec.prompt):
+        out.append(ValidationIssue(rule="prompt_exists", detail=f"compaction: prompt {spec.prompt!r}"))
+    slot = recipe.model_slots.get("compactor")
+    if slot is not None and slot.canonical_model is not None:
+        out.append(ValidationIssue(rule="compactor_model_unpinned",
+                                   detail="the compactor slot uses the run's model; leave canonical_model empty"))
+    if providers is None:
+        return out
+    if provider_id:
+        served = []
+        for s in recipe.model_slots.values():
+            if s.canonical_model:
+                try:
+                    served.append(providers.served(provider_id, s.canonical_model))
+                except KeyError:
+                    pass                                   # reported as model_served
+    else:
+        served = [m for p in providers.providers if p.status == "active" for m in p.models]
+    exec_slot = recipe.model_slots.get("executor")
+    for m in served:
+        for s in recipe.model_slots.values():
+            if s.max_output_tokens >= m.caps.context_len:
+                out.append(ValidationIssue(rule="context_fits_reply",
+                                           detail=f"{s.role} max_output_tokens {s.max_output_tokens} leaves no room "
+                                                  f"for a prompt in {m.canonical}'s context_len {m.caps.context_len}"))
+        if spec is not None and exec_slot is not None and spec.keep_last_turns * exec_slot.max_output_tokens \
+                >= m.caps.context_len - exec_slot.max_output_tokens:
+            out.append(ValidationIssue(rule="compaction_fits_context",
+                                       detail=f"keep_last_turns {spec.keep_last_turns} replies of up to "
+                                              f"{exec_slot.max_output_tokens} tokens fill {m.canonical}'s "
+                                              f"context_len {m.caps.context_len}: compacting could not make room"))
+    return sorted({(i.rule, i.detail): i for i in out}.values(), key=lambda i: (i.rule, i.detail))
+
+
 def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: PromptRegistry | None = None,
                     providers: ProviderCatalog | None = None, provider_id: str | None = None) -> list[ValidationIssue]:
     import harness_factory.shapes.builtin  # noqa: F401  (registers built-in shapes)
@@ -106,6 +147,7 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
         issues.append(ValidationIssue(rule="field_implemented", detail=f"{f} is declared but not implemented yet"))
     issues += _skill_issues(recipe, declared)
     issues += _delegation_issues(recipe)
+    issues += _context_issues(recipe, prompts, providers, provider_id)
 
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))

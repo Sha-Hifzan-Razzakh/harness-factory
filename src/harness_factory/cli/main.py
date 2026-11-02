@@ -142,7 +142,7 @@ def validate() -> None:
     f = _factory(store=False)
     bad = 0
     for rid, recipe in f.recipes.items():
-        issues = validate_recipe(recipe, f.declared)
+        issues = validate_recipe(recipe, f.declared, providers=f.providers)     # context_len checks (RCP-05)
         console.print(f"{'[green]ok' if not issues else '[red]FAIL'}[/] {rid} ({recipe.content_hash()})")
         for i in issues:
             console.print(f"    {i.rule}: {i.detail}")

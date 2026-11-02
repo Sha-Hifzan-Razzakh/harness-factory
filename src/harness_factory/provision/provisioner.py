@@ -32,6 +32,7 @@ from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.substrate.gateway import Backend, ModelGateway
 from harness_factory.substrate.prompts import PromptAssembler
+from harness_factory.substrate.spill import SpillStore
 from harness_factory.substrate.tools import ToolExecutor, model_name
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import PlanBackend, load_reference
@@ -190,7 +191,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch, tenant=tenant,
                                   tenant_seeds=task.env_seed.mock_api_state) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
-                                 faults=FaultInjector(fault, seed) if fault else None)
+                                 faults=FaultInjector(fault, seed) if fault else None,
+                                 spill=SpillStore(sandbox.db_path.parent / "spill"))     # state folder (ADR 0015)
             assembler = assembler or PromptAssembler()
             delegate = delegation.context_for(recipe, task, assembler)
             names = sorted(model_name(r) for r in allowed) + ([delegation.DELEGATE_NAME] if delegate else [])
