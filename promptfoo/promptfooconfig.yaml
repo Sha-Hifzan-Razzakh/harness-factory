@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Prompt smoke checks (SKP-03): the factory's real prompts (prompts/**/*.j2, rendered by PromptAssembler) for every
+# recipe x a few tasks, checked outside campaigns. Offline with the echo provider; see README "Prompt smoke checks".
+#
+#   uv run npx --yes promptfoo@0.124.1 eval -c promptfoo/promptfooconfig.yaml
+#   uv run npx --yes promptfoo@0.124.1 eval -c promptfoo/canaries.yaml       # the checks still catch broken prompts
+#
+# harness_prompts.py renders the prompts and works out what each must say; checks.js compares.
+description: Harness Factory prompt smoke checks (SKP-03)
+
+env:
+  PROMPTFOO_DISABLE_TEMPLATING: "true"     # the harness already rendered the prompt: promptfoo must not render it again
+
+prompts:
+  - id: file://render.js:render
+    label: harness
+
+providers:
+  - id: echo                               # returns the prompt: offline, no keys. -r <provider> runs a real model.
+    label: echo
+
+tests:
+  - path: file://harness_prompts.py:generate_tests
+    config:
+      recipes: all                         # every recipe in catalog/recipes (base + matrix)
+      tasks: [fs-01, sql-01, mix-03]       # fs write, sql read-only, fs + sql write (no held-out tasks)
+      budgets:                             # characters; about 2x the largest prompt today
+        message_chars: 2500                # any one message (largest: the on-demand skills system prompt, ~1.3k)
+        skills_message_chars: 8000         # a system prompt carrying skills upfront (~5.1k)
+        total_chars: 10000                 # everything sent at one point
+
+defaultTest:
+  assert:
+    - {type: javascript, value: file://checks.js:verbatim, metric: verbatim}           # sent = harness render
+    - {type: javascript, value: file://checks.js:noResidue, metric: no-residue}        # no {{ {% {#, no empty message
+    - {type: javascript, value: file://checks.js:toolList, metric: tool-list}          # tool lines = offered tools
+    - {type: javascript, value: file://checks.js:toolMentions, metric: tool-mentions}  # names only offered tools
+    - {type: javascript, value: file://checks.js:markers, metric: markers}             # RETRY:, Step i of n:, BLOCKED:...
+    - {type: javascript, value: file://checks.js:task, metric: task}                   # task instruction verbatim
+    - {type: javascript, value: file://checks.js:length, metric: length}               # character budgets

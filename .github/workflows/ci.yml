@@ -163,3 +163,45 @@ jobs:
             smoke --recipe v2-base,v3-staged --models scripted/replay --strict
           test -z "$(docker ps -aq --filter label=hf.sandbox=1)"      # every sandbox container removed
           test -z "$(ls -A var/sandboxes)"                             # and every sandbox directory
+
+  # Prompt smoke checks (SKP-03): promptfoo renders every recipe's real prompts and checks them, offline (echo
+  # provider, no keys). See README "Prompt smoke checks".
+  prompts:
+    name: prompt smoke checks (promptfoo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROMPTFOO_DISABLE_TELEMETRY: "1"
+      PROMPTFOO_DISABLE_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install (locked)
+        run: uv sync --locked --python 3.13
+
+      - name: promptfoo eval (offline, echo provider)
+        run: |
+          mkdir -p var/promptfoo
+          uv run --no-sync npx --yes promptfoo@0.124.1 eval -c promptfoo/promptfooconfig.yaml \
+            --no-table --no-write --no-progress-bar -o var/promptfoo/results.json
+
+      - name: promptfoo canaries (each broken template must fail its check)
+        run: |
+          uv run --no-sync npx --yes promptfoo@0.124.1 eval -c promptfoo/canaries.yaml \
+            --no-table --no-write --no-progress-bar -o var/promptfoo/canaries.json
+
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptfoo-results
+          path: var/promptfoo
+          if-no-files-found: ignore
