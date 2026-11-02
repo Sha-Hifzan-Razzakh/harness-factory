@@ -124,3 +124,24 @@ def test_pools_need_an_equivalent_record_for_every_pair_inside():
     assert pools([eq("a", "b"), eq("b", "c")], cat) == {}                   # a~c never measured: no guess
     assert set(pools([eq("a", "b"), eq("b", "c"), eq("a", "c")], cat).values()) == {"a+b+c"}
     assert pools([eq("a", "b"), eq("a", "b", "different")], cat) == {}      # the newest record is in force
+
+
+def test_the_cli_runs_the_missing_pairs_then_judges(tmp_path, monkeypatch):
+    """`hfx calibration run --run` end to end: plans both providers, runs the pairs, saves the verdict."""
+    import yaml
+    from typer.testing import CliRunner
+
+    from harness_factory import settings
+    from harness_factory.cli import main as cli
+    data = yaml.safe_load(settings.PROVIDERS_FILE.read_text())
+    data["providers"].append({"id": "scripted-b", "kind": "scripted",
+                              "models": [{"canonical": MODEL, "provider_model_id": "replay"}]})
+    providers = tmp_path / "providers.yaml"
+    providers.write_text(yaml.safe_dump(data, sort_keys=False))
+    monkeypatch.setattr(settings, "PROVIDERS_FILE", providers)
+    monkeypatch.setattr(settings, "RESULTS_URL", f"sqlite:///{tmp_path / 'results.db'}")
+    monkeypatch.setattr(settings, "QUOTA_STATE", tmp_path / "quota.json")
+    out = CliRunner().invoke(cli.app, ["calibration", "run", MODEL, "--providers", "scripted,scripted-b",
+                                       "--recipe", "v1-base", "--run", "--min-pairs", "5", "-j", "8"])
+    assert out.exit_code == 0, out.output
+    assert "equivalent" in out.output

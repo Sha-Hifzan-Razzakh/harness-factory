@@ -42,7 +42,6 @@ def run(model: str = typer.Argument(..., help="canonical model both providers se
         min_pairs: int = typer.Option(20, "--min-pairs"),
         execute: bool = typer.Option(False, "--run", help="first run the pairs the store doesn't have yet"),
         seeds: int = typer.Option(1, "--seeds"),
-        tag: str | None = typer.Option(None, "--tag", help="only tasks with this tag"),
         concurrency: int = typer.Option(4, "--concurrency", "-j"),
         note: str = typer.Option("", "--note")) -> None:
     """Pair runs that differ only in the provider, judge E0's paired difference, and save the verdict."""
@@ -56,7 +55,7 @@ def run(model: str = typer.Argument(..., help="canonical model both providers se
         raise typer.Exit(code=2)
     f = _factory()
     if execute:
-        specs = [s for p in ids for s in plan(f, recipe, p, [model], seeds, tag=tag)]
+        specs = [s for p in ids for s in plan(f, recipe, p, [model], seeds)]
         result = asyncio.run(run_campaign(f, specs, concurrency, resume=True))
         console.print(f"ran {len(result.records)} runs ({len(result.skipped)} already in the store, "
                       f"{len(result.errors)} errors)")
