@@ -59,10 +59,14 @@ class PlanBackend:
     Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
     step ("Step i of n: ...") or a V5 worker's part ("Your part: ..."), it makes the next plan call and then closes
     the step, so one plan step runs per V4 step or V5 worker.
+
+    Offered a framework's handoff tool (`transfer_to_<agent>`, e.g. a supervisor's, ADR 0016) and none of the next
+    step's tool, it hands off while plan steps remain; the agent it hands to (the same script) does them.
     """
 
     INVENTED_TOOL = "fs__search_file"
     DELEGATE = "delegate__run"
+    HANDOFF_PREFIX = "transfer_to_"
 
     MAX_RETRIES = 3
 
@@ -91,7 +95,10 @@ class PlanBackend:
         """What a careful model would notice: the last tool result is an error, or empty."""
         if not messages or messages[-1].get("role") != "tool":
             return False
-        text = (messages[-1].get("content") or "").strip()
+        content = messages[-1].get("content") or ""
+        if isinstance(content, list):          # content parts (e.g. the OpenAI Agents SDK's tool output)
+            content = "".join(p.get("text") or "" for p in content if isinstance(p, dict))
+        text = content.strip()
         return not text or text.lower().startswith(("error", "permission denied")) or "timed out" in text.lower()
 
     def _msg(self, name: str | None = None, args: dict | None = None, content: str | None = None) -> dict:
@@ -145,6 +152,8 @@ class PlanBackend:
             self.i += 1
         elif nxt is None:
             msg = self._msg(content=self.final)
+        elif handoff := sorted(n for n in offered if n.startswith(self.HANDOFF_PREFIX)):
+            msg = self._msg(handoff[0], {})
         else:
             msg = self._msg(content=self.STAGE_DONE)
         return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))

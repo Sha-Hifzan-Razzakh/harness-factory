@@ -1,0 +1,7 @@
+# Matrix (runtime): v2-base run by Pydantic AI's Agent (MCP tools through its MCPToolset) instead of the native loop.
+# Same prompts, tools, permissions and budget; the framework's loop, tool schemas, retries and error handling at
+# their defaults. ADR 0016.
+id: v2-pydantic-ai
+version: 1
+base: v2-base
+runtime: pydantic-ai

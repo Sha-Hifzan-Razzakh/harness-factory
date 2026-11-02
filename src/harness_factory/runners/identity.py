@@ -15,10 +15,15 @@ from importlib import metadata
 RUNNER_PACKAGES: dict[str, tuple[str, ...]] = {
     "langgraph-prebuilt": ("langchain", "langchain-core", "langgraph", "langgraph-prebuilt"),
     "llamaindex-agent": ("llama-index-core", "llama-index-workflows", "llama-index-tools-mcp"),
+    "langgraph-supervisor": ("langgraph-supervisor", "langchain", "langchain-core", "langgraph", "langgraph-prebuilt"),
+    "pydantic-ai": ("pydantic-ai-slim", "pydantic-graph"),
+    "openai-agents": ("openai-agents",),
 }
 
 # The optional extra that installs each runner (pyproject.toml).
 RUNNER_EXTRAS: dict[str, str] = {"langgraph-prebuilt": "langgraph-prebuilt", "llamaindex-agent": "llamaindex"}
+RUNNER_EXTRAS |= {"langgraph-supervisor": "langgraph-supervisor", "pydantic-ai": "pydantic-ai",
+                  "openai-agents": "openai-agents"}
 
 
 def package_version(dist: str) -> str | None:

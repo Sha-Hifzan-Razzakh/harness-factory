@@ -149,6 +149,9 @@ class RunnerRegistry:
     _modules: ClassVar[dict[str, str]] = {
         "langgraph-prebuilt": "harness_factory.runners.langgraph_prebuilt:LangGraphPrebuiltRunner",
         "llamaindex-agent": "harness_factory.runners.llamaindex_agent:LlamaIndexAgentRunner",
+        "langgraph-supervisor": "harness_factory.runners.langgraph_supervisor:LangGraphSupervisorRunner",
+        "pydantic-ai": "harness_factory.runners.pydantic_ai_agent:PydanticAIRunner",
+        "openai-agents": "harness_factory.runners.openai_agents:OpenAIAgentsRunner",
     }
 
     @classmethod

@@ -33,7 +33,8 @@ SideEffectName = Literal["READ", "REVERSIBLE", "IRREVERSIBLE"]
 PermissionModeName = Literal["AUTO", "ASK", "DENY"]
 # What executes the harness (RUN-01, docs/adr/0016-runner-axis.md): the factory's own graphs, or a framework's own
 # ready-made agent. Unset means native.
-RuntimeName = Literal["native", "langgraph-prebuilt", "llamaindex-agent"]
+RuntimeName = Literal["native", "langgraph-prebuilt", "llamaindex-agent",
+                      "langgraph-supervisor", "pydantic-ai", "openai-agents"]
 
 
 class Variant(str, Enum):
