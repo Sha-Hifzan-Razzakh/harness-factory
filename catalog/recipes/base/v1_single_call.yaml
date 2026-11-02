@@ -1,0 +1,15 @@
+# Base V1 recipe: one model response; its tool calls run, nothing follows. Cheapest shape.
+id: v1-base
+version: 1
+variant: V1_SINGLE_CALL
+headless: true
+tier: T2
+model_slots:
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 2048}
+tools:
+  tool_ids: ["fs.*", "sql.*"]
+  mcp_servers: [fs, sql]
+prompts: {system: system/single_call, task: task/default}
+config: {max_steps: 1, max_tool_calls: 10, max_tokens: 60000, wall_time_s: 120}
+policies:
+  permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}

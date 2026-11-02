@@ -1,0 +1,15 @@
+# Base V2 recipe: tool loop over fs and sql. The model slot is empty; each cell fills it.
+id: v2-base
+version: 1
+variant: V2_TOOL_LOOP
+headless: true
+tier: T2
+model_slots:
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 2048}
+tools:
+  tool_ids: ["fs.*", "sql.*"]
+  mcp_servers: [fs, sql]
+prompts: {system: system/default, task: task/default}
+config: {max_steps: 15, max_tool_calls: 20, max_tokens: 120000, wall_time_s: 300}
+policies:
+  permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}

@@ -1,0 +1,17 @@
+# Never in the image: secrets, local state, caches. The image is the code, the catalog and the prompts.
+.env
+.env.*
+!.env.example
+var/
+.venv/
+.git/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+tests/
+docs/
+scripts/
+.github/

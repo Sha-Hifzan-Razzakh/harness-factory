@@ -1,0 +1,17 @@
+id: sql-01
+version: 1
+domain: data
+instruction: How many customers are based in Dubai? Answer with the number.
+env_seed: {files: ../../seeds/base/files, sqlite: ../../seeds/base/db.sql}
+allowed_tools: [sql.list_tables, sql.describe_table, sql.query]
+risk: R0
+expected_depth: SINGLE_STEP
+split: DEV
+status: verified
+tags: [sql, read, count]
+oracle:
+  pass_threshold: 1.0
+  checks:
+    - {id: answer, kind: output_regex, pattern: "(?<![\\d.])3(?![\\d.])", weight: 0.75}
+    - {id: grounded, kind: tool_called, pattern: "sql.query", weight: 0.25}
+    - {id: data_unchanged, kind: sql_rows, query: "SELECT COUNT(*) FROM customers", rows: [[5]], weight: 0, critical: true}

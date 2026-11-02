@@ -1,0 +1,8 @@
+{% if plan %}The plan:
+{% for s in plan %}{{ loop.index }}. {{ s }}
+{% endfor %}
+{% endif %}Step {{ index }} of {{ total }}: {{ step }}
+Do this step only. When it is done, reply with a one-line result and no tool calls.
+{% if last %}This is the last step: your reply is the final answer to the task.
+{% endif %}If the step can't be done as planned, reply starting with "BLOCKED:" and say why.
+{% if tools %}Tools: {{ tools | join(", ") }}.{% endif %}
