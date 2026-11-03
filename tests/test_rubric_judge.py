@@ -307,7 +307,9 @@ async def test_judge_failure(factory, raises, status):
     assert error.startswith(("infra: judge for check handover_quality", "setup: judge for check handover_quality"))
     assert factory.store.rows(latest=False)[-1]["status"] == status.value  # stored; the scored row still wins
     # A healthy judge later re-grades it as the scored run it was.
-    factory.ledger._spent_until.clear()                                   # the quota case marked the bucket out
+    factory.ledger._spent_until.clear()                                   # the quota case marked the bucket out,
+    if factory.ledger.state_path is not None:                             # in memory and in the shared state file
+        factory.ledger._write()                                           # (#43), which acquire() re-reads
     factory.judge = make_judge(factory, backend=Fixed(score=1.0), calibrations=calibrated())
     [o] = await regrade(factory, run_ids=[factory.store.rows(latest=False)[-1]["id"]])
     assert o.before.status == status.value and o.after.status == "SUCCESS" and o.after.outcome == 1.0

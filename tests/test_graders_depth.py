@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from harness_factory import settings
+from harness_factory.env.mcp.impl.proc import GIT_SEED
 from harness_factory.env.sandbox import make_sandbox
 from harness_factory.env.state import EnvState, StateDiff, StateInspector
 from harness_factory.grading.base import (
@@ -40,7 +41,7 @@ from harness_factory.runner.runner import (
 )
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
-from harness_factory.tasks.model import _CHECK_HASH_OMIT_WHEN_NONE, WeightedCheck
+from harness_factory.tasks.model import _CHECK_HASH_OMIT_WHEN_NONE, _SEED_OMIT_WHEN_NONE, WeightedCheck
 
 
 @pytest.fixture(autouse=True)
@@ -225,13 +226,21 @@ def test_output_exact(tmp_path):
 
 # ---- identity -------------------------------------------------------------------------------------------------
 
-USED_BY_NEW_TASKS = {"rubric"}     # fields set by tasks written after them (docs-03, #49)
+USED_BY_NEW_TASKS = {"rubric",     # fields set by tasks written after them (docs-03, #49;
+                     "ref", "sheet", "cell", "expected", "tolerance", "style"}   # code-*, office-*, #45-#47)
 
 
 def test_new_check_fields_leave_task_hashes_alone(factory):
     """Unset new fields are dropped before hashing, so every catalog task keeps the hash it had before them."""
     for task in factory.tasks.all(include_held_out=True):
         data = task.model_dump(mode="json", exclude={"status", "split", "tags"})
+        for k in _SEED_OMIT_WHEN_NONE:             # the env-seed rules of the same formula (#45, #46), unchanged
+            if data["env_seed"].get(k) is None:
+                data["env_seed"].pop(k, None)
+        if not task.env_seed.git:
+            data["env_seed"].pop("git", None)
+        else:
+            data["git_seed"] = GIT_SEED
         for c in data["oracle"]["checks"]:
             for name in _CHECK_HASH_OMIT_WHEN_NONE:
                 if c.get(name) is None or name not in USED_BY_NEW_TASKS:
