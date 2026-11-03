@@ -68,7 +68,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #79 | `feat/task-profiler` | `…KhAFMPUEPRU3mK2t2` | Task profiler: 10-dimension profiles, rules + LLM profiler, agreement (PRF-01, 03-05) | draft, reserved (wave 6) | no (profiles are labels) |
 | #80 | `feat/recipe-generator` | `…KhAFMPUEPRU3mK2t2` | Recipe generator and logged hard-rule pruning (RCP-04, RUN-02 campaign) | draft, reserved (wave 6) | new recipes only |
 | #81 | `feat/self-metrics` | `…KhAFMPUEPRU3mK2t2` | Self-metrics and compressed traces with retention (NFR-08, NFR-09) | draft, reserved (wave 6) | no |
-=======
+
 | #34 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3, written by an independent author | closed by GitHub after the branch was re-signed; continued in #82 | yes (new tasks and seeds) |
 | #35 | `feat/provider-calibration` | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (P2) | ready for review | no (two nullable run columns, one table) |
 | #36 | `feat/allocation-planner` | `…JZLSKyEhjaA4sxi9R` | Allocation planner (P2) | ready for review (stacked on #35; CI green) | no |
