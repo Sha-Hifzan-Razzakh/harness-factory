@@ -54,7 +54,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #49 | `feat/rubric-judge` | `…KhAFMPUEPRU3mK2t2` | Rubric judge with calibration | ready for review (CI green), stacked on #48 | scoring for tasks using it |
 | #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | ready for review (CI green) | new optional recipe field |
 | #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | ready for review, stacked on #50 | new optional recipe fields |
-| #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | draft, reserved | new tasks only |
+| #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | ready for review (CI green), stacked on #47 | new tasks only |
 | #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | draft, reserved (wave 5) | yes (scoring; tasks whose check gains a field) |
 | #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | draft, reserved (wave 5) | new fault profiles only |
 | #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | draft, reserved (wave 5) | new tasks only |

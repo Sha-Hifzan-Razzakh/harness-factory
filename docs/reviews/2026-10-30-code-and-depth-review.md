@@ -342,6 +342,25 @@ call every tool the task allows. `plan()`, `hfx smoke`'s "left out" line, the se
 **Merge order:** wave 1, then #42 → #44 → #45 → #46 → #47, then #48 → #49 and #50 → #51. #50 and #51
 still need a rebase onto `main` after #40 and #42; #50 is mergeable today.
 
+
+**Wave 4 (#52): ready for review, CI green** (status 2026-11-03). It is stacked on #47.
+
+- **The batch.** 16 long, data-heavy tasks (`b4-01`–`b4-16`) by two independent authors, with references of
+  6–11 calls, generated seeds of up to ~18,000 rows and hundreds of files, and 90+ trap scripts. 45 tasks overall,
+  9 held out.
+- **Plumbing.** A `long` tag, with `--tag` / `--exclude-tag`; the CI V3–V5 shape gate leaves `long` tasks out.
+- **Selector fix (SEL-06).** The evaluation's baselines now always pick a recipe that can run the task.
+- **Checks.** On the stack: full suite 648 passed, references 45/45; gates P0 24/24, shapes 60/60, matrix 252/252,
+  faults 48/48.
+
+**Found while merging:**
+
+- #46's `biz-02` answer check was anchored on `^`, a hedge hole. It is fixed in #46, and #47 is rebased onto it.
+- #39's hedge test now reads every `tests/test_task_traps*.py`, so it covers batch 4.
+
+**Follow-up (not reserved).** Ten batch-4 tasks need `code`/`git`, `biz` or `docs`, which only one V2 matrix recipe
+opens each. Comparing shapes on them needs V3–V5 recipes that open those servers.
+
 ---
 
 ## 5. Next set: waves 5 and 6 (planned 2026-11-02)
