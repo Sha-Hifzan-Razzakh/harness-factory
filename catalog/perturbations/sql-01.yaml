@@ -11,8 +11,8 @@ variants:
     n: 1
     params:
       faults:
-        - {tools: [sql.query], kind: latency, delay_s: 2.0}
-      why: Every query takes two seconds to answer, well under the tool's 20 s timeout.
+        - {tools: [sql.query], kind: latency, delay_s: 1.0}
+      why: Every query takes a second to answer, well under the tool's 20 s timeout.
   - type: ambiguous_wording
     n: 1
     params:

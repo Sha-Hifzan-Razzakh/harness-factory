@@ -5,8 +5,8 @@ variants:
     n: 1
     params:
       faults:
-        - {tools: [docs.pdf_text, docs.docx_read], kind: latency, delay_s: 2.0}
-      why: Reading the quotation and the letter takes two seconds each.
+        - {tools: [docs.pdf_text, docs.docx_read], kind: latency, delay_s: 1.0}
+      why: Reading the quotation and the letter takes a second each.
   - type: tool_failure
     n: 1
     params:

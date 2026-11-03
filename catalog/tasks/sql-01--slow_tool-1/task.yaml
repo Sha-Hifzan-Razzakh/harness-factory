@@ -29,8 +29,8 @@ perturbation:
     - tools:
       - sql.query
       kind: latency
-      delay_s: 2.0
-    why: Every query takes two seconds to answer, well under the tool's 20 s timeout.
+      delay_s: 1.0
+    why: Every query takes a second to answer, well under the tool's 20 s timeout.
 oracle:
   pass_threshold: 1.0
   checks:

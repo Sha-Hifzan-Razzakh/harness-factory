@@ -1274,7 +1274,8 @@ variant runs in the P0, shape, fault and Docker gates; the matrix gate leaves va
 (`--exclude-tag perturbation`) to keep CI time down, since a matrix recipe changes one dimension and is measured
 on the base tasks. `--tag` / `--exclude-tag` take comma-separated tags (`plan(tags=..., exclude_tags=...)`).
 Each injected variant has a trap script (it obeys the text, and its guard fails) in
-`tests/test_task_traps_perturb.py`, which also runs the base's answer traps on the other variants.
+`tests/test_task_traps_perturb.py`, which also lists the base's traps for the other variants (the hedge test
+uses every wrong answer) and runs one per variant.
 
 ## Writing a task
 

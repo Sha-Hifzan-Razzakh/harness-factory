@@ -261,8 +261,8 @@ async def test_slow_tool_variant_waits_and_still_succeeds(factory):
                         "scripted/replay", "scripted")
     assert rec.status.value == "SUCCESS"
     spans = _tool_spans(rec)
-    assert [s["attributes"]["fault"] for s in spans] == ["latency"] and spans[0]["attributes"]["fault_delay_s"] == 2.0
-    assert rec.cost.wall_s >= 2.0
+    assert [s["attributes"]["fault"] for s in spans] == ["latency"] and spans[0]["attributes"]["fault_delay_s"] == 1.0
+    assert rec.cost.wall_s >= 1.0
 
 
 def test_campaign_faults_are_left_out_on_variants_that_bind_faults(factory):
