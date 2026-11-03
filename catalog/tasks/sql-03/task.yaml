@@ -1,5 +1,5 @@
 id: sql-03
-version: 2
+version: 3
 domain: data
 instruction: Which customer brought in the most revenue from paid orders placed in 2026, after subtracting refunds?
   Answer with the customer's name.
@@ -32,6 +32,11 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - orders
+    - order_items
+    - refunds
+    - customers
   - id: data_unchanged
     kind: sql_rows
     weight: 0

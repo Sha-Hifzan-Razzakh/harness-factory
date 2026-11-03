@@ -1,5 +1,5 @@
 id: res-01
-version: 2
+version: 3
 domain: research
 instruction: Which environments have backups disabled, according to the service configuration? Answer with the environment
   names, comma-separated.
@@ -27,6 +27,8 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: fs.read_file
+    touches:
+    - service/config/*.ini
   - id: config_untouched
     kind: file_equals
     weight: 0

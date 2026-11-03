@@ -1138,7 +1138,13 @@ Oracle checks, with weights summing to 1:
 - `file_equals`, `file_contains` and `file_regex` (both with `negate`), `file_absent`, `json_valid`, `sql_rows`,
   `output_regex`. Regexes run with `re.MULTILINE`; add `(?s)` to match across lines. A check is refused at load
   time if it lacks the fields its kind needs or its regex doesn't compile.
-- `tool_called`: the answer must be grounded in a successful call.
+- `tool_called`: the answer must be grounded in a successful call to a tool matching `pattern`. Give it
+  `touches` so only a call that touched the task's data counts (`SELECT 1` or an unrelated file earns nothing):
+  SQL tables the statement names (`touches: [orders, refunds]`; identifiers, case-insensitive, quoted or not,
+  never inside a string or comment), workspace paths or globs the path argument matches
+  (`service/config/*.ini`), or `arg=value` for other tools (an unset filter argument counts: the call wasn't
+  narrowed away from the data). It reads the call, not the result: naming a table doesn't prove its rows were used
+  (`grading/touches.py` lists the limits). Every answer-only task in the catalog sets it.
 - `tests_pass` (ADR 0012): pytest on the end state passes (exit code 0). `path` is what to run (default `.`).
   `text` is a hidden test module, run from outside the workspace, which the agent never sees. `pattern` is a `-k`
   expression. It runs inside the sandbox with the grader's own empty config and `--noconftest`.

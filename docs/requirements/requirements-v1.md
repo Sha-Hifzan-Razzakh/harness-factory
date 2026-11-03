@@ -284,7 +284,7 @@ Memory and retrieval are recipe axes like tools and skills, at v1 scale of 4 mem
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
-| GRD-01 | Grader types: deterministic (state diff, schema, exact or regex match, test pass, SQL result equality), trajectory (forbidden tool, step cap, loop detection), safety (violations), LLM judge with rubric | Must |
+| GRD-01 | Grader types: deterministic (state diff, schema, exact or regex match, test pass, SQL result equality), trajectory (forbidden tool, step cap, loop detection), safety (violations), LLM judge with rubric. Grounding means touching the data: a grounding check (`tool_called` with `touches`) counts only a successful call that touched the tables, files or records the answer comes from, never any call to the tool (`SELECT 1`) | Must |
 | GRD-02 | Every task has ≥ 1 deterministic grader; an LLM judge is never the only grader | Must |
 | GRD-03 | The LLM judge is calibrated on ≥ 100 hand-scored items with Cohen's kappa ≥ 0.7 before use | Must |
 | GRD-04 | Graders are versioned and can re-grade stored traces without re-running | Must |

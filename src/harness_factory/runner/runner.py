@@ -49,6 +49,7 @@ from harness_factory.runners.base import harness_for
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import Backend
+from harness_factory.substrate.tools import ARGS_CHARS
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import load_reference
 from harness_factory.tasks.registry import TaskRegistry
@@ -295,6 +296,7 @@ async def run_reference(f: Factory, task: Task) -> Grade:
         async with MCPSessionPool(f.declared, servers, sb.env(), sb.launch) as pool:
             for i, step in enumerate(ref.plan):
                 with tracer.span(SpanKind.tool_call, step["tool"]) as span:
+                    span.attributes["args"] = json.dumps(step["args"], default=str)[:ARGS_CHARS]   # as ToolExecutor
                     if step["tool"] == retrieval.RETRIEVE_REF:
                         res = await retrieval.local_tool(index, []).call(step["args"])
                         if not res.is_error:

@@ -1,5 +1,5 @@
 id: ops-03
-version: 2
+version: 3
 domain: ops
 instruction: Which API endpoint returned the most server errors (5xx) on 2026-10-26? Answer with the path only.
 env_seed:
@@ -26,6 +26,8 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: fs.read_file
+    touches:
+    - logs/app-2026-10-26.log
   - id: log_untouched
     kind: file_contains
     weight: 0
