@@ -263,6 +263,31 @@ A remote server whose tools change state (refund an order, file a ticket) declar
   exactly the calls the live run made; otherwise the run is `INCOMPLETE` (`replay_diverged`), so a replay that skips
   the work can't inherit the live run's result.
 
+## Provider calibration
+
+A canonical model served by two providers gets two cells until the providers are shown to behave alike (ADR 0010).
+`hfx calibration` measures it:
+
+```bash
+hfx calibration run gpt-oss-120b --providers groq,openrouter --run --seeds 2   # run missing pairs, then judge
+hfx calibration list                                                           # saved verdicts
+hfx calibration cells                                                          # cells, equivalent providers pooled
+```
+
+- **Pairs** are runs that differ only in the provider: same task, recipe, model, seed and tool environment, clean
+  and scored, each served by the model id its catalog entry names now. Runs store the tool environment apart from
+  the served model id (`tools_hash`, `served_id`) for this.
+- **Verdict** from the paired E0 difference and its bootstrap 95% interval:
+  - `equivalent` when the interval is within ±0.1 (`--margin`);
+  - `different` when it excludes 0;
+  - otherwise, or with fewer than 20 pairs (`--min-pairs`), `inconclusive`.
+
+  Verdicts are frozen in the results store, and the newest per pair is in force.
+- **Pooling** happens only in `hfx calibration cells`, only for `equivalent` pairs whose providers still serve the
+  calibrated model id. A pool of three or more needs a verdict for every pair. Cost stays per provider (each run
+  against its own provider's median); the cell is `groq+openrouter` with `tools:<hash>` as its environment.
+  `hfx results --cells` and the selector are unchanged.
+
 ## Running in containers
 
 Two images, two Dockerfiles:
@@ -481,7 +506,9 @@ charged back to the parent, so delegating never buys extra steps. A V3 recipe of
 whose tool patterns allow `delegate.run` (`v3-staged`'s act stage, `"*"`). The helper's conversation is kept in
 the run's transcript (`snapshot.delegations`), and its tool calls are traced under scope `delegate:<n>`. The
 helper's own hash is part of the delegating recipe's hash, and `load_recipes` refuses delegation cycles. A
-helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. Offline, with
+helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. A helper that ends on
+infrastructure (INCOMPLETE) or a setup failure (ERROR) ends the parent run the same way, so the parent is never
+graded on work an outage cut short. Offline, with
 `scripted/delegate` (hands the whole task over when it can), `v2-delegate` passes 20/20 like `v2-base` at about
 37% more tokens, so its E is lower: delegation has to earn its cost on real models.
 
@@ -622,7 +649,7 @@ Every run ends in one of three ways, and only the first is scored:
 | How it stopped | Examples | Status | In cell means? |
 |---|---|---|---|
 | **By itself** | the model answered | SUCCESS / PARTIAL / FAIL from the oracle | yes |
-| **Harness overran** | step/tool/token/wall budget, V3 stage cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
+| **Harness overran** | step/tool/token/wall budget, V3 stage cap, V4 step cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
 | **Infrastructure** | provider 5xx, timeout, connection, 429 after retries, daily quota | INCOMPLETE | no (`excl.`) |
 | **Setup or crash** | auth, unknown model id, a rejected request, a bug in factory code | ERROR (recorded with trace and transcript) | no (`excl.`) |
 
@@ -730,6 +757,12 @@ Oracle checks, with weights summing to 1:
   `output_regex`. Regexes run with `re.MULTILINE`; add `(?s)` to match across lines. A check is refused at load
   time if it lacks the fields its kind needs or its regex doesn't compile.
 - `tool_called`: the answer must be grounded in a successful call.
+- **An answer check must refuse a hedge.** "It is 2, 3 or 4" must not pass a check for 3. Anchor the pattern on
+  `\A`, not `^`: with `re.MULTILINE`, a `^` lookahead is tried again at every line start, so "wrong\nright"
+  slips through. `scripts/taskgen/tasks.py` has the builders: `one_number` passes one number and no other,
+  except numbers the instruction uses; `one_of` passes one value and none of the others the seed offers.
+  `tests/test_task_traps.py` hedges every `output_regex` check's reference answer with each wrong answer from
+  the trap scripts, so a task with an answer check needs at least one wrong-answer trap.
 
 A check with `weight: 0, critical: true` is a **guard**: it earns nothing, but failing it zeroes the run. Use
 guards for "don't touch anything else", so a run that does nothing can't collect preservation credit.
@@ -776,3 +809,40 @@ These prove the factory measures differences before any API budget is spent.
 - **P3:** elicitation and sampling.
 - **P3:** memory stores.
 - **P4:** profiler and selector.
+
+## Benchmarks in one file
+
+A whole benchmark fits in one readable YAML file: which tasks, recipes, models (with their provider), seeds and
+fault profiles, under which limits, and how to judge the result. `docs/design/benchmark.example.yaml` is the
+annotated example; `tests/fixtures/benchmark.scripted.yaml` is the same benchmark on scripted models (offline,
+seconds).
+
+```bash
+hfx bench docs/design/benchmark.example.yaml --dry-run   # validate, print the plan and projection, stop
+hfx bench docs/design/benchmark.example.yaml             # run it
+hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption or the 00:00 UTC quota reset
+```
+
+- **Same campaign as `smoke`.** The file becomes the plan `hfx smoke` would build (one block per provider, run
+  one provider at a time), with the same RunKeys, preflight (`limits.budget_usd`, `limits.deadline_days`, spent
+  buckets), concurrency (`limits.concurrency`, `-j` overrides it), faults and `--resume`. Results land in the same
+  store, so `hfx results --cells` and `hfx report` see them too.
+- **Tasks.** `tasks.splits` (DEV, TEST) plus an optional `tasks.tag`, or `tasks.ids` to name tasks one by one.
+  HELD_OUT is refused: held-out tasks are only run by `hfx select evaluate`.
+- **Validated before anything runs.** Unknown or misspelt keys, wrong types, unknown task ids, recipes, models,
+  providers or fault profiles are listed field by field (exit 2). So are values that are planned but not built:
+  any runner other than `native`, and `calibration.enabled: true` (calibration runs on its own).
+- **Judge.** `judge.freeze_cost_baseline: true` saves the cost baseline once every planned run is scored (an
+  unfinished plan says so and waits for `--resume`). `judge.report: true` writes the report, restricted to the
+  runs this file planned, against that baseline. `judge.compare` (`base` + `against`) adds the recipe-pair
+  section.
+- **The file is stored with its campaign.** `var/bench/<name>-<sha256[:12]>/` holds a byte-for-byte copy
+  (`benchmark.yaml`), `manifest.json` (the file's sha256, every RunKey it planned, and each invocation with its
+  counts, baseline id and report path) and `report.md`. A stored result traces back to the file through its
+  RunKey; an edited file is a different benchmark and gets its own directory.
+
+**Pairing any two recipes.** `hfx report --compare v2-base:v3-staged,v2-base:v4-planner` (or a bench file's
+`judge.compare`) adds section 3b to the report: each pair matched on task, model, provider and seed, with mean ΔE
+(the second recipe minus the first), wins/losses/ties, a bootstrap 95% interval and a verdict only when the
+interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
+recipe it extends) is unchanged.

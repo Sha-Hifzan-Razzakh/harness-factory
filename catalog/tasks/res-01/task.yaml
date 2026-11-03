@@ -1,5 +1,5 @@
 id: res-01
-version: 1
+version: 2
 domain: research
 instruction: Which environments have backups disabled, according to the service configuration? Answer with the environment
   names, comma-separated.
@@ -22,7 +22,7 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.75
-    pattern: (?is)^(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)
+    pattern: (?is)\A(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)
   - id: grounded
     kind: tool_called
     weight: 0.25
