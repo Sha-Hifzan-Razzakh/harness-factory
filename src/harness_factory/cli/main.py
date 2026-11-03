@@ -137,17 +137,41 @@ def tasks() -> None:
 
 @app.command()
 def validate() -> None:
-    """Validate every recipe against the tool catalog, prompts and providers."""
+    """Validate every task's graders, and every recipe against the tool catalog, prompts and providers."""
     from harness_factory.recipes.validate import validate_recipe
     f = _factory(store=False)
     bad = 0
+    for task in f.tasks.all(include_held_out=True):
+        unknown = f.graders.unknown(task)
+        if unknown:
+            console.print(f"[red]FAIL[/] task {task.key()}: unknown grader(s) {', '.join(unknown)}; "
+                          f"known: {', '.join(sorted(f.graders.graders))}")
+            bad += 1
     for rid, recipe in f.recipes.items():
-        issues = validate_recipe(recipe, f.declared)
+        issues = validate_recipe(recipe, f.declared, providers=f.providers)     # context_len checks (RCP-05)
         console.print(f"{'[green]ok' if not issues else '[red]FAIL'}[/] {rid} ({recipe.content_hash()})")
         for i in issues:
             console.print(f"    {i.rule}: {i.detail}")
         bad += bool(issues)
+    bad += _validate_judge(f)
     raise typer.Exit(code=1 if bad else 0)
+
+
+def _validate_judge(f) -> bool:
+    """The rubric judge (ADR 0014): its provider serves its model and both prompts exist. False when fine."""
+    from harness_factory.grading.judge import RubricJudge, load_judge_config
+    try:
+        cfg = load_judge_config()
+        if cfg is None:
+            if any(t.oracle.rubric_checks() for t in f.tasks.all(include_held_out=True)):
+                console.print("[yellow]warn[/] judge: no catalog/judge/judge.yaml; rubric checks stay ungraded")
+            return False
+        judge = RubricJudge(cfg, f.providers, f.ledger)
+    except (KeyError, FileNotFoundError, ValueError) as e:
+        console.print(f"[red]FAIL[/] judge: {e}")
+        return True
+    console.print(f"[green]ok[/] judge {cfg.provider}/{cfg.model} ({judge.hash})")
+    return False
 
 
 @app.command()
@@ -161,7 +185,7 @@ def reference(task_id: str | None = typer.Argument(None)) -> None:
         g = asyncio.run(run_reference(f, task))
         console.print(f"{'[green]pass' if g.passed else '[red]FAIL'}[/] {task.key()} score={g.score:.2f}  {g.detail}")
         for c in g.checks:
-            if not c.passed:
+            if not c.passed or c.judge:
                 console.print(f"    {c.id}: {c.detail}")
         failed += not g.passed
     raise typer.Exit(code=1 if failed else 0)
@@ -206,6 +230,12 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
                  faults=[None if x == "none" else x for x in faults.split(",")] if faults else None)
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
+    from harness_factory.runner.runner import skipped_pairs
+    left_out = skipped_pairs(f, recipe.split(","), f.tasks.all())
+    if left_out:
+        console.print(f"left out {len(left_out)} task x recipe pair(s) whose recipe can't call every tool the "
+                      f"task allows: {', '.join(f'{t} x {r}' for t, r in left_out[:6])}"
+                      f"{' ...' if len(left_out) > 6 else ''}")
     if dry_run or resume:
         console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
                       f"{len(status.retry)}   new {len(status.new)}"
@@ -287,7 +317,8 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
             if chosen is None:
                 console.print(f"[red]no baseline {baseline!r}")
                 raise typer.Exit(code=1)
-        used, result = store.aggregate(chosen)
+        from harness_factory.select.selector import current_task_hashes
+        used, result = store.aggregate(chosen, task_hashes=current_task_hashes(_factory(store=False)))
         console.print(_cells_table(used, result))
         from harness_factory.results.cost import baseline_key
         missing = sorted({baseline_key(r) for r in store.rows()} - set(used.medians))
@@ -295,7 +326,7 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
             console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
         for task, n in store.stale_tasks().items():
             console.print(f"[yellow]{task} has {n} different definitions in the store (edited between runs); "
-                          f"its rows pool into the same task class")
+                          f"only rows of its current definition are counted")
         return
     t = Table("id", "task", "recipe", "model", "status", "E0", "tools", "created")
     for r in store.recent(limit):
@@ -310,8 +341,8 @@ app.add_typer(tools_app, name="tools")
 
 @tools_app.command("freeze")
 def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if tools.yaml is out of date")) -> None:
-    """Discover every server's tools and write their schema hashes into tools.yaml, so a later schema change
-    fails provisioning (drift) instead of silently changing what the model sees."""
+    """Discover every server's tools and write their schema and description hashes into tools.yaml, so a later
+    change to either fails provisioning (drift) instead of silently changing what the model sees."""
     import yaml
 
     from harness_factory.env.sandbox import make_sandbox
@@ -319,17 +350,18 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
 
     f = _factory(store=False)
 
-    async def discover() -> dict[str, str]:
+    async def discover() -> dict[str, dict[str, str]]:
         with make_sandbox("freeze") as sb:
             sb.reset(f.tasks.all()[0])
             declared = f.declared.model_copy(deep=True)
             for s in declared.servers:                      # discovery only: ignore declared hashes
                 for t in s.tools:
-                    t.schema_hash = None
+                    t.schema_hash = t.description_hash = None
             remote_ok = settings.allow_remote() or settings.remote_mode() == "replay"     # replay: recorded schemas
             servers = [s.id for s in declared.servers if not s.remote or remote_ok]
             async with MCPSessionPool(declared, servers, sb.env(), sb.launch) as pool:
-                return {ref: pool.catalog.schema_hash(ref) for ref in pool.catalog.tools}
+                return {ref: {"schema_hash": pool.catalog.schema_hash(ref),
+                              "description_hash": pool.catalog.description_hash(ref)} for ref in pool.catalog.tools}
 
     skipped = [s.id for s in f.declared.servers if s.remote and not (settings.allow_remote()
                                                                       or settings.remote_mode() == "replay")]
@@ -345,9 +377,9 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
             continue
         for tool in server["tools"]:
             ref = f"{server['id']}.{tool['name']}"
-            if tool.get("schema_hash") != hashes[ref]:
+            if any(tool.get(k) != v for k, v in hashes[ref].items()):
                 changed.append(ref)
-                tool["schema_hash"] = hashes[ref]
+                tool.update(hashes[ref])
     if check:
         for ref in changed:
             console.print(f"[red]stale[/] {ref}")
@@ -355,7 +387,8 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
         raise typer.Exit(code=1 if changed else 0)
     header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
     settings.TOOLS_FILE.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
-    console.print(f"wrote {len(hashes)} schema hashes ({len(changed)} changed) to {settings.TOOLS_FILE.name}")
+    console.print(f"wrote {len(hashes)} tools' schema and description hashes ({len(changed)} changed) to "
+                  f"{settings.TOOLS_FILE.name}")
 
 
 baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")
@@ -390,17 +423,15 @@ def baseline_list() -> None:
                       f"{', '.join(legacy)}")
 
 
-if __name__ == "__main__":
-    app()
-
-
 select_app = typer.Typer(no_args_is_help=True, help="Selector: which recipe to use per task class (SEL-01..06).")
 app.add_typer(select_app, name="select")
 
 
 def _evidence(f, baseline_id: str | None):
     from harness_factory.results.cost import CostBaseline
-    rows = f.store.rows()
+    from harness_factory.results.store import current_task_rows
+    from harness_factory.select.selector import current_task_hashes
+    rows = current_task_rows(f.store.rows(), current_task_hashes(f))
     if baseline_id:
         b = f.store.get_baseline(baseline_id)
         if b is None:
@@ -474,7 +505,9 @@ def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = t
     if dry_run:
         return
     specs = [RunSpec(task_id=tk, recipe_id=r, canonical_model=model, provider=provider) for tk, r in runs]
-    asyncio.run(run_campaign(f, specs, concurrency, resume=True))
+    result = asyncio.run(run_campaign(f, specs, concurrency, resume=True))
+    for e in result.errors:     # a run that never got a record is missing from its strategy's score: say so
+        console.print(f"[red]error[/] {e.spec.task_id} with {e.spec.recipe_id}: {e.error}")
     rows = f.store.rows()
     keys = {(tk, r): run_key_for(f.tasks.get(tk), f.recipes[r], model, provider, 0, declared=f.declared,
                                  providers=f.providers).as_str() for tk, r in runs}
@@ -489,6 +522,9 @@ def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = t
         st.add_row(s.strategy, "-" if s.mean_e is None else f"{s.mean_e:.3f}", f"{s.passed}/{s.tasks}",
                    f"{s.scored}/{s.tasks}")
     console.print(st)
+    if result.errors:
+        console.print(f"[red]{len(result.errors)} evaluation run(s) failed; their strategies are scored without them")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -522,21 +558,32 @@ def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option
         console.print(_records_table(result.records))
     for e in result.errors:
         console.print(f"[red]error[/] {e.spec.recipe_id}: {e.error}")
+    errored = [r for r in result.records if r.status.value == "ERROR"]
+    if result.errors or errored:
+        raise typer.Exit(code=1)       # the task was not done: scripts and schedulers must see it
 
 
 @app.command()
 def report(out: str | None = typer.Option(None, "--out", help="write markdown here (default: print)"),
            models: str | None = typer.Option(None, "--models", help="comma-separated models (default: all)"),
            baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id"),
-           title: str = typer.Option("Campaign report", "--title")) -> None:
-    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, selector picks,
-    failures and unscored runs."""
+           title: str = typer.Option("Campaign report", "--title"),
+           compare: str | None = typer.Option(None, "--compare",
+                                              help="recipe pairs base:variant, comma-separated, e.g. "
+                                                   "v2-base:v3-staged,v2-base:v4-planner")) -> None:
+    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, any recipe pairs
+    asked for with --compare, selector picks, failures and unscored runs."""
     from pathlib import Path
 
     from harness_factory.results.report import build_report
+    from harness_factory.runner.bench import parse_compare
+    try:
+        pairs = parse_compare(compare) if compare else None
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="--compare") from None
     f = _factory()
     rows, b = _evidence(f, baseline)
-    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None)
+    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None, compare=pairs)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(text + "\n")
@@ -548,3 +595,25 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
 from harness_factory.cli.authoring import register as _register_authoring  # hfx new, hfx catalog
 
 _register_authoring(app)
+
+from harness_factory.cli.calibration import calibration_app
+
+app.add_typer(calibration_app, name="calibration")
+
+from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
+from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
+from harness_factory.cli.allocation import allocate_app
+
+app.add_typer(allocate_app, name="allocate")
+
+from harness_factory.cli.regrade import register as _register_regrade  # hfx regrade
+
+_register_regrade(app)
+
+from harness_factory.cli.judge import register as _register_judge  # hfx judge status / calibrate
+
+_register_judge(app)
+
+# Last, so `python -m harness_factory.cli.main` sees every command registered above.
+if __name__ == "__main__":
+    app()
