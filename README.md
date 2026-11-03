@@ -287,6 +287,35 @@ hfx calibration cells                                                          #
   against its own provider's median); the cell is `groq+openrouter` with `tools:<hash>` as its environment.
   `hfx results --cells` and the selector are unchanged.
 
+## Allocation planner
+
+When more than one provider serves a model, `hfx allocate` decides before the campaign which provider serves
+each cell (ADR 0011). `hfx smoke` is unchanged; allocation is opt-in.
+
+```bash
+hfx allocate plan --models gpt-oss-120b,llama-3.3-70b --recipe v2-base,v3-staged --seeds 2   # decide, log, save
+hfx allocate plan ... --strategy cost --deadline-days 3 --budget-usd 5 --run -j 8            # and run it
+hfx allocate run <id> --resume                                                               # finish a saved one
+hfx allocate show <id>
+```
+
+- **One provider per model, unless calibrated.** Without a current `equivalent` verdict (`hfx calibration`),
+  every cell of a model goes to one provider. With one, the equivalent providers form a pool. The pool splits the
+  model's runs in proportion to each member's remaining capacity today, interleaved so every cell gets runs from
+  each member, and they aggregate as one pooled cell. A `different`, `inconclusive` or stale verdict (the served
+  model id changed) never splits.
+- **Capacity** is today's remaining quota in each provider's bucket (the ledger, `scope: model` included), minus
+  what earlier models in the same plan already took from it. Runs are estimated as the projection estimates them.
+  `--strategy capacity` (the default) picks the group that finishes soonest with the most room left, then the
+  cheapest. `--strategy cost` picks the cheapest, then the soonest. `--providers` narrows the candidates.
+- **Refusals** follow the preflight: a model nobody serves, a model whose candidates are all spent today or
+  exceed `--deadline-days`, or a plan over `--budget-usd`. The table gives the reason per candidate, and nothing
+  is saved (exit 2).
+- **Logged and frozen.** Every decision, refusals included, goes to `var/decisions/` with every candidate's
+  numbers and the verdict in force for each pair. A runnable allocation is saved, content-addressed, in
+  `var/allocations/<id>.json`. `run <id>` uses those frozen specs, so `--resume` finds the same runs after quota
+  has moved. Re-planning mid-campaign (MOD-07) is not part of it yet.
+
 ## Running in containers
 
 Two images, two Dockerfiles:

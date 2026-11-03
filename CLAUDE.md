@@ -36,6 +36,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
 | Authoring (`hfx new`, API, UI) | `src/harness_factory/authoring/` (one service; CLI in `cli/authoring.py`) | every catalog write goes through `AuthoringService`: staged, checked by `authoring/snapshot.py` in a child process (never re-point `settings` in-process), rejected on any new issue, written all-or-nothing under the lock; a change to an existing identity needs confirm; the snapshot and `hfx validate` must agree (`tests/test_authoring.py`) |
 | Provider calibration | `results/calibration.py`, CLI `cli/calibration.py` (`hfx calibration`) | pool cells only on a saved `equivalent` verdict whose served model ids are current; C stays per provider; never pool across tool environments (`tools_hash`) |
+| Allocation planner | `runner/allocation.py`, CLI `cli/allocation.py` (`hfx allocate`) | only an equivalent pool (`results.calibration.pools`) may split a model's runs, otherwise one provider per model; capacity from the ledger and the projection's Estimator; never change a RunKey (allocation picks a RunSpec's provider); log every decision, refusals included (`var/decisions/`); run frozen allocations (`var/allocations/`) so resume finds the same runs |
 
 ## Rules that protect the measurements
 
