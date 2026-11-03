@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Protocol
 
 from harness_factory import settings
+from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.impl import proc
 from harness_factory.env.mcp.servers import MCPServerSpec
 from harness_factory.env.state import BIZ_FILE
@@ -116,6 +117,9 @@ class LocalSandbox:
         return self.db_path.parent / BIZ_FILE
 
     def launch(self, spec: MCPServerSpec) -> Launch:
+        # The server runs with the factory's own Python, so a server with libraries beyond mcp (ADR 0013) needs
+        # them installed here; say so now rather than let the process die during the MCP handshake.
+        deps.require_server(spec.module, spec.id)
         return sys.executable, ["-m", spec.module], self.env()
 
     def describe(self) -> dict[str, str]:

@@ -277,3 +277,55 @@ servers:
     timeout_s: 10
     schema_hash: 875d099f4e51e27a
     description_hash: ab70d4b644a3db1e
+- id: docs
+  transport: stdio
+  module: harness_factory.env.mcp.impl.docs_server
+  tools:
+  - name: docx_read
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 046ed6283f6311b6
+    description_hash: b1f4992907e86312
+  - name: docx_replace
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 20
+    schema_hash: 07560e739280ed08
+    description_hash: f78f188586452eb9
+  - name: docx_append_paragraph
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 20
+    schema_hash: e56db682b9982312
+    description_hash: 5e0c0427be168514
+  - name: xlsx_sheets
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 61a7209b3d68f040
+    description_hash: 71c5711e60a12e69
+  - name: xlsx_read
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 47b9eb3973ce4e61
+    description_hash: 6d1cb7b230772872
+  - name: xlsx_write
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 20
+    schema_hash: d0cb071acfe47c92
+    description_hash: 80993e5830bfe633
+  - name: pdf_text
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: 82d09bff6a5ac78b
+    description_hash: a1318353a231b8e3
+  - name: pdf_info
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 9c882616c6f5d624
+    description_hash: 9404d7985a0d71a1

@@ -66,7 +66,8 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   `HF_BIZ` (the business state, a fresh copy of `env_seed.biz_state` next to the database).
   The Docker isolation contract is `DockerSandbox.run_args()`; weakening any flag must fail
   `tests/test_docker_sandbox.py`. A new MCP server module goes in `env/mcp/impl/` so the sandbox image picks
-  it up (`SERVER_FILES`), and may import only `mcp` and the standard library.
+  it up (`SERVER_FILES`), and may import only `mcp`, the standard library and the pinned libraries the allow-list in
+  `env/mcp/deps.py` grants that module (ADR 0013).
 - **Secrets.** Only in `.env` / environment. Never in recipes, prompts, task files, traces or test fixtures.
 - **Budget semantics.** `max_steps` counts model calls and gates only the next model call; the tool calls a step
   asked for still run. Tool, token and wall-time limits gate everything.

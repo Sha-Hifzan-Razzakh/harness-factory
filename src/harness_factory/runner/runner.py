@@ -305,23 +305,28 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
     faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
     A recipe that can't call every tool a task allows is not planned on it (`provisioner.reaches`, the rule the
-    selector prunes by): v2-base never runs a task that needs the git or biz server."""
+    selector prunes by; `skipped_pairs` lists them): v2-base never runs a task that needs the git, biz or docs server."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
-    from harness_factory.provision.provisioner import reaches as recipe_reaches
-
-    def reaches(t: Task, rid: str) -> bool:
-        return rid not in f.recipes or recipe_reaches(f.recipes[rid], t, f.declared)
+ 
 
     for t in tasks:
         f.graders.check(t)                                   # unknown grader: likewise
+    skip = set(skipped_pairs(f, recipe_ids, tasks))
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)
-            for t in tasks for r in recipe_ids if reaches(t, r) for m in models for fid in faults for s in range(seeds)]
+            for t in tasks for r in recipe_ids if (t.id, r) not in skip
+            for m in models for fid in faults for s in range(seeds)]
+
+
+def skipped_pairs(f: Factory, recipe_ids: list[str], tasks: list[Task]) -> list[tuple[str, str]]:
+    """(task id, recipe id) pairs a plan leaves out: the recipe can't call every tool the task allows."""
+    from harness_factory.provision.provisioner import reaches
+    return [(t.id, r) for t in tasks for r in recipe_ids if r in f.recipes and not reaches(f.recipes[r], t, f.declared)]
 
 
 async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,

@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 25 tasks and their class keys (3 held out)
+hfx tasks                 # 29 tasks and their class keys (3 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -229,6 +229,12 @@ The state diff lists changed records (`+biz credit_notes/CN-0004; ~biz invoices/
 exercise the test-tenant path end to end. Its `_tenant_reset(state)` would load `env_seed.mock_api_state[<id>]`
 (the same JSON document) into a per-tenant dict instead of a file, `_tenant_export()` would return it, and
 `remote_equals` checks would read it, so a task could be graded the same way on either transport.
+**Server libraries (ADR 0013).** A server may import more than `mcp` and the standard library only through the
+allow-list in `src/harness_factory/env/mcp/deps.py`: exact pins per library, and per server module the libraries
+it uses. Today that is the `docs` server's `python-docx`, `openpyxl` and `pypdf`. Install them with the `docs`
+extra (`uv sync --extra dev --extra docs`); a local sandbox, a task with office checks, and an image build refuse
+to start without them and say so. The image vendors them next to `mcp`, and their pins are part of its tag and of
+the `env_hash` of runs that open the server.
 
 ## Remote MCP servers
 
@@ -558,6 +564,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
 | tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
+| tools | `v2-docs` | Adds the `docs` server: read and edit `.docx` (`docx_read`, `docx_replace`, `docx_append_paragraph`) and `.xlsx` (`xlsx_sheets`, `xlsx_read`, `xlsx_write`), read `.pdf` (`pdf_text`, `pdf_info`). The office tasks name these tools, so plans run them only on recipes that open the server |
 
 **Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
 general how-tos so far: `sql-analysis`, `sql-changes`, `editing-files`, `file-exports`,
@@ -823,7 +830,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-25 tasks over four seeds. The first five are the P0 smoke set. The other twenty each hide a trap that a
+29 tasks over six seeds. The first five are the P0 smoke set. The other twenty-four each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -859,6 +866,12 @@ The `biz-*` tasks need the `biz` server, which only `v2-biz` opens. Campaigns le
 whose recipe can't call every tool the task allows, a server it doesn't open included (`provisioner.reaches`; `hfx smoke` lists what it left out),
 so `v2-base` still runs the same 20 visible tasks. `biz-01` is irreversible by class because its allowance
 (`biz.*`) includes `inv_mark_paid`, which the policy says support must never call.
+| `office-01` | known path, reversible, R1 | TEST | Price list from a PDF quotation: prices exclude VAT, one item isn't on the list, page 2 quotes the withdrawn quotation |
+| `office-02` | known path, reversible, R1 | DEV | Fill in a letter: the expiry date, not the quote date; the withdrawn quotation's number stays; sign in the Signature style |
+
+The two office tasks (seed `office`, built by `scripts/taskgen/office.py`) need the `docs` server. A plan leaves
+out any task × recipe pair whose recipe can't call a tool the task names (`hfx smoke` lists them), so they run
+on `v2-docs`, not on the base recipes.
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
@@ -879,6 +892,10 @@ Oracle checks, with weights summing to 1:
   `pattern` and which touches `path` if one is given. With `negate` it means no such commit, which is the
   "leave `main` alone" guard. The task needs `env_seed.git: true`.
 - `biz_equals` and `biz_count`: the business state after the run (see [Business systems](#business-systems)).
+- `xlsx_cell` (`path`, `sheet`, `cell`, `expected`; omit `expected` for "empty"; `tolerance` for numbers, and
+  text is never a number), `docx_contains` (`text` in any paragraph or table cell) and `docx_paragraph_regex`
+  (some paragraph matches `pattern`, optionally with a given `style`; `negate`: none does). They read office files
+  in the factory process, so they need the `docs` extra.
 - **An answer check must refuse a hedge.** "It is 2, 3 or 4" must not pass a check for 3. Anchor the pattern on
   `\A`, not `^`: with `re.MULTILINE`, a `^` lookahead is tried again at every line start, so "wrong\nright"
   slips through. `scripts/taskgen/tasks.py` has the builders: `one_number` passes one number and no other,
