@@ -130,7 +130,8 @@ class PlanBackend:
             msg = {"role": "assistant", "content": scripted_summary(messages)}
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if getattr(slot, "role", None) == "planner" and self._wants_json(messages):
-            msg = self._msg(content=json.dumps({"steps": self._structured_plan()}))
+            shown = "\n".join(m.get("content") or "" for m in messages)     # the planner prompt lists its tools
+            msg = self._msg(content=json.dumps({"steps": self._structured_plan(shown)}))
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if getattr(slot, "role", None) == "planner":
             lines = [f"{n}. Call {s['tool']} with {json.dumps(s['args'])}"
@@ -195,11 +196,15 @@ class PlanBackend:
             self._reads = {t.ref(srv.id): t.side_effect == SideEffect.READ for srv in declared.servers for t in srv.tools}
         return self._reads.get(ref, False)
 
-    def _structured_plan(self) -> list[dict]:
-        """One step per reference call not yet made (a replan leaves out the ones done)."""
+    def _structured_plan(self, shown: str = "") -> list[dict]:
+        """One step per reference call not yet made (a replan leaves out the ones done). An optional step whose tool
+        the planner wasn't shown is left out, as the unstructured path skips it (ADR 0017); its id stays unused, so
+        s<k> still names plan[k-1]."""
         steps, last_write, reads = [], None, []
         for k, call in enumerate(self.plan, 1):
             sid = f"s{k}"
+            if call.get("optional") and model_name(call["tool"]) not in shown:
+                continue
             if self._is_read(call["tool"]):
                 deps = [last_write] if last_write else []
                 reads.append(sid)
