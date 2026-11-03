@@ -287,7 +287,8 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
             if chosen is None:
                 console.print(f"[red]no baseline {baseline!r}")
                 raise typer.Exit(code=1)
-        used, result = store.aggregate(chosen)
+        from harness_factory.select.selector import current_task_hashes
+        used, result = store.aggregate(chosen, task_hashes=current_task_hashes(_factory(store=False)))
         console.print(_cells_table(used, result))
         from harness_factory.results.cost import baseline_key
         missing = sorted({baseline_key(r) for r in store.rows()} - set(used.medians))
@@ -295,7 +296,7 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
             console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
         for task, n in store.stale_tasks().items():
             console.print(f"[yellow]{task} has {n} different definitions in the store (edited between runs); "
-                          f"its rows pool into the same task class")
+                          f"only rows of its current definition are counted")
         return
     t = Table("id", "task", "recipe", "model", "status", "E0", "tools", "created")
     for r in store.recent(limit):
@@ -400,7 +401,9 @@ app.add_typer(select_app, name="select")
 
 def _evidence(f, baseline_id: str | None):
     from harness_factory.results.cost import CostBaseline
-    rows = f.store.rows()
+    from harness_factory.results.store import current_task_rows
+    from harness_factory.select.selector import current_task_hashes
+    rows = current_task_rows(f.store.rows(), current_task_hashes(f))
     if baseline_id:
         b = f.store.get_baseline(baseline_id)
         if b is None:

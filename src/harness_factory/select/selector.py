@@ -26,7 +26,7 @@ from harness_factory.env.mcp.servers import RISK_TO_TIER, TIER_ORDER
 from harness_factory.hashing import content_hash
 from harness_factory.recipes.model import Variant
 from harness_factory.results.cost import CostBaseline
-from harness_factory.results.store import aggregate_rows
+from harness_factory.results.store import aggregate_rows, current_task_rows
 
 SELECTOR_FILE = settings.CATALOG / "selector.yaml"
 
@@ -129,12 +129,19 @@ def hard_rules(recipe, task_class: str, canonical_model: str, provider: str, fac
     return None
 
 
+def current_task_hashes(factory) -> dict[str, str]:
+    """task_version -> the content hash of that task as the catalog defines it now (held-out tasks included)."""
+    return {t.key(): t.content_hash() for t in factory.tasks.all(include_held_out=True)}
+
+
 def _current_cells(factory, rows: list[dict], baseline: CostBaseline, canonical_model: str, provider: str):
-    """Cells keyed by (task_class, recipe_id), only where recipe and environment hashes are current."""
+    """Cells keyed by (task_class, recipe_id), only where recipe, environment and task hashes are current: rows of
+    an edited task definition (same id and version, different content) are a different experiment."""
     served = factory.providers.served(provider, canonical_model)
     current = {}
     for rid, r in factory.recipes.items():
         current[rid] = (r.content_hash(), factory.declared.env_hash(r.tools.mcp_servers, served.provider_model_id))
+    rows = current_task_rows(rows, current_task_hashes(factory))
     out = {}
     for c in aggregate_rows([r for r in rows if r["canonical_model"] == canonical_model
                              and r["provider"] == provider], baseline):
