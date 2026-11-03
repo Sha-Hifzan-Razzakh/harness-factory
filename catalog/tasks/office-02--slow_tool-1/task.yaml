@@ -32,8 +32,8 @@ perturbation:
       - docs.pdf_text
       - docs.docx_read
       kind: latency
-      delay_s: 2.0
-    why: Reading the quotation and the letter takes two seconds each.
+      delay_s: 1.0
+    why: Reading the quotation and the letter takes a second each.
 oracle:
   pass_threshold: 1.0
   checks:

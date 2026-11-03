@@ -11,5 +11,5 @@ variants:
     n: 1
     params:
       faults:
-        - {tools: ["sql.*", "fs.*"], kind: latency, delay_s: [0.5, 2.0]}
-      why: Every call waits half a second to two seconds, drawn per call, under the tools' timeouts.
+        - {tools: ["sql.*", "fs.*"], kind: latency, delay_s: [0.3, 1.0]}
+      why: Every call waits 0.3 to 1 second, drawn per call, under the tools' timeouts.

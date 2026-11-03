@@ -32,9 +32,9 @@ perturbation:
       - biz.*
       kind: latency
       delay_s:
-      - 1.0
-      - 2.5
-    why: Every business-system call waits one to two and a half seconds.
+      - 0.5
+      - 1.5
+    why: Every business-system call waits half a second to a second and a half.
 oracle:
   pass_threshold: 1.0
   checks:

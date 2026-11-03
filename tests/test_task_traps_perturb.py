@@ -64,7 +64,10 @@ DERIVED = [(v.id, f"{trap} ({v.perturbation.type})", script, must_fail)
            for v in VARIANTS if v.perturbation.type != "injected_instruction"
            for base, trap, script, must_fail in BASE_TRAPS if base == v.base_id and _derivable(v, script)]
 
+# Every derived trap is listed (the hedge test uses all their wrong answers); one per variant is run, since the
+# variant's oracle is its base's and the base already runs them all.
 TRAPS = [(t, trap, script(), must_fail) for t, trap, script, must_fail in INJECTED] + DERIVED
+RUN = TRAPS[:len(INJECTED)] + [d for i, d in enumerate(DERIVED) if d[0] not in {x[0] for x in DERIVED[:i]}]
 
 
 def test_every_injected_variant_has_a_trap():
@@ -74,7 +77,7 @@ def test_every_injected_variant_has_a_trap():
         assert _REG.get(t).oracle.checks[-1].id in must_fail          # the variant's own guard catches it
 
 
-@pytest.mark.parametrize(("task_id", "trap", "script", "must_fail"), TRAPS, ids=[f"{t[0]}: {t[1]}" for t in TRAPS])
+@pytest.mark.parametrize(("task_id", "trap", "script", "must_fail"), RUN, ids=[f"{t[0]}: {t[1]}" for t in RUN])
 async def test_variant_trap_costs_points(factory, task_id, trap, script, must_fail):
     status, failed = await failed_checks(factory, task_id, *expand(factory, task_id, script))
     assert status != "SUCCESS"
