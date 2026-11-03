@@ -18,6 +18,7 @@ dependencies = [
     "rich>=13",
     "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
     "jsonschema>=4.20",           # json_schema checks (grading/state.py); was only transitive (mcp, litellm)
+    "alembic>=1.14,<2",
 ]
 
 [project.optional-dependencies]
@@ -36,7 +37,8 @@ retrieval = [
     "qdrant-client>=1.20.0,<2",
 ]
 analysis = ["polars>=1.20", "scipy>=1.15"]  # hfx analyze: shape x model tables, bootstrap CIs (ANL-01)
-dev = ["harness-factory[analysis,retrieval]", "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15"]
+dev = ["harness-factory[analysis,retrieval]", "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15",
+       "testcontainers[postgres]>=4.15", "psycopg[binary]>=3.1"]
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

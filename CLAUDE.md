@@ -58,7 +58,9 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   at aggregation (faulted ÷ clean mean outcome). Faulted runs feed only R, never a cell's E mean or the cost
   medians, and an injected tool failure is never counted against Q.
 - **Re-grading.** A stored run's end state (`runner/endstate.py`) is re-graded into the `regrades` table, never
-  into its own row; aggregation reads only `runs`. The results store changes only additively (`_migrate`).
+  into its own row; aggregation reads only `runs`. The results store changes only additively, one Alembic revision per change
+  (`results/migrations/versions/`; a revision adopts what an older store already has, and
+  `tests/test_results_store.py` checks the migrated schema against `store.metadata`).
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **How runs end** (`shapes/common.finish`, `runner._finalize_status`):

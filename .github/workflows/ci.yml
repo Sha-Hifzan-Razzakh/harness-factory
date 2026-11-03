@@ -26,6 +26,7 @@ jobs:
       HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
       COLUMNS: "160"
       HF_REQUIRE_DOCKER: "1"        # Docker isolation tests fail instead of skipping
+      HF_REQUIRE_POSTGRES: "1"      # results-store tests also run on Postgres (testcontainers), never skip
     steps:
       - uses: actions/checkout@v4
 

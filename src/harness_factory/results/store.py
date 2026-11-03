@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from collections import defaultdict
 from datetime import UTC, datetime
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from pydantic import BaseModel
 from sqlalchemy import (
     JSON,
     Column,
     DateTime,
+    Engine,
     Float,
     Integer,
     MetaData,
@@ -19,7 +26,6 @@ from sqlalchemy import (
     Text,
     create_engine,
     insert,
-    inspect,
     select,
     text,
 )
@@ -29,6 +35,8 @@ from harness_factory.results.cost import UNSCORED_STATUSES, CostBaseline, is_cle
 from harness_factory.results.model import CellAggregate, EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.shapes.result import RunStatus
 
+# The schema the code reads and writes. It must equal the head of migrations/ (a test compares them): change a
+# table here and add a revision there, never one without the other. See README "Changing the results schema".
 metadata = MetaData()
 
 runs = Table(
@@ -57,7 +65,7 @@ runs = Table(
     Column("grades", JSON, nullable=False),
     Column("trace_path", String),
     Column("created_at", DateTime, nullable=False),
-    Column("output", Text),                                  # added after v1: nullable, see _migrate()
+    Column("output", Text),                                  # added after v1: nullable
     Column("transcript_path", String),
     Column("fault", String),                                 # fault profile id; NULL = clean run
     Column("grader_versions", JSON),                         # grader id -> version; NULL = before versions
@@ -118,7 +126,7 @@ cost_baselines = Table(
     Column("id", String(12), primary_key=True),          # content hash of basis + medians
     Column("basis", String, nullable=False),            # display summary; per-provider bases below
     Column("medians", JSON, nullable=False),
-    Column("bases", JSON),                              # added after v1: nullable, see _migrate()
+    Column("bases", JSON),                              # added after v1: nullable
     Column("counts", JSON, nullable=False),
     Column("note", String, nullable=False),
     Column("created_at", DateTime, nullable=False),
@@ -287,22 +295,61 @@ def _baseline_from_row(r) -> CostBaseline:
                         created_at=r["created_at"])
 
 
+MIGRATIONS = Path(__file__).with_name("migrations")
+_PG_LOCK = 0x6866_7265_7375_6C74          # advisory lock id ("hfresult"): one upgrader at a time on Postgres
+
+
+def alembic_config() -> Config:
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS))
+    return cfg
+
+
+@functools.cache
+def _script() -> ScriptDirectory:
+    return ScriptDirectory.from_config(alembic_config())
+
+
+def head_revision() -> str:
+    heads = _script().get_heads()
+    if len(heads) != 1:
+        raise RuntimeError(f"results migrations have {len(heads)} heads {heads}; merge or rebase the revisions")
+    return heads[0]
+
+
+def current_revision(engine: Engine) -> str | None:
+    with engine.connect() as c:
+        return MigrationContext.configure(c).get_current_revision()
+
+
+def upgrade(engine: Engine) -> None:
+    """Bring a store to the head revision, in one transaction. An empty database gets the whole schema; a store
+    made before Alembic (tables, no alembic_version) is adopted by the baseline revision; a store already at
+    head runs no migration at all."""
+    with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":                      # campaigns on two hosts may open it at once
+            conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _PG_LOCK})
+        current = MigrationContext.configure(conn).get_current_revision()
+        if current == head_revision():
+            return
+        if current is not None and current not in {r.revision for r in _script().walk_revisions()}:
+            raise RuntimeError(f"results store {engine.url!r} is at revision {current}, which this code does not "
+                               f"know (head {head_revision()}): it was written by a newer harness-factory. "
+                               "Update, or point HF_RESULTS_URL at another store.")
+        cfg = alembic_config()
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
+
+
 class ResultsStore:
     def __init__(self, url: str | None = None) -> None:
         settings.ensure_dirs()
         self.engine = create_engine(url or settings.RESULTS_URL)
-        metadata.create_all(self.engine)
-        self._migrate()
-
-    def _migrate(self) -> None:
-        """Additive only: add nullable columns that newer code defines and an older store lacks."""
-        for table in (runs, cost_baselines, equivalences, regrades, judge_calibrations):
-            existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
-            with self.engine.begin() as c:
-                for col in table.columns:
-                    if col.name not in existing and col.nullable:
-                        c.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" '
-                                       f'{col.type.compile(dialect=self.engine.dialect)}'))
+        try:
+            upgrade(self.engine)
+        except BaseException:
+            self.engine.dispose()
+            raise
 
     def add(self, rec: EffectivenessRecord) -> int:
         with self.engine.begin() as c:

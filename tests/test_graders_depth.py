@@ -456,10 +456,11 @@ async def test_grader_versions_stored(factory):
 def test_store_migration_is_additive(tmp_path):
     url = f"sqlite:///{tmp_path / 'old.db'}"
     ResultsStore(url)
-    with sqlite3.connect(tmp_path / "old.db") as c:           # a store from before this change
+    with sqlite3.connect(tmp_path / "old.db") as c:           # a store from before this change: revision 0001
         c.execute("ALTER TABLE runs DROP COLUMN grader_versions")
         c.execute("ALTER TABLE runs DROP COLUMN endstate_path")
         c.execute("DROP TABLE regrades")
+        c.execute("UPDATE alembic_version SET version_num = '0001'")
     ResultsStore(url)
     with sqlite3.connect(tmp_path / "old.db") as c:
         cols = {r[1] for r in c.execute("PRAGMA table_info(runs)")}
