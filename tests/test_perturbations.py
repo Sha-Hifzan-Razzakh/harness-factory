@@ -355,10 +355,11 @@ def _row(task: str, outcome: float, recipe="v2-base", seed=0, model="scripted/re
 
 
 def test_report_groups_variants_by_perturbation_type():
-    rows = [_row("ops-03@2", 1.0), _row("ops-03--oversized_output-1@2", 0.5), _row("ops-03--slow_tool-1@2", 1.0),
-            _row("sql-01@2", 1.0), _row("sql-01--slow_tool-1@2", 0.0),
-            _row("ops-03@2", 0.8, seed=1), _row("ops-03--oversized_output-1@2", 0.8, seed=1),
-            _row("res-01--oversized_output-1@2", 1.0)]               # no base run: not paired
+    # keys from the registry, so a base task's version bump (e.g. #69's grounding fix) doesn't break the pairing
+    rows = [_row(_REG.get("ops-03").key(), 1.0), _row(_REG.get("ops-03--oversized_output-1").key(), 0.5), _row(_REG.get("ops-03--slow_tool-1").key(), 1.0),
+            _row(_REG.get("sql-01").key(), 1.0), _row(_REG.get("sql-01--slow_tool-1").key(), 0.0),
+            _row(_REG.get("ops-03").key(), 0.8, seed=1), _row(_REG.get("ops-03--oversized_output-1").key(), 0.8, seed=1),
+            _row(_REG.get("res-01--oversized_output-1").key(), 1.0)]               # no base run: not paired
     got = {(p["type"], p["recipe"]): p for p in by_perturbation(_REG, rows)}
     assert set(got) == {("oversized_output", "v2-base"), ("slow_tool", "v2-base")}
     over = got[("oversized_output", "v2-base")]
