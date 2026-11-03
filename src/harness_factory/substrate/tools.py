@@ -115,6 +115,8 @@ class ToolExecutor:
         spec = self.declared.spec(ref)
         side_effect, risk = spec.effect_for(args)          # a call can be stronger than the tool (env/mcp/effects.py)
         span.attributes["side_effect"] = side_effect.value
+        if spec.observes:
+            span.attributes["observes"] = True
         if side_effect != spec.side_effect:
             span.attributes.update(escalated=True, risk=risk)
         mode = self.policy.permission_mode.get(side_effect.value, "DENY")

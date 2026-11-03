@@ -16,6 +16,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.30",
     "typer>=0.15",
     "rich>=13",
+    "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
 ]
 
 [project.optional-dependencies]

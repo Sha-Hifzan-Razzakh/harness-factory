@@ -159,6 +159,37 @@ needs no network inside containers. Any base image that provides Python works; s
 Graders read the host-side directories, so a run grades identically in either sandbox. The sandbox kind and
 image tag are recorded in each run's snapshot.
 
+Since ADR 0012 the image also carries pytest (vendored like `mcp`) and git. git comes from the one `RUN` step,
+which installs it with apt only when the base image lacks it. So a base with git preinstalled still builds with
+no network, and any other base must be Debian-based.
+
+### Running code and git (ADR 0012)
+
+Two servers let a task involve running code and version control:
+
+| Server | Tools | Side effect |
+|---|---|---|
+| `code` | `run_tests(path=".", args="")`: pytest on a folder, file or `file::test`, returns exit code, counts and the end of the output; `run_python(path, args="")`: runs a workspace script | REVERSIBLE, R2: code can change anything in the sandbox, and a reset undoes it |
+| `git` | `status`, `diff(path, staged)`, `log(n)`; `commit(message)` (stages everything), `branch(name)`, `checkout(name)` | reads READ; the rest REVERSIBLE, R1 |
+
+- **Limits.** Every call is a child process with a hard time limit (code 60 s, git 20 s); its whole process group
+  is killed when the limit runs out. Output is capped (head and tail kept), and the environment is scrubbed (no
+  keys, no `HF_*` paths, no git or pytest config from your machine). pytest options are limited to selection and
+  reporting (`-k`, `-m`, `-x`, `-v`, `--tb`, `--maxfail`, `-r`, `--co`).
+- **A task asks for a repository** with `env_seed.git: true`. The sandbox commits the seed files once, at a fixed
+  date as a fixed identity, so the seed commit id is the same on every machine. The git directory sits in the
+  state folder next to the database, never in the workspace, so the agent's file tools can't touch it and file
+  checks never see `.git`. Later commits are dated one minute after their parent. git runs with hooks, fsmonitor,
+  pagers, signing and remote transports turned off from the command line, and there are no remotes.
+- **Real models run code in Docker.** With a real model, the provisioner refuses a run whose recipe opens `code`
+  or whose task has a `tests_pass` check in a local sandbox, unless you set `HF_ALLOW_LOCAL_CODE=1`. Scripted
+  runs are exempt.
+- **Requirements.** pytest is a main dependency. git must be on `PATH`: `/usr/bin/git` on Linux, Git for Windows
+  on Windows. The factory image installs it.
+- **Campaigns plan only what a recipe can reach.** A recipe that can't call every tool a task allows is not
+  planned on that task, the same rule the selector prunes by. So `v2-base` skips `code-02` and `code-03`, and
+  `v2-code` (below) runs them.
+
 ## Remote MCP servers
 
 A recipe can also open an **existing** MCP server: a third-party service, or an organisation's MCP gateway, over
@@ -390,6 +421,7 @@ catalog/                  data, versioned with the code
   seeds/base/             small seed for the first five tasks
   seeds/shop/             shop database (customers, products, price history, orders, refunds) + tickets, CSVs
   seeds/service/          a service repo: configs per environment, feature flags, logs, changelog, runbook
+  seeds/pricing/          a small Python package with tests, committed as a git repository by the sandbox
   tasks/<id>/             task.yaml (instruction, allowance, oracle) + reference.py (PLAN, FINAL)
 prompts/                  Jinja2 prompt layers (system/, task/)
 observability/            OTel collector config
@@ -482,6 +514,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | tools | `v2-fsx` | Adds the `fsx` server: `fsx.edit` (exact-string replace), `fsx.append`, `fsx.move`, `fsx.mkdir` and `fsx.tree`. `fs` can only rewrite a whole file |
 | skills | `v2-skills-upfront` | Every skill's how-to appended to the system prompt (about 5k characters) |
 | skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
+| tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
 
 **Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
@@ -772,6 +805,11 @@ careless harness falls into: the right answer and the plausible wrong one differ
 | `docs-02` | unknown path, reversible, R1 | HELD_OUT | The new port is prod's, not the base default or staging's |
 | `code-01` | unknown path, reversible, R1 | TEST | Version bump; a dependency is pinned at the same version number |
 | `res-01` | unknown path, read, R0 | TEST | Backups per environment: env files override the base default |
+| `code-02` | known path, reversible, R2 | DEV | Fix a failing test and commit: editing the test, special-casing the tested order, or not committing each cost points (hidden tests) |
+| `code-03` | known path, reversible, R2 | TEST | Fix VAT rounding on a new branch: committing on `main`, or rounding by adding half a fils, fails |
+
+`code-02` and `code-03` (ADR 0012) use a fourth seed, `pricing` (a small package with tests, in a git
+repository), and run under `v2-code`.
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
@@ -785,6 +823,12 @@ Oracle checks, with weights summing to 1:
   `output_regex`. Regexes run with `re.MULTILINE`; add `(?s)` to match across lines. A check is refused at load
   time if it lacks the fields its kind needs or its regex doesn't compile.
 - `tool_called`: the answer must be grounded in a successful call.
+- `tests_pass` (ADR 0012): pytest on the end state passes (exit code 0). `path` is what to run (default `.`).
+  `text` is a hidden test module, run from outside the workspace, which the agent never sees. `pattern` is a `-k`
+  expression. It runs inside the sandbox with the grader's own empty config and `--noconftest`.
+- `git_log_contains` (ADR 0012): a commit on `ref` (default `HEAD`) after the seed commit, whose message matches
+  `pattern` and which touches `path` if one is given. With `negate` it means no such commit, which is the
+  "leave `main` alone" guard. The task needs `env_seed.git: true`.
 - **An answer check must refuse a hedge.** "It is 2, 3 or 4" must not pass a check for 3. Anchor the pattern on
   `\A`, not `^`: with `re.MULTILINE`, a `^` lookahead is tried again at every line start, so "wrong\nright"
   slips through. `scripts/taskgen/tasks.py` has the builders: `one_number` passes one number and no other,

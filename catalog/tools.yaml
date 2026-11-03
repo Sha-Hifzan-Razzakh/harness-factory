@@ -1,4 +1,6 @@
 # Declared tools (B11). Discovery is checked against this file; any drift fails provisioning.
+# code.* (ADR 0012): code can change any file in the sandbox, and a reset undoes it, so both code tools are
+# REVERSIBLE; R2 because that reach includes the task database and the git directory, not just the workspace.
 servers:
 - id: fs
   transport: stdio
@@ -141,3 +143,61 @@ servers:
     - fs.list_dir
     schema_hash: f72161dd0b23361e
     description_hash: 936294f362dc0a83
+- id: code
+  transport: stdio
+  module: harness_factory.env.mcp.impl.code_server
+  tools:
+  - name: run_tests
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 90
+    observes: true
+    schema_hash: 97687df430b91bd2
+    description_hash: ba95d2f0a9a6e4db
+  - name: run_python
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 90
+    observes: true
+    schema_hash: f9f45432dac19524
+    description_hash: 33492845e84e5b00
+- id: git
+  transport: stdio
+  module: harness_factory.env.mcp.impl.git_server
+  tools:
+  - name: status
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: a1112e5773fb0490
+    description_hash: 8df1496de40af423
+  - name: diff
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: a3652e5b074f4332
+    description_hash: f2bdf46d6320ce75
+  - name: log
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: 18b913b88abf3072
+    description_hash: 3479aa0e16807871
+  - name: commit
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 30
+    schema_hash: d80bc7bf7b1f7b35
+    description_hash: e536ba997b117594
+  - name: branch
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 30
+    schema_hash: 4d64b19ebdbfbbb7
+    description_hash: 071b4027bfbc39c3
+  - name: checkout
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 30
+    schema_hash: 30d195c0c1cff4d9
+    description_hash: 921530a6bc8fa208

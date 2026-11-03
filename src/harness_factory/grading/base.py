@@ -26,6 +26,7 @@ class GradeContext:
     spans: list[Span]
     max_steps: int
     remote: dict[str, Any] = field(default_factory=dict)   # server -> its test tenant's state after the run
+    sandbox: Any = None              # the run's Sandbox: checks that run code or git ask it (Sandbox.probe)
 
 
 class CheckResult(BaseModel):

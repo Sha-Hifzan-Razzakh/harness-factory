@@ -164,10 +164,13 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
             with inst.tracer.span(SpanKind.grade, "pipeline"):
-                grades = f.graders.run(GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
-                                                    workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
-                                                    spans=list(inst.tracer.spans),
-                                                    max_steps=recipe.config.max_steps, remote=remote))
+                # In a worker thread: a tests_pass check runs pytest for up to minutes, and the other runs of the
+                # campaign share this event loop.
+                ctx = GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
+                                   workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
+                                   spans=list(inst.tracer.spans), max_steps=recipe.config.max_steps, remote=remote,
+                                   sandbox=p.sandbox)
+                grades = await asyncio.to_thread(f.graders.run, ctx)
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
         result.trajectory = list(inst.tracer.spans)
@@ -244,8 +247,9 @@ async def run_reference(f: Factory, task: Task) -> Grade:
                                          canonical_model="reference", provider="none"),
                           output=ref.final, finished=True)
         ctx = GradeContext(task=task, result=dummy, before=before, after=after, diff=StateInspector.diff(before, after),
-                           workspace=sb.workspace, db_path=sb.db_path, spans=tracer.spans, max_steps=10_000)
-        return f.graders.graders["state_diff"].grade(ctx)
+                           workspace=sb.workspace, db_path=sb.db_path, spans=tracer.spans, max_steps=10_000,
+                           sandbox=sb)
+        return await asyncio.to_thread(f.graders.graders["state_diff"].grade, ctx)
 
 
 class RunSpec(BaseModel):
@@ -299,18 +303,25 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
          seeds: int = 1, task_ids: list[str] | None = None,
          faults: list[str | None] | None = None) -> list[RunSpec]:
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
-    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both)."""
+    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
+    A recipe that can't call every tool a task allows is not planned on it (the selector's `reaches_task_tools`
+    would prune it anyway): v2-base never runs a task that needs the git server."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
+    from harness_factory.provision.provisioner import missing_task_tools
+
+    def reaches(t: Task, rid: str) -> bool:
+        return rid not in f.recipes or not missing_task_tools(f.recipes[rid], t, f.declared)
+
     for t in tasks:
         f.graders.check(t)                                   # unknown grader: likewise
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)
-            for t in tasks for r in recipe_ids for m in models for fid in faults for s in range(seeds)]
+            for t in tasks for r in recipe_ids if reaches(t, r) for m in models for fid in faults for s in range(seeds)]
 
 
 async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,

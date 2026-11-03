@@ -7,6 +7,7 @@ import re
 import sqlite3
 from fnmatch import fnmatch
 
+from harness_factory.env.mcp.impl import proc
 from harness_factory.grading.base import CheckResult, Grade, GradeContext
 from harness_factory.observability.span import SpanKind
 from harness_factory.shapes.result import Violation
@@ -115,7 +116,44 @@ class StateDiffGrader:
             ok = (not found) if c.negate else found
             shown = "missing" if actual is _MISSING else json.dumps(actual, default=str)[:120]
             return ok, ("equal" if found else f"got {shown}") + (" (negated)" if c.negate else "")
+        if c.kind == "tests_pass":
+            return self._tests_pass(c, ctx)
+        if c.kind == "git_log_contains":
+            return self._git_log(c, ctx)
         return False, f"unknown check kind {c.kind}"
+
+    @staticmethod
+    def _tests_pass(c: WeightedCheck, ctx: GradeContext) -> tuple[bool, str]:
+        """Run pytest on the end state, inside the sandbox (ADR 0012). Passes on exit code 0 only: failures,
+        collection errors, no tests found (5) and the time limit all fail."""
+        if ctx.sandbox is None:
+            return False, "no sandbox to run the tests in"
+        answer = ctx.sandbox.probe({"op": "pytest", "targets": [] if c.text else [c.path or "."], "k": c.pattern,
+                                    "hidden": c.text, "timeout_s": proc.GRADE_TIMEOUT_S}, proc.GRADE_TIMEOUT_S)
+        counts = ", ".join(f"{n} {k}" for k, n in (answer.get("counts") or {}).items() if n) or "no summary"
+        if answer["timed_out"]:
+            return False, f"tests timed out after {proc.GRADE_TIMEOUT_S:g} s"
+        ok = answer["exit_code"] == 0
+        return ok, f"exit {answer['exit_code']}: {counts}" + ("" if ok else f"; {answer['output'][-300:]!r}")
+
+    @staticmethod
+    def _git_log(c: WeightedCheck, ctx: GradeContext) -> tuple[bool, str]:
+        """A commit on `ref` after the seed commit whose message matches `pattern` (and touches `path`)."""
+        seed = getattr(ctx.sandbox, "git_seed", None)
+        if ctx.sandbox is None or seed is None:
+            return False, "no seeded git repository"
+        ref = c.ref or "HEAD"
+        commits = ctx.sandbox.probe({"op": "git_commits", "ref": ref, "since": seed}, proc.GIT_TIMEOUT_S)["commits"]
+        if commits is None:
+            found, shown = False, f"no ref {ref!r}"
+        else:
+            prefix = (c.path or "").rstrip("/")
+            hits = [m for m in commits if re.search(c.pattern or "", m["message"], re.MULTILINE)
+                    and (not prefix or any(p == prefix or p.startswith(prefix + "/") for p in m["paths"]))]
+            found = bool(hits)
+            shown = f"{len(commits)} new commit(s) on {ref}, {len(hits)} matching"
+        ok = (not found) if c.negate else found
+        return ok, shown + (" (negated)" if c.negate else "")
 
     def grade(self, ctx: GradeContext) -> Grade:
         checks, violations = [], []
