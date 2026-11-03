@@ -77,6 +77,8 @@ class EffectivenessRecord(BaseModel):
     output: str | None = None                                       # the run's final answer text
     transcript_path: str | None = None                              # full conversation, next to the trace
     fault: str | None = None                                        # fault profile id; None = clean run
+    endstate_path: str | None = None                                # end-state bundle for re-grading
+    judge_usage: dict | None = None                                 # rubric judge calls: never part of cost
     # For pooling providers (P2, results/calibration.py): the tool environment without the provider model id,
     # and the provider model id that served the run. RunKey.env_hash mixes the two.
     tools_hash: str | None = None
