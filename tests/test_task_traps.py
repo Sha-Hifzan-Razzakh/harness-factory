@@ -161,11 +161,31 @@ async def test_a_run_that_does_nothing_scores_zero(factory, task_id):
 ANSWER_TASKS = [t for t in ALL_TASKS
                 if any(c.kind == "output_regex" for c in __import__("harness_factory.tasks.registry", fromlist=["x"])
                        .TaskRegistry().get(t).oracle.checks)]
-WRONG_ANSWERS = {}                       # task -> the wrong final answers its trap scripts give
-for _task, _trap, _script, _must_fail in TRAPS:
-    for _step in _script:
-        if isinstance(_step, dict) and "content" in _step:
-            WRONG_ANSWERS.setdefault(_task, []).append(_step["content"])
+def wrong_answers() -> dict[str, list[str]]:
+    """task -> the wrong final answers its trap scripts give, from this file and every other tests/test_task_traps*.py
+    (later batches keep their traps in files of their own). Gathered when a test runs, not at import, because those
+    files import helpers from this one; a script may be a list of turns or a function returning one."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    traps = list(TRAPS)
+    for path in sorted(Path(__file__).parent.glob("test_task_traps?*.py")):
+        name = path.stem
+        module = sys.modules.get(name)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        traps += list(getattr(module, "TRAPS", []))
+    out: dict[str, list[str]] = {}
+    for entry in traps:                  # (task, trap, script, must_fail[, recipe]): later files add a recipe
+        task, script = entry[0], entry[2]
+        for step in (script() if callable(script) else script):
+            if isinstance(step, dict) and "content" in step:
+                out.setdefault(task, []).append(step["content"])
+    return out
 
 
 def hedges(right: str, wrong: str) -> list[str]:
@@ -181,8 +201,8 @@ def test_an_answer_check_refuses_a_hedge(factory, task_id):
     subset, e.g. "staging" for "dev, staging") makes no hedge and is skipped."""
     task = factory.tasks.get(task_id)
     right = load_reference(task).final
-    wrongs = [w for w in WRONG_ANSWERS.get(task_id, []) if w.lower() not in right.lower()]
-    assert wrongs, f"{task_id} has an output_regex check but no wrong-answer trap in TRAPS to hedge with"
+    wrongs = [w for w in wrong_answers().get(task_id, []) if w.lower() not in right.lower()]
+    assert wrongs, f"{task_id} has an output_regex check but no wrong-answer trap in any tests/test_task_traps*.py to hedge with"
     for check in (c for c in task.oracle.checks if c.kind == "output_regex"):
         assert output_matches(check.pattern, right), f"{task_id}/{check.id} refuses its own reference answer"
         for wrong in wrongs:
