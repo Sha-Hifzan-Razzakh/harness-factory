@@ -1232,3 +1232,38 @@ hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption
 (the second recipe minus the first), wins/losses/ties, a bootstrap 95% interval and a verdict only when the
 interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
 recipe it extends) is unchanged.
+
+## Analysis
+
+`hfx analyze` answers ANL-01's two shape questions from the results store: which shape wins per model and task
+class, and where the best shape changes with step depth. It needs the `analysis` extra (polars, scipy), which
+`dev` includes.
+
+```bash
+uv run hfx analyze                                   # markdown to stdout, every shape recipe (no `base:`)
+uv run hfx analyze --out var/analysis --views        # analysis.md + CSVs, and SQL views for Superset
+uv run hfx analyze --recipes v1-base,v2-base --models scripted/replay --baseline <id>
+```
+
+- **Same numbers as the cells.** Rows are the same evidence as `hfx report` and `hfx select`, cut to
+  current recipe and environment hashes, clean and scored runs only. Each run's E is the E its
+  `aggregate_rows` cell averages (E0 with the cell's R, cost-adjusted), and the per-run means are checked
+  against the cells. Nothing is stored per run and no hash changes.
+- **Shape × model by task class.** One column per arm (a recipe of one shape): mean E, a 95% bootstrap interval
+  (`scipy.stats.bootstrap`, percentile) and n. The winner is the arm with the highest mean. It is **clear** only
+  when the paired interval of its difference with every other arm lies above 0 and the pairs come from at least
+  2 tasks. Pairs are runs of the same task and seed, as in report §3, and the interval matches
+  `report.paired_delta` (both are kept in the comparisons CSV). Arms that don't pair are compared unpaired: clear
+  only when their intervals don't overlap. Arms with the same mean are a **tie**.
+- **Crossover by step depth.** The same arms per depth bucket, on two axes: the class's expected depth
+  (SINGLE_STEP, KNOWN_PATH, UNKNOWN_PATH) and the reference plan length (tool calls in `reference.py`). A
+  crossover is where the best arm changes between adjacent buckets (a tie is not a change). It is
+  **significant** when the winners on both sides are clear.
+- **Superset.** `--views` replaces the tables `anl_shape_model_class`, `anl_shape_winners`, `anl_shape_depth`
+  and `anl_depth_crossover` in the results DB (SQLite or Postgres) and creates the views `v_shape_model_class`,
+  `v_shape_winners`, `v_shape_depth` and `v_depth_crossover` over them. Point Superset datasets at the views.
+  Every row carries the `baseline_id` it was scored against. Running it again gives the same result. `runs` and
+  `cost_baselines` are never touched.
+- **CSV.** `--out DIR` writes `analysis.md` plus `shape_model_class`, `shape_class_winners`,
+  `shape_class_comparisons`, `shape_depth`, `shape_depth_winners`, `shape_depth_comparisons`, `depth_crossover`
+  and `runs` as CSV.

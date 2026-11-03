@@ -613,6 +613,10 @@ from harness_factory.cli.judge import register as _register_judge  # hfx judge s
 
 _register_judge(app)
 
+from harness_factory.cli.analysis import register as _register_analysis  # hfx analyze
+
+_register_analysis(app)
+
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":
     app()
