@@ -564,6 +564,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
 | tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
+| config | `v2-compact` | Context compaction: past 75% of the model's `context_len`, older turns are replaced by a summary the model writes; the last two turns stay verbatim (`config.compaction`, ADR 0015) |
 | tools | `v2-docs` | Adds the `docs` server: read and edit `.docx` (`docx_read`, `docx_replace`, `docx_append_paragraph`) and `.xlsx` (`xlsx_sheets`, `xlsx_read`, `xlsx_write`), read `.pdf` (`pdf_text`, `pdf_info`). The office tasks name these tools, so plans run them only on recipes that open the server |
 | retrieval | `v2-retrieval-bm25` | A `retrieve__search` tool over the task's corpus, BM25, 5 passages per call (`retrieval: {mode: bm25, top_k: 5}`); see [Retrieval](#retrieval) |
 | retrieval | `v2-retrieval-hybrid` | The same tool with hybrid search (dense + BM25, reciprocal rank fusion) and a reranker (`retrieval: {mode: hybrid, top_k: 5, rerank: true}`) |
@@ -810,6 +811,26 @@ Why an overrun is graded at all, but penalised:
 
 Cells are keyed by **task class × recipe × model × provider × environment hash**. Provider and environment stay
 separate until cross-provider equivalence is calibrated (P2).
+
+## Context management
+
+ADR 0015. Before every model call the prompt (messages and tool schemas) is estimated offline: UTF-8 bytes ÷ 3,
+plus 4 per message. That over-counts prose and JSON, so it errs towards acting early. Each `model_call` span records
+`est_tokens_in` and `context_len` next to the provider's `tokens_in`.
+
+- **Too big to fit.** A prompt over `context_len − max_output_tokens` (the model's window minus the reply budget)
+  stops the run before the call, as `context_overflow`: a harness stop, the same in every shape.
+- **Compaction** (`config.compaction: {at, keep_last_turns, prompt}`, matrix recipe `v2-compact`). Past
+  `at × context_len`, the older turns are replaced by a summary that the run's model writes
+  (`prompts/compaction/summary.j2`). The task message and the last `keep_last_turns` turns stay verbatim, and a tool
+  call is never separated from its result. The summary uses a step and its tokens, like any call. It is traced as a
+  `compaction` span, and the replaced messages stay in the transcript (`snapshot.compactions`).
+- **Long tool output** (over 16,000 characters) is saved in the run's state folder, never the workspace. The model
+  sees the first 6,000 and last 2,000 characters and a handle, and from then on is offered `spill__read(handle,
+  page)` to read it in 8,000-character pages. Each read is a tool call, charged and counted in Q. At most 4M
+  characters and 64 spills per run; past that, output is cut as before.
+- **Validation.** `hfx validate` checks every slot's `max_output_tokens` against the `context_len` of every served
+  model, and at provisioning against the run's model.
 
 ## Run identity
 

@@ -59,10 +59,11 @@ class PlanBackend:
             script, so the same plan) does the work, then the parent gives the final answer. Without a delegate
             tool it is replay
 
-    An optional step whose tool isn't offered right now is skipped (the retrieval tool exists only in recipes that
+        An optional step whose tool isn't offered right now is skipped (the retrieval tool exists only in recipes that
     retrieve), so one plan drives recipes with and without it.
 
-    Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
+    Every style answers a compaction request (the compactor slot) with a fixed summary of it, without moving the
+    plan. Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
     step ("Step i of n: ...") or a V5 worker's part ("Your part: ..."), it makes the next plan call and then closes
     the step, so one plan step runs per V4 step or V5 worker.
     """
@@ -113,6 +114,10 @@ class PlanBackend:
         from harness_factory.substrate.gateway import Completion, approx_tokens
 
         offered = {t["function"]["name"] for t in tools}
+        if getattr(slot, "role", None) == "compactor":       # a summary request (ADR 0015): the plan doesn't move
+            from harness_factory.substrate.context import scripted_summary
+            msg = {"role": "assistant", "content": scripted_summary(messages)}
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if getattr(slot, "role", None) == "planner":
             lines = [f"{n}. Call {s['tool']} with {json.dumps(s['args'])}"
                      for n, s in enumerate(self.plan[self.i:], 1)] or ["1. Give the final answer."]
