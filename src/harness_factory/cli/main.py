@@ -553,4 +553,12 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
         print(text)
 
 
+from harness_factory.cli.authoring import register as _register_authoring  # hfx new, hfx catalog
+
+_register_authoring(app)
+
+from harness_factory.cli.calibration import calibration_app
+
+app.add_typer(calibration_app, name="calibration")
+
 from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
