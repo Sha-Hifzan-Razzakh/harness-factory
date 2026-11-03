@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from collections import defaultdict
 from datetime import UTC, datetime
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from pydantic import BaseModel
 from sqlalchemy import (
     JSON,
     Column,
     DateTime,
+    Engine,
     Float,
     Integer,
     MetaData,
@@ -19,16 +26,17 @@ from sqlalchemy import (
     Text,
     create_engine,
     insert,
-    inspect,
     select,
     text,
 )
 
 from harness_factory import settings
-from harness_factory.results.cost import CostBaseline, is_clean, weight_profile_of
+from harness_factory.results.cost import UNSCORED_STATUSES, CostBaseline, is_clean, weight_profile_of
 from harness_factory.results.model import CellAggregate, EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.shapes.result import RunStatus
 
+# The schema the code reads and writes. It must equal the head of migrations/ (a test compares them): change a
+# table here and add a revision there, never one without the other. See README "Changing the results schema".
 metadata = MetaData()
 
 runs = Table(
@@ -57,9 +65,12 @@ runs = Table(
     Column("grades", JSON, nullable=False),
     Column("trace_path", String),
     Column("created_at", DateTime, nullable=False),
-    Column("output", Text),                                  # added after v1: nullable, see _migrate()
+    Column("output", Text),                                  # added after v1: nullable
     Column("transcript_path", String),
     Column("fault", String),                                 # fault profile id; NULL = clean run
+    Column("grader_versions", JSON),                         # grader id -> version; NULL = before versions
+    Column("endstate_path", String),                         # end-state bundle (runner/endstate.py), if kept
+    Column("judge_usage", JSON),                             # the rubric judge's calls (ADR 0014); never in usd
     Column("tools_hash", String),                            # env without the provider model id (pooling, P2)
     Column("served_id", String),                             # provider model id that served the run
 )
@@ -80,12 +91,50 @@ transfers = Table(
     Column("created_at", DateTime, nullable=False),
 )
 
+# Re-grades (hfx regrade): the current graders over a stored run's end state. A row here never changes the run's
+# own row, and aggregation reads only `runs`: a re-grade shows what a grader or check change would do to stored
+# runs; new runs are what put the change into the numbers.
+regrades = Table(
+    "regrades", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("run_id", Integer, nullable=False, index=True),   # runs.id
+    Column("run_key", String, nullable=False),
+    Column("task_version", String, nullable=False),          # the task definition graded against (current)
+    Column("task_hash", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("outcome", Float, nullable=False),
+    Column("trajectory", Float, nullable=False),
+    Column("composite", Float, nullable=False),              # E0, like runs.composite
+    Column("violations", JSON, nullable=False),
+    Column("grades", JSON, nullable=False),
+    Column("grader_versions", JSON, nullable=False),
+    Column("changed", Integer, nullable=False),              # 1 = status, O, Q or E0 differs from the run's row
+    Column("created_at", DateTime, nullable=False),
+    Column("judge_usage", JSON),                             # the rubric judge's calls for this re-grade
+)
+
+# Judge calibrations (ADR 0014): how far a rubric judge (by judge hash) agrees with hand-scored items.
+judge_calibrations = Table(
+    "judge_calibrations", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("judge_hash", String, nullable=False, index=True),
+    Column("provider", String, nullable=False),
+    Column("model", String, nullable=False),
+    Column("set_name", String, nullable=False),
+    Column("set_hash", String, nullable=False),
+    Column("n", Integer, nullable=False),                    # items the judge graded
+    Column("failed", Integer, nullable=False),               # items it could not grade (not in n)
+    Column("kappa", Float),                                  # Cohen's kappa on pass/fail; NULL = undefined
+    Column("mae", Float),                                    # mean absolute error of the scores
+    Column("created_at", DateTime, nullable=False),
+)
+
 cost_baselines = Table(
     "cost_baselines", metadata,
     Column("id", String(12), primary_key=True),          # content hash of basis + medians
     Column("basis", String, nullable=False),            # display summary; per-provider bases below
     Column("medians", JSON, nullable=False),
-    Column("bases", JSON),                              # added after v1: nullable, see _migrate()
+    Column("bases", JSON),                              # added after v1: nullable
     Column("counts", JSON, nullable=False),
     Column("note", String, nullable=False),
     Column("created_at", DateTime, nullable=False),
@@ -105,8 +154,28 @@ def record_row(rec: EffectivenessRecord) -> dict:
         violations=json.loads(json.dumps([v.model_dump() for v in rec.violations])),
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
         created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path, fault=rec.fault,
+        grader_versions=grader_versions(rec.grades), endstate_path=rec.endstate_path,
+        judge_usage=rec.judge_usage,
         tools_hash=rec.tools_hash, served_id=rec.served_id,
     )
+
+
+def grader_versions(grades: list[dict]) -> dict[str, str]:
+    """grader id -> version of every grade that records one."""
+    return {g["grader_id"]: g["version"] for g in grades if g.get("version")}
+
+
+def task_hash_of(row: dict) -> str:
+    """task_hash from a stored run key (second field)."""
+    parts = str(row.get("run_key", "")).split("|")
+    return parts[1] if len(parts) > 1 else ""
+
+
+def current_task_rows(rows: list[dict], task_hashes: dict[str, str]) -> list[dict]:
+    """Rows of the current definition of each task: a row whose task_version is in `task_hashes` but whose
+    task_hash differs comes from an edited task (same id and version, different content) and is a different
+    experiment. Tasks missing from `task_hashes` (no longer in the catalog) are kept: nothing to compare with."""
+    return [r for r in rows if task_hashes.get(r["task_version"], task_hash_of(r)) == task_hash_of(r)]
 
 
 def env_of(row: dict) -> str:
@@ -140,7 +209,7 @@ class CellResult(BaseModel):
 
 # Runs that say nothing about the harness: provider down or out of quota (INCOMPLETE), or a setup problem / crash
 # (ERROR). They are reported per cell, never averaged in as zeros.
-UNSCORED = frozenset({RunStatus.INCOMPLETE.value, RunStatus.ERROR.value})
+UNSCORED = UNSCORED_STATUSES
 
 
 def _cell_key(r: dict, pools: dict | None = None) -> tuple[str, str, str, str, str]:
@@ -175,19 +244,40 @@ def _e0_with_r(r: dict, rob: float | None) -> float:
                              critical)
 
 
-def aggregate_rows(rows: list[dict], baseline: CostBaseline, pools: dict | None = None) -> list[CellResult]:
-    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged.
-    pools: see _cell_key; C stays per provider (each run against its own provider's median) before pooling."""
+def _groups(rows: list[dict], pools: dict | None = None) -> tuple[dict, dict]:
     clean_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     faulted_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
         (clean_groups if is_clean(r) else faulted_groups)[_cell_key(r, pools)].append(r)
+    return clean_groups, faulted_groups
+
+
+def _scored(rs: list[dict]) -> list[dict]:
+    return [r for r in rs if r["status"] not in UNSCORED]
+
+
+def e0_by_run(rows: list[dict]) -> dict[str, float]:
+    """E0 of every scored clean run, with its cell's R folded in once the cell has faulted runs. The one place
+    that turns stored composites into the E0 every view (cells, report, selector) averages."""
+    clean_groups, faulted_groups = _groups(rows)
+    out = {}
+    for key, all_rs in clean_groups.items():
+        rs = _scored(all_rs)
+        rob = robustness(rs, _scored(faulted_groups.get(key, [])))
+        out.update({r["run_key"]: _e0_with_r(r, rob) for r in rs})
+    return out
+
+
+def aggregate_rows(rows: list[dict], baseline: CostBaseline, pools: dict | None = None) -> list[CellResult]:
+    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged.
+    pools: see _cell_key; C stays per provider (each run against its own provider's median) before pooling."""
+    clean_groups, faulted_groups = _groups(rows, pools)
     out = []
     for key, all_rs in sorted(clean_groups.items(),
                               key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
         tc, rh, m, prov, env = key
-        rs = [r for r in all_rs if r["status"] not in UNSCORED]
-        faulted = [r for r in faulted_groups.get(key, []) if r["status"] not in UNSCORED]
+        rs = _scored(all_rs)
+        faulted = _scored(faulted_groups.get(key, []))
         rob = robustness(rs, faulted)
         e0s = [_e0_with_r(r, rob) for r in rs]
         n = len(rs) or 1
@@ -213,26 +303,96 @@ def _baseline_from_row(r) -> CostBaseline:
                         created_at=r["created_at"])
 
 
+MIGRATIONS = Path(__file__).with_name("migrations")
+_PG_LOCK = 0x6866_7265_7375_6C74          # advisory lock id ("hfresult"): one upgrader at a time on Postgres
+
+
+def alembic_config() -> Config:
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS))
+    return cfg
+
+
+@functools.cache
+def _script() -> ScriptDirectory:
+    return ScriptDirectory.from_config(alembic_config())
+
+
+def head_revision() -> str:
+    heads = _script().get_heads()
+    if len(heads) != 1:
+        raise RuntimeError(f"results migrations have {len(heads)} heads {heads}; merge or rebase the revisions")
+    return heads[0]
+
+
+def current_revision(engine: Engine) -> str | None:
+    with engine.connect() as c:
+        return MigrationContext.configure(c).get_current_revision()
+
+
+def upgrade(engine: Engine) -> None:
+    """Bring a store to the head revision, in one transaction. An empty database gets the whole schema; a store
+    made before Alembic (tables, no alembic_version) is adopted by the baseline revision; a store already at
+    head runs no migration at all."""
+    with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":                      # campaigns on two hosts may open it at once
+            conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _PG_LOCK})
+        current = MigrationContext.configure(conn).get_current_revision()
+        if current == head_revision():
+            return
+        if current is not None and current not in {r.revision for r in _script().walk_revisions()}:
+            raise RuntimeError(f"results store {engine.url!r} is at revision {current}, which this code does not "
+                               f"know (head {head_revision()}): it was written by a newer harness-factory. "
+                               "Update, or point HF_RESULTS_URL at another store.")
+        cfg = alembic_config()
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
+
+
 class ResultsStore:
     def __init__(self, url: str | None = None) -> None:
         settings.ensure_dirs()
         self.engine = create_engine(url or settings.RESULTS_URL)
-        metadata.create_all(self.engine)
-        self._migrate()
-
-    def _migrate(self) -> None:
-        """Additive only: add nullable columns that newer code defines and an older store lacks."""
-        for table in (runs, cost_baselines, equivalences, transfers):
-            existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
-            with self.engine.begin() as c:
-                for col in table.columns:
-                    if col.name not in existing and col.nullable:
-                        c.execute(text(f'ALTER TABLE {table.name} ADD COLUMN "{col.name}" '
-                                       f'{col.type.compile(dialect=self.engine.dialect)}'))
+        try:
+            upgrade(self.engine)
+        except BaseException:
+            self.engine.dispose()
+            raise
 
     def add(self, rec: EffectivenessRecord) -> int:
         with self.engine.begin() as c:
             return c.execute(insert(runs).values(**record_row(rec))).inserted_primary_key[0]
+
+    def add_regrade(self, row: dict) -> int:
+        with self.engine.begin() as c:
+            return c.execute(insert(regrades).values(**json.loads(json.dumps(row, default=str)) |
+                                                     {"created_at": datetime.now(UTC)})).inserted_primary_key[0]
+
+    def regrade_rows(self, run_id: int | None = None) -> list[dict]:
+        q = select(regrades).order_by(regrades.c.id)
+        if run_id is not None:
+            q = q.where(regrades.c.run_id == run_id)
+        with self.engine.connect() as c:
+            return [dict(r) for r in c.execute(q).mappings()]
+
+    def add_calibration(self, rec) -> int:
+        """A judge calibration record (grading/calibration.CalibrationRecord)."""
+        with self.engine.begin() as c:
+            return c.execute(insert(judge_calibrations).values(**rec.model_dump())).inserted_primary_key[0]
+
+    def calibrations(self, judge_hash: str | None = None) -> list:
+        """CalibrationRecords, oldest first; of one judge hash, or all."""
+        from harness_factory.grading.calibration import CalibrationRecord
+        q = select(judge_calibrations).order_by(judge_calibrations.c.id)
+        if judge_hash is not None:
+            q = q.where(judge_calibrations.c.judge_hash == judge_hash)
+        with self.engine.connect() as c:
+            return [CalibrationRecord(**{k: v for k, v in r.items() if k != "id"}) for r in c.execute(q).mappings()]
+
+    def run_by_id(self, run_id: int) -> dict | None:
+        with self.engine.connect() as c:
+            r = c.execute(select(runs).where(runs.c.id == run_id)).mappings().first()
+        return dict(r) if r else None
 
     def recent(self, limit: int = 50) -> list[dict]:
         with self.engine.connect() as c:
@@ -240,17 +400,23 @@ class ResultsStore:
         return [dict(r) for r in rows]
 
     def rows(self, latest: bool = True) -> list[dict]:
-        """Stored runs, oldest first. latest=True keeps only the newest row per RunKey: a rerun (resume, or the
-        same campaign run twice) replaces its earlier result instead of being counted twice."""
+        """Stored runs, oldest first. latest=True keeps one row per RunKey: the newest scored one, or the newest
+        row when none is scored. A scored rerun (resume, or the same campaign run twice) replaces its earlier
+        result instead of being counted twice; an INCOMPLETE / ERROR rerun (quota, provider down) never hides a
+        result the store already has."""
         with self.engine.connect() as c:
             all_rows = [dict(r) for r in c.execute(select(runs).order_by(runs.c.id)).mappings()]
         if not latest:
             return all_rows
-        newest = {r["run_key"]: r for r in all_rows}
-        return [r for r in all_rows if newest[r["run_key"]] is r]
+        keep: dict[str, dict] = {}
+        for r in all_rows:                                # oldest first: later rows win within each kind
+            held = keep.get(r["run_key"])
+            if held is None or r["status"] not in UNSCORED or held["status"] in UNSCORED:
+                keep[r["run_key"]] = r
+        return [r for r in all_rows if keep[r["run_key"]] is r]
 
     def scored_keys(self) -> set[str]:
-        """RunKeys whose newest result is scored (anything but INCOMPLETE / ERROR): done, skip on resume."""
+        """RunKeys with a scored result (anything but INCOMPLETE / ERROR): done, skip on resume."""
         return {r["run_key"] for r in self.rows() if r["status"] not in UNSCORED}
 
     def live_baseline(self) -> CostBaseline:
@@ -290,10 +456,14 @@ class ResultsStore:
         return {t: len(h) for t, h in sorted(hashes.items()) if len(h) > 1}
 
     def aggregate(self, baseline: CostBaseline | None = None,
-                  pools: dict | None = None) -> tuple[CostBaseline, list[CellResult]]:
+                  pools: dict | None = None,
+                  task_hashes: dict[str, str] | None = None) -> tuple[CostBaseline, list[CellResult]]:
         """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used.
-        pools: pool calibrated-equivalent providers (results.calibration.pools)."""
+        pools: pool calibrated-equivalent providers (results.calibration.pools).
+        task_hashes (task_version -> current task hash) leaves out rows of edited task definitions."""
         rows = self.rows()
+        if task_hashes is not None:
+            rows = current_task_rows(rows, task_hashes)
         baseline = baseline or CostBaseline.from_rows(rows, note="live")
         return baseline, aggregate_rows(rows, baseline, pools)
 

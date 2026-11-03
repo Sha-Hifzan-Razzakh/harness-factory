@@ -20,7 +20,7 @@ class SingleCallShape:
     async def run(self, inst: HarnessInstance) -> RunResult:
         slot = inst.recipe.model_slots["executor"]
         turn = await model_turn(inst, slot, inst.messages, offered_tools(inst))
-        messages = inst.messages + turn.added
+        messages = turn.apply(inst.messages)
         if turn.stop:
             return finish(inst, messages, turn.stop, None, turn.error)
         msg = turn.message

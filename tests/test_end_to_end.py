@@ -3,14 +3,25 @@ from pathlib import Path
 
 import pytest
 
+from harness_factory.provision.provisioner import missing_task_tools
 from harness_factory.runner.runner import Factory, run_one
 
-TASK_IDS = [t.id for t in Factory.load(store=False).tasks.all()]
+_F = Factory.load(store=False)
+TASK_IDS = [t.id for t in _F.tasks.all()]
+
+
+def _recipe_for(factory, task):
+    """v2-base, or the matrix recipe that adds the servers a task needs (code-02/03 need code and git, biz-* need biz, office-* need docs)."""
+    for rid in ("v2-base", "v2-code", "v2-biz", "v2-docs"):
+        if not missing_task_tools(factory.recipes[rid], task, factory.declared):
+            return factory.recipes[rid]
+    raise AssertionError(f"no base or matrix recipe reaches {task.id}")
 
 
 @pytest.mark.parametrize("task_id", TASK_IDS)
 async def test_replay_succeeds_and_is_recorded(factory, task_id):
-    rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v2-base"], "scripted/replay", "scripted")
+    task = factory.tasks.get(task_id)
+    rec = await run_one(factory, task, _recipe_for(factory, task), "scripted/replay", "scripted")
     assert rec.status.value == "SUCCESS", rec.grades
     assert rec.composite == pytest.approx(1.0)
     kinds = {json.loads(line)["kind"] for line in Path(rec.trace_path).read_text().splitlines()}

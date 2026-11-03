@@ -142,3 +142,16 @@ async def test_scripted_styles_behave_on_v4_as_they_do_on_v2(factory, model, exp
     assert rec.status.value in (expected, "PARTIAL" if expected == "FAIL" else expected)
     if model == "scripted/noisy":
         assert rec.scores.trajectory < 1.0                            # the malformed call still costs Q
+
+
+@pytest.mark.parametrize(("recipe", "script"), [
+    ("v2-base", [WRITE] + [READ] * 20),                                       # until max_steps 15
+    ("v3-staged", [{"content": "seen"}, WRITE] + [READ] * 5 + [{"content": "looks right"}]),   # act's 6-call cap
+    ("v4-planner", [{"content": "1. Write notes/todo.txt"}, WRITE, READ, READ]),               # step_max_steps 3
+])
+async def test_running_on_to_a_cap_after_solving_is_an_overrun_in_every_shape(factory, recipe, script):
+    """Write the file, then keep calling until a cap: V4's step cap counts like V3's stage cap and V2's budget, so
+    no shape gets full credit for it (R-03)."""
+    rec = await scripted(factory, factory.recipes[recipe], script)
+    assert rec.status.value == "PARTIAL"
+    assert rec.scores.outcome == 0.5                                           # OVERRUN_OUTCOME_FACTOR

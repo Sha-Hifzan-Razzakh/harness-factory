@@ -26,6 +26,7 @@ jobs:
       HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
       COLUMNS: "160"
       HF_REQUIRE_DOCKER: "1"        # Docker isolation tests fail instead of skipping
+      HF_REQUIRE_POSTGRES: "1"      # results-store tests also run on Postgres (testcontainers), never skip
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +35,7 @@ jobs:
           enable-cache: true
 
       - name: Install (locked)
-        run: uv sync --locked --extra dev --extra inspect --python ${{ matrix.python }}
+        run: uv sync --locked --extra dev --extra inspect --extra docs --python ${{ matrix.python }}
 
       - name: Lint
         run: uv run --no-sync ruff check src tests
@@ -76,7 +77,7 @@ jobs:
           enable-cache: true
 
       - name: Install (locked)
-        run: uv sync --locked --extra dev --extra inspect --python 3.13
+        run: uv sync --locked --extra dev --extra inspect --extra docs --python 3.13
 
       - name: P0 gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8
@@ -85,7 +86,7 @@ jobs:
         run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
-        run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate --models scripted/replay --strict -j 8
+        run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs,v2-retrieval-bm25,v2-retrieval-hybrid,v2-compact,v4-structured,v5-parallel,v2-parallel-tools --models scripted/replay --strict -j 8
 
       - name: Runner gate (framework runners solve the visible tasks offline, ADR 0016)
         run: uv run --no-sync hfx smoke --recipe v2-langgraph-prebuilt,v2-llamaindex-agent --models scripted/replay --strict -j 8
@@ -131,12 +132,13 @@ jobs:
           enable-cache: true
 
       - name: Install (locked)
-        run: uv sync --locked --extra dev --python 3.13
+        run: uv sync --locked --extra dev --extra docs --python 3.13
 
       - name: References and smoke inside containers
         run: |
           uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v3-staged --models scripted/replay --strict -j 8
+          uv run --no-sync hfx smoke --recipe v2-base,v3-staged,v2-docs --models scripted/replay --strict -j 8
+          uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8
 
       - name: Upload traces on failure
         if: failure()
