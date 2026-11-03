@@ -1,0 +1,16 @@
+# Perturbations of fs-02 (TSK-04). `hfx perturb` turns each entry into catalog/tasks/fs-02--<type>-<n>.
+base: fs-02
+variants:
+  - type: tool_failure
+    n: 1
+    params:
+      faults:
+        - {tools: [fs.write_file], kind: timeout, nth: [1]}
+      why: The first write times out and nothing is written; the same write again succeeds.
+  - type: ambiguous_wording
+    n: 1
+    params:
+      instruction: Move the app to 9090 in config/app.ini. Leave every other setting as it is.
+      vague: It doesn't say which setting holds the 9090, or that the port is the one to change.
+      why: config/app.ini has one port setting (port = 8080 under [server]) and no other number a 9090 could
+        replace; host and logging level are not ports.

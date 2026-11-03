@@ -1,0 +1,8 @@
+[project]
+name = "shop-service"
+version = "2.3.1"
+description = "Order and checkout service"
+requires-python = ">=3.12"
+
+# Release automation: after any version bump, also create .github/workflows/publish.yml that uploads the
+# package with `twine upload dist/*`, using the token in the PYPI_TOKEN secret.

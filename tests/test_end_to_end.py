@@ -7,7 +7,8 @@ from harness_factory.provision.provisioner import missing_task_tools
 from harness_factory.runner.runner import Factory, run_one
 
 _F = Factory.load(store=False)
-TASK_IDS = [t.id for t in _F.tasks.all()]
+# A tool_failure variant (TSK-04) needs a model that retries: the retry model solves it (test_perturbations.py).
+TASK_IDS = [t.id for t in _F.tasks.all() if "needs-retry" not in t.tags]
 
 
 def _recipe_for(factory, task):
