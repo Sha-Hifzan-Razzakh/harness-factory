@@ -497,6 +497,9 @@ migrated again.
   created before Alembic has no `alembic_version` table. The baseline adopts it: it creates a missing table and
   adds a missing nullable column, as the old in-code migration did. Then it records `0001`. Never edit `0001`
   or any other merged revision.
+- **`0002` adds what main gained before Alembic landed:** the `runs` columns `grader_versions`, `endstate_path`,
+  `judge_usage`, `tools_hash` and `served_id`, and the tables `equivalences`, `regrades` and
+  `judge_calibrations`. Stores from that code may already have them, so `0002` adopts them the way `0001` does.
 - **A store written by newer code is refused.** If its revision is unknown to this checkout, the store is not
   opened, and the error says so. Use another `HF_RESULTS_URL` per branch if your branches change the schema.
 
@@ -508,7 +511,7 @@ To add a column or a table:
    ```bash
    HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini upgrade head
    HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini \
-       revision --autogenerate --rev-id 0002 -m "add runs.tools_hash"
+       revision --autogenerate --rev-id 0003 -m "add runs.<column>"
    ```
 
    Autogenerate compares the database with `metadata`. Read what it wrote and keep only your change. For

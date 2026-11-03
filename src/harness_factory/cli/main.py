@@ -601,7 +601,6 @@ from harness_factory.cli.calibration import calibration_app
 app.add_typer(calibration_app, name="calibration")
 
 from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
-from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
 from harness_factory.cli.allocation import allocate_app
 
 app.add_typer(allocate_app, name="allocate")
