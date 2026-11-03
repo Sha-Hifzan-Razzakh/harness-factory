@@ -1,0 +1,68 @@
+id: b4-09
+version: 1
+domain: data
+instruction: Finance needs Qamar Trading's net revenue in AED for Q3 2026 (July to September), computed the way
+  the finance team's reporting rules in docs/ say. Answer with the amount in whole dirhams.
+env_seed:
+  files: ../../seeds/b4b_ledger/files
+  sqlite: ../../seeds/b4b_ledger/db.sql
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- batch-4
+- long
+- sql
+- fs
+- read
+- aggregate
+- fx
+- policy
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?s)\A(?!.*(?<![\w.,])(?!(?:6,?644,?529(?:\.0+)?|2026)(?![\d]|[.,]\d))\d(?:[\d,]*\d)?(?:\.\d+)?)(?=.*(?<![\d.,])(?:6,?644,?529(?:\.0+)?)(?![\d]|[.,]\d))
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: sql.query
+  - id: orders_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(customer_id), SUM(deleted_at IS NULL) FROM orders
+    rows:
+    - - 3059
+      - 843441
+      - 3011
+  - id: lines_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), ROUND(SUM(quantity * unit_price), 2) FROM order_lines
+    rows:
+    - - 6651
+      - 24730457.22
+  - id: refunds_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT status, COUNT(*), ROUND(SUM(amount), 2) FROM refunds GROUP BY status ORDER BY status
+    rows:
+    - - processed
+      - 198
+      - 765828.15
+    - - rejected
+      - 22
+      - 44372.72

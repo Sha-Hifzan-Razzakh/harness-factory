@@ -1,0 +1,42 @@
+id: b4-13
+version: 1
+domain: api
+instruction: 'Collections asks: how much does Saffron Hospitality (trade licence DED-552310) owe us on overdue invoices
+  as of today, across all of its contacts? Answer with the amount in AED.'
+env_seed:
+  files: ../../seeds/b4b_backoffice/files
+  biz_state: ../../seeds/b4b_backoffice/state.json
+allowed_tools:
+- biz.crm_search_contacts
+- biz.crm_get_contact
+- biz.inv_list_invoices
+- biz.inv_get_invoice
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- batch-4
+- long
+- biz
+- read
+- reconcile
+- near-duplicates
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?s)\A(?!.*(?<![\w.,])(?!(?:5,?344\.50*|552310)(?![\d]|[.,]\d))\d(?:[\d,]*\d)?(?:\.\d+)?)(?=.*(?<![\d.,])(?:5,?344\.50*)(?![\d]|[.,]\d))
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: biz.inv_list_invoices
+  - id: data_unchanged
+    kind: biz_equals
+    weight: 0
+    critical: true
+    path: /meta/sequences
+    text: '{"credit_note": 126, "comment": 3}'
