@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Harness Factory: a benchmark, described in one file
+# ─────────────────────────────────────────────────────────────────────────────
+#  Read it top to bottom: WHAT to test, WITH WHICH harnesses, ON WHICH models,
+#  HOW MANY times, UNDER WHAT conditions, and HOW to judge the result.
+#
+#  [today]   works now, through the hfx commands at the bottom of this file
+#  [planned] the runner axis and this file itself; neither is built yet (see test-matrix.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: phase-2-first-look
+note: Which harness shape works best per task class on two free models?
+
+# 1. WHAT TO TEST ──────────────────────────────────────────────────────────────
+tasks:
+  splits: [DEV, TEST]          # [today] HELD_OUT is never used for choosing
+  tag: null                    # [today] e.g. batch-3 = only the independently written tasks
+  # ids: [sql-03, mix-03]      # or name tasks one by one
+
+# 2. WITH WHICH HARNESSES ──────────────────────────────────────────────────────
+recipes:                       # [today] ids from catalog/recipes
+  - v2-base                    # tool loop: the model picks every next step
+  - v3-staged                  # inspect → act → verify, each stage with its own tools
+  - v4-planner                 # plan first, then one step at a time
+  # - v5-orchestrator          # plan, then one worker per step
+
+# 3. ON WHICH MODELS ───────────────────────────────────────────────────────────
+models:                        # [today] canonical model + the provider that serves it
+  - {model: gpt-oss-120b, provider: groq}
+  - {model: gpt-oss-20b,  provider: groq}
+
+# 4. RUN ENGINE ────────────────────────────────────────────────────────────────
+runners:                       # [planned] the framework that runs each harness
+  - native                     # the factory's own runtime (the only one today)
+  # - langgraph-prebuilt       # LangGraph's ready-made agent, its own prompts
+  # - llamaindex-agent         # LlamaIndex agent
+
+# 5. HOW MANY TIMES ────────────────────────────────────────────────────────────
+seeds: 2                       # [today] runs per task × recipe × model (more = tighter intervals)
+
+# 6. UNDER WHAT CONDITIONS ─────────────────────────────────────────────────────
+faults:                        # [today] none = clean runs; the others only feed robustness R
+  - none
+  - first-call-fails           # the first call to each tool fails once
+  # - transient                # random temporary failures
+  # - garbled-reads            # reads sometimes come back cut off
+
+limits:                        # [today] refuse to start if the plan won't fit
+  concurrency: 8               # runs in flight at once (quota pacing still applies)
+  budget_usd: 5.00             # projected list-price cost, free tiers included
+  deadline_days: 3             # free-tier daily quotas spread a big plan over days
+
+# 7. HOW TO JUDGE ──────────────────────────────────────────────────────────────
+judge:
+  score: E                     # [today] E = outcome × trajectory quality, minus cost
+  freeze_cost_baseline: true   # [today] `hfx baseline save`: later runs don't shift old scores
+  report: true                 # [today] `hfx report`: status, cells, selector picks, and each
+                               #   matrix recipe paired against the recipe it extends (95% intervals)
+  compare:                     # [planned] pair any recipes, e.g. different shapes, the same way
+    base: v2-base
+    against: [v3-staged, v4-planner]
+
+calibration:                   # [today, PR #35] may two providers share a cell?
+  enabled: false
+  model: gpt-oss-120b
+  providers: [groq, openrouter]
+  margin: 0.1                  # largest score difference still called "equivalent"
+  min_pairs: 20
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  HOW TO RUN THIS TODAY (one model at a time; resume after a quota reset)
+# ─────────────────────────────────────────────────────────────────────────────
+#  hfx smoke --provider groq --recipe v2-base,v3-staged,v4-planner \
+#            --models gpt-oss-120b,gpt-oss-20b --seeds 2 \
+#            --faults none,first-call-fails -j 8 --budget-usd 5 --deadline-days 3
+#  hfx smoke ... --resume            # same command again after 00:00 UTC
+#  hfx baseline save                 # freeze the cost medians
+#  hfx results --cells               # one row per task class × recipe × model
+#  hfx report --out var/report.md    # the campaign report
+#
+#  Calibration (PR #35):
+#  hfx calibration run gpt-oss-120b --providers groq,openrouter --run --seeds 2
+# ─────────────────────────────────────────────────────────────────────────────
