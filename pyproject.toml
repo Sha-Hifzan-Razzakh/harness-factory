@@ -16,12 +16,16 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.30",
     "typer>=0.15",
     "rich>=13",
+    "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
 ]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
 mlops = ["mlflow>=2.14"]
 inspect = ["inspect-ai>=0.3.285,<0.4"]        # optional outer shell; see docs/adr/0001-inspect-ai.md
+# The docs MCP server's libraries (docx, xlsx, pdf), pinned exactly: they are the allow-list in
+# src/harness_factory/env/mcp/deps.py and go into the sandbox image (docs/adr/0013-server-dependencies.md).
+docs = ["python-docx==1.2.0", "openpyxl==3.1.5", "pypdf==6.20.1"]
 # Retrieval dimension (ADR 0017): LlamaIndex's own documents, splitters, retrievers and fusion; Qdrant in local
 # (in-memory) mode for the dense index. Runs in the factory process, never in the sandbox.
 retrieval = [

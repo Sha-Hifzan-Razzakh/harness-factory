@@ -24,8 +24,9 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/app/.venv
 WORKDIR /app
 # Optional extras, space-separated: postgres (results store in Postgres), retrieval (LlamaIndex retrieval dimension,
-# ADR 0017; the retrieval tasks' reference plans need it), mlops (MLflow), inspect (Inspect AI).
-ARG EXTRAS="postgres retrieval"
+# ADR 0017; the retrieval tasks' reference plans need it), mlops (MLflow), inspect (Inspect AI),
+# docs (the docs MCP server's libraries and its graders; ADR 0013).
+ARG EXTRAS="postgres docs retrieval"
 COPY pyproject.toml uv.lock README.md ./
 # Dependencies first, so editing the code does not reinstall them.
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -39,6 +40,8 @@ FROM ${PYTHON_IMAGE}
 # uv vendors the MCP closure into the sandbox image; the Docker CLI talks to the host daemon (HF_SANDBOX=docker).
 COPY --from=uv /uv /usr/local/bin/uv
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+# git: the git server and git-seeded tasks run it in local sandboxes, and seed repositories are made here (ADR 0012).
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 hf
 WORKDIR /app
 COPY --from=build /app/.venv ./.venv

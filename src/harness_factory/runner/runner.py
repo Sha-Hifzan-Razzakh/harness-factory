@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +44,8 @@ from harness_factory.substrate.gateway import Backend
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import load_reference
 from harness_factory.tasks.registry import TaskRegistry
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,7 +103,7 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
 # PARTIAL. Without it, a harness that solves early and then keeps calling until a cap scores like a clean run
 # (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
 OVERRUN_OUTCOME_FACTOR = 0.5
-OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"})
+OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "step_cap", "context_overflow", "malformed_output"})
 
 
 def overran(result: RunResult) -> bool:
@@ -125,6 +128,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                   fault: str | None = None) -> EffectivenessRecord:
     """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end.
     fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run."""
+    f.graders.check(task)          # a grader typo fails here, before any quota is spent (and on every resume)
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
                          ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p:
@@ -161,10 +165,13 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
             with inst.tracer.span(SpanKind.grade, "pipeline"):
-                grades = f.graders.run(GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
-                                                    workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
-                                                    spans=list(inst.tracer.spans),
-                                                    max_steps=recipe.config.max_steps, remote=remote))
+                # In a worker thread: a tests_pass check runs pytest for up to minutes, and the other runs of the
+                # campaign share this event loop.
+                ctx = GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
+                                   workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
+                                   spans=list(inst.tracer.spans), max_steps=recipe.config.max_steps, remote=remote,
+                                   sandbox=p.sandbox)
+                grades = await asyncio.to_thread(f.graders.run, ctx)
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
         result.trajectory = list(inst.tracer.spans)
@@ -174,15 +181,17 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
 
         by_id = {g.grader_id: g for g in grades}
         violations = list(result.violations) + [v for g in grades for v in g.violations]
+        critical = any(v.critical for v in violations)
+        # A critical violation (a guard broken, a forbidden write) fails the run outright: its outcome is 0, not
+        # the share of checks it passed, so it can't lift the cell's robustness R (an average of outcomes).
         scores = FamilyScores(
             outcome=(by_id["state_diff"].score * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
-                     if "state_diff" in by_id and result.scored else 0.0),
+                     if "state_diff" in by_id and result.scored and not critical else 0.0),
             trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
             efficiency=0.0,   # normalized against the class median at aggregation time (P2)
             safety=len(violations),
         )
         weights = ScoreWeights.for_profile(p.weight_profile)
-        critical = any(v.critical for v in violations)
         rec = EffectivenessRecord(
             run_key=inst.run_key, task_class=p.task_class, recipe_id=recipe.id, status=result.status,
             scores=scores, composite=round(weights.composite(scores, critical), 6), cost=result.cost,
@@ -194,13 +203,28 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             messages=result.messages,
             transcript_path=str(transcript_path),
             fault=fault,
+            tools_hash=f.declared.env_hash(recipe.tools.mcp_servers, "*"),
+            served_id=f.providers.served(provider_id, canonical_model).provider_model_id,
         )
     if f.store:
         f.store.add(rec)
-    f.tracker.log(rec, recipe)
+    await _mirror(f, rec, recipe)
     if flush:
         await asyncio.to_thread(Tracer.flush)
     return rec
+
+
+async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe) -> None:
+    """Mirror a stored run to MLflow. The results store is the source of truth, so a mirror failure is a warning,
+    never a run or campaign error. The MLflow client is synchronous network I/O: it runs in a thread so a slow
+    server can't stall the event loop (and the wall time of every other run on it)."""
+    if not f.tracker.enabled:
+        return
+    try:
+        await asyncio.to_thread(f.tracker.log, rec, recipe)
+    except Exception as e:  # noqa: BLE001  any client or server failure: the run itself is already stored
+        f.tracker.failures = getattr(f.tracker, "failures", 0) + 1
+        log.warning("MLflow mirror failed for %s: %s: %s", rec.run_key.short(), type(e).__name__, str(e)[:300])
 
 
 def _reference_index(task: Task, plan: list[dict]):
@@ -253,8 +277,9 @@ async def run_reference(f: Factory, task: Task) -> Grade:
                                          canonical_model="reference", provider="none"),
                           output=ref.final, finished=True)
         ctx = GradeContext(task=task, result=dummy, before=before, after=after, diff=StateInspector.diff(before, after),
-                           workspace=sb.workspace, db_path=sb.db_path, spans=tracer.spans, max_steps=10_000)
-        return f.graders.graders["state_diff"].grade(ctx)
+                           workspace=sb.workspace, db_path=sb.db_path, spans=tracer.spans, max_steps=10_000,
+                           sandbox=sb)
+        return await asyncio.to_thread(f.graders.graders["state_diff"].grade, ctx)
 
 
 class RunSpec(BaseModel):
@@ -308,16 +333,30 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
          seeds: int = 1, task_ids: list[str] | None = None,
          faults: list[str | None] | None = None) -> list[RunSpec]:
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
-    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both)."""
+    faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
+    A recipe that can't call every tool a task allows is not planned on it (`provisioner.reaches`, the rule the
+    selector prunes by; `skipped_pairs` lists them): v2-base never runs a task that needs the git, biz or docs server."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
+ 
+
+    for t in tasks:
+        f.graders.check(t)                                   # unknown grader: likewise
+    skip = set(skipped_pairs(f, recipe_ids, tasks))
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)
-            for t in tasks for r in recipe_ids for m in models for fid in faults for s in range(seeds)]
+            for t in tasks for r in recipe_ids if (t.id, r) not in skip
+            for m in models for fid in faults for s in range(seeds)]
+
+
+def skipped_pairs(f: Factory, recipe_ids: list[str], tasks: list[Task]) -> list[tuple[str, str]]:
+    """(task id, recipe id) pairs a plan leaves out: the recipe can't call every tool the task allows."""
+    from harness_factory.provision.provisioner import reaches
+    return [(t.id, r) for t in tasks for r in recipe_ids if r in f.recipes and not reaches(f.recipes[r], t, f.declared)]
 
 
 async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,

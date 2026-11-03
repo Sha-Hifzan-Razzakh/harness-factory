@@ -2,7 +2,9 @@
 
 Expected rows and file contents are computed from the seeds, never typed by hand."""
 
+import json
 import pprint
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -16,9 +18,14 @@ CATALOG = Path(sys.argv[1])
 SHOP_SQL = (CATALOG / "seeds/shop/db.sql").read_text()
 SVC = CATALOG / "seeds/service/files"
 SHOP_FILES = CATALOG / "seeds/shop/files"
+BIZ_STATE = json.loads((CATALOG / "seeds/biz/state.json").read_text())
+BIZ_FILES = CATALOG / "seeds/biz/files"
 
 SHOP = {"files": "../../seeds/shop/files", "sqlite": "../../seeds/shop/db.sql"}
 SERVICE = {"files": "../../seeds/service/files"}
+BIZ = {"files": "../../seeds/biz/files", "biz_state": "../../seeds/biz/state.json"}
+BIZ_READ = ["biz.crm_search_contacts", "biz.crm_get_contact", "biz.inv_list_invoices", "biz.inv_get_invoice",
+            "biz.tkt_list", "biz.tkt_get"]
 KB = {"files": "../../seeds/kb/files"}
 SQL_READ = ["sql.list_tables", "sql.describe_table", "sql.query"]
 FS_READ = ["fs.list_dir", "fs.read_file"]
@@ -54,6 +61,32 @@ def sql_guard(cid, query):
 
 def answer(pattern, tool, w=0.75):
     return [chk("answer", "output_regex", w, pattern=pattern), chk("grounded", "tool_called", round(1 - w, 6), pattern=tool)]
+
+
+# Answer patterns that refuse hedges. The grader searches with re.MULTILINE, so they anchor on \A, not ^ (a ^
+# lookahead re-checked at a later line start would let "wrong\nright" through).
+NUM = r"\d(?:[\d,]*\d)?(?:\.\d+)?"           # 6, 1,696.11, 1866.88: one number token
+END = r"(?![\d]|[.,]\d)"                         # the token ends here
+
+
+def numbers_in(text):
+    """Number tokens a text uses itself (years, "2 decimals"): an answer may repeat them."""
+    return sorted(set(re.findall(rf"(?<![\w.,]){NUM}", text)))
+
+
+def one_number(expected, instruction):
+    """Passes a reply that states `expected` (a regex) and no other number, except numbers the instruction
+    itself uses. "5, 6 or 7", "between 5 and 7", "6 if ..., 7 otherwise" and "6-7" all fail."""
+    ok = "|".join([expected, *(re.escape(n) for n in numbers_in(instruction))])
+    return rf"(?s)\A(?!.*(?<![\w.,])(?!(?:{ok}){END}){NUM})(?=.*(?<![\d.,])(?:{expected}){END})"
+
+
+def one_of(expected, others, flags="is"):
+    """Passes a reply that names `expected` and none of `others` (every other value the seed offers)."""
+    def esc(text):
+        return re.escape(text).replace("\\ ", " ")                     # keep the pattern readable
+    alts = "|".join(esc(o) for o in dict.fromkeys(others) if o != expected)
+    return rf"(?{flags})\A(?!.*(?<!\w)(?:{alts})(?!\w))(?=.*(?<!\w){esc(expected)}(?!\w))"
 
 
 TEST_EMAIL = "email LIKE '%@example.test'"
@@ -106,9 +139,12 @@ assert top[0] == "Harbor Logistics"
 task("sql-03", "data", "UNKNOWN_PATH", "R0", "DEV", SQL_READ,
      "Which customer brought in the most revenue from paid orders placed in 2026, after subtracting refunds? "
      "Answer with the customer's name.",
-     answer(r"Harbor Logistics", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM refunds")],
+     answer(one_of("Harbor Logistics", [r[0] for r in rows("SELECT name FROM customers ORDER BY id")
+                                        if r[0] != "Harbor Logistics"]), "sql.query")
+     + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM refunds")],
      [{"tool": "sql.list_tables", "args": {}}, q(net_sql)],
-     f"Harbor Logistics: {top[1]:,.2f} from paid 2026 orders after refunds.", tags=["sql", "read", "join", "trap"])
+     f"Harbor Logistics: {top[1]:,.2f} from paid 2026 orders after refunds.", tags=["sql", "read", "join", "trap"],
+     version=2)
 
 oct_sql = ("SELECT COUNT(DISTINCT customer_id) FROM orders WHERE ordered_on BETWEEN '2026-10-01' AND '2026-10-31' "
            f"AND status != 'cancelled' AND customer_id NOT IN (SELECT id FROM customers WHERE {TEST_EMAIL}) "
@@ -116,22 +152,23 @@ oct_sql = ("SELECT COUNT(DISTINCT customer_id) FROM orders WHERE ordered_on BETW
            "'2026-09-30' AND status != 'cancelled')")
 n = rows(oct_sql)[0][0]
 assert n == 6
-task("sql-04", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ,
-     "How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled "
-     "orders and test accounts (customers whose email ends in @example.test). Answer with the number.",
-     answer(r"(?<![\d.])6(?![\d.])", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM orders")],
-     [q(oct_sql)], f"{n} customers.", tags=["sql", "read", "dates", "trap"])
+SQL04 = ("How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled "
+         "orders and test accounts (customers whose email ends in @example.test). Answer with the number.")
+task("sql-04", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ, SQL04,
+     answer(one_number(str(n), SQL04), "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM orders")],
+     [q(oct_sql)], f"{n} customers.", tags=["sql", "read", "dates", "trap"], version=2)
 
 aov_sql = (f"SELECT ROUND(AVG({VALUE}), 2) FROM orders o WHERE o.status = 'paid' AND o.ordered_on BETWEEN "
            f"'2026-07-01' AND '2026-09-30' AND o.customer_id NOT IN (SELECT id FROM customers WHERE {TEST_EMAIL})")
 aov = rows(aov_sql)[0][0]
 assert aov == 1696.11
-task("sql-08", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ,
-     "What was the average value of paid orders placed in the third quarter of 2026 (July to September)? An "
-     "order's value is the sum of quantity times unit price over its items, before refunds. Exclude test "
-     "accounts (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.",
-     answer(r"1,?696\.11", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM order_items")],
-     [q(aov_sql)], f"{aov:,.2f}", tags=["sql", "read", "aggregate", "trap"])
+SQL08 = ("What was the average value of paid orders placed in the third quarter of 2026 (July to September)? An "
+         "order's value is the sum of quantity times unit price over its items, before refunds. Exclude test "
+         "accounts (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.")
+task("sql-08", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ, SQL08,
+     answer(one_number(r"1,?696\.11", SQL08), "sql.query")
+     + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM order_items")],
+     [q(aov_sql)], f"{aov:,.2f}", tags=["sql", "read", "aggregate", "trap"], version=2)
 
 # ------------------------------------------------------------------ shop: changes
 
@@ -322,9 +359,11 @@ task("ops-02", "ops", "KNOWN_PATH", "R1", "DEV", FS_RW,
 day = svc("logs/app-2026-10-26.log")
 task("ops-03", "ops", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "Which API endpoint returned the most server errors (5xx) on 2026-10-26? Answer with the path only.",
-     answer(r"(?s)^(?!.*/api/orders)(?!.*/api/search).*/api/checkout", "fs.read_file")
+     answer(one_of("/api/checkout", sorted(set(re.findall(r"/api/\w+", day)) - {"/api/checkout"}), flags="s"),
+            "fs.read_file")
      + [guard("log_untouched", "file_contains", path="logs/app-2026-10-26.log", text=day.splitlines()[0])],
-     [ls("logs"), rd("logs/app-2026-10-26.log")], "/api/checkout", seed=SERVICE, tags=["fs", "logs", "trap"])
+     [ls("logs"), rd("logs/app-2026-10-26.log")], "/api/checkout", seed=SERVICE, tags=["fs", "logs", "trap"],
+     version=2)
 
 timeouts = {"base": 30, "dev": 10, "staging": 15, "prod": 60}
 plan = [rd(f"service/config/{e}.ini") for e in ("base", "dev", "staging")]
@@ -402,10 +441,141 @@ task("code-01", "code", "UNKNOWN_PATH", "R1", "TEST", FS_RW,
 task("res-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "Which environments have backups disabled, according to the service configuration? Answer with the "
      "environment names, comma-separated.",
-     answer(r"(?is)^(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)", "fs.read_file")
+     answer(r"(?is)\A(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)", "fs.read_file")
      + [guard("config_untouched", "file_equals", path="service/config/base.ini", text=svc("service/config/base.ini"))],
      [rd("service/config/dev.ini"), rd("service/config/staging.ini"), rd("service/config/prod.ini")],
-     "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"])
+     "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"], version=2)
+
+
+# ------------------------------------------------------------------ biz: back office (CRM, invoicing, tickets)
+
+def biz(tool, **args):
+    return {"tool": f"biz.{tool}", "args": args}
+
+
+def biz_guard(cid, pointer):
+    """The value at pointer must be exactly what the seed has."""
+    value = BIZ_STATE
+    for part in pointer.strip("/").split("/"):
+        value = value[part]
+    return guard(cid, "biz_equals", path=pointer, text=json.dumps(value, ensure_ascii=False))
+
+
+inv = BIZ_STATE["invoices"]["INV-1042"]
+mat = next(line for line in inv["lines"] if line["sku"] == "YM-10")
+one_mat = round(mat["unit_price"] * (1 + BIZ_STATE["meta"]["vat_rate"]), 2)
+already = [cn for cn in BIZ_STATE["credit_notes"].values() if cn["invoice_id"] == "INV-1042"]
+assert one_mat == 157.5 and [cn["amount"] for cn in already] == [one_mat]   # one torn mat was credited already
+new_cn = f"CN-{BIZ_STATE['meta']['sequences']['credit_note']:04d}"
+task("biz-01", "api", "UNKNOWN_PATH", "R2", "DEV", FS_READ + ["biz.*"],
+     "Handle support ticket T-2041 in the ticketing system, following docs/refund_policy.md.",
+     [chk("credited_total", "biz_equals", 0.5, path="/invoices/INV-1042/credited",
+          text=json.dumps(round(inv["credited"] + one_mat, 2))),
+      chk("one_credit_note", "biz_count", 0.2, path="/credit_notes",
+          query=json.dumps({"invoice_id": "INV-1042", "status": "issued"}), text=str(len(already) + 1)),
+      chk("ticket_closed", "biz_equals", 0.3, path="/tickets/T-2041/status", text="closed"),
+      biz_guard("lines_kept", "/invoices/INV-1042/lines"),
+      biz_guard("not_marked_paid", "/invoices/INV-1042/paid_on"),
+      *[biz_guard(f"{iid}_untouched", f"/invoices/{iid}") for iid in BIZ_STATE["invoices"] if iid != "INV-1042"],
+      *[biz_guard(f"{cid}_untouched", f"/credit_notes/{cid}") for cid in BIZ_STATE["credit_notes"]],
+      *[biz_guard(f"{tid}_untouched", f"/tickets/{tid}") for tid in BIZ_STATE["tickets"] if tid != "T-2041"],
+      biz_guard("contacts_untouched", "/contacts")],
+     [biz("tkt_get", id="T-2041"), rd("docs/refund_policy.md"), biz("inv_get_invoice", id="INV-1042"),
+      biz("inv_create_credit_note", invoice_id="INV-1042", amount=one_mat,
+          reason="T-2041: 1 yoga mat (YM-10) arrived torn. The other torn mat was credited in CN-0003 (T-2033)."),
+      biz("tkt_close", id="T-2041",
+          resolution=f"Credited 1 yoga mat plus VAT ({one_mat:.2f}) on INV-1042 with {new_cn}. The other torn mat "
+                     f"was already credited in CN-0003 (T-2033). Declined crediting the delivery charge "
+                     f"(refund policy: delivery is not credited).")],
+     f"Issued {new_cn} for {one_mat:.2f} on INV-1042 (one torn yoga mat plus VAT) and closed T-2041. The other "
+     f"mat was already credited in CN-0003, and delivery isn't credited under the refund policy.",
+     seed=BIZ, tags=["biz", "policy", "reconcile", "trap"])
+
+today = BIZ_STATE["meta"]["today"]
+oasis = [c["id"] for c in BIZ_STATE["contacts"].values() if c["company"] == "Oasis Foods"]
+overdue = [i for i in BIZ_STATE["invoices"].values()
+           if i["customer_id"] in oasis and i["status"] == "open" and i["due_on"] < today]
+owed = round(sum(i["balance_due"] for i in overdue), 2)
+assert oasis == ["C-1004", "C-1011"] and owed == 1837.5
+task("biz-02", "api", "UNKNOWN_PATH", "R0", "TEST",
+     ["biz.crm_search_contacts", "biz.crm_get_contact", "biz.inv_list_invoices", "biz.inv_get_invoice"],
+     "How much does Oasis Foods owe us on overdue invoices as of today? Answer with the amount.",
+     # The wrong totals: credit note ignored (2,362.50), one contact only (1,050), Oasis Foods Trading included
+     # (4,168.50), the not-yet-due INV-1044 included (2,677.50).
+     answer(r"(?s)\A(?!.*(?<![\d.,])(?:2,?362\.50?|1,?050\.00?|4,?168\.50?|2,?677\.50?)(?![\d]))"
+            r"(?=.*(?<![\d.,])1,?837\.50?(?![\d]))", "biz.inv_list_invoices")
+     + [biz_guard("data_unchanged", "/meta/sequences")],
+     [biz("crm_search_contacts", query="Oasis Foods"),
+      biz("inv_list_invoices", customer_id="C-1004", status="open"),
+      biz("inv_list_invoices", customer_id="C-1011", status="open")],
+     f"AED {owed:,.2f}: INV-1036 (what is left after credit note CN-0002) and INV-1039 (787.50). INV-1044 is not "
+     f"due yet, and Oasis Foods Trading is a different customer.",
+     seed=BIZ, tags=["biz", "read", "reconcile", "trap"])
+
+# ------------------------------------------------------------------ office: docx, xlsx, pdf (docs server)
+
+import office  # the seed's data module, next to this script
+
+OFFICE = {"files": "../../seeds/office/files"}
+DOCS = ["fs.list_dir", "docs.*"]
+
+
+def doc(tool, **args):
+    return {"tool": f"docs.{tool}", "args": args}
+
+
+def cell(cid, ref, expected, weight=0.0, **kw):
+    sheet, c = ref.split("!")
+    kw = {"path": office.PRICES_PATH, "sheet": sheet, "cell": c,
+          **({"expected": expected} if expected is not None else {}), **kw}
+    return chk(cid, "xlsx_cell", weight, **kw) if weight else guard(cid, "xlsx_cell", **kw)
+
+
+quoted = {sku: float(price) for sku, _, price in office.QUOTE_LINES}
+listed = {row[0]: n for n, row in enumerate(office.PRICES, 2)}          # sku -> sheet row
+updates = [(sku, listed[sku], quoted[sku]) for sku in quoted if sku in listed]
+assert [u[0] for u in updates] == ["OS-104", "OS-221", "OS-310"] and "OS-777" not in listed
+kept = [(sku, n, office.PRICES[n - 2][2]) for sku, n in listed.items() if sku not in quoted]
+notes_row = 1 + next(i for i, (k, _) in enumerate(office.NOTES) if k == "Last updated")
+task("office-01", "data", "KNOWN_PATH", "R1", "TEST", DOCS,
+     f"Gulf Office Supply's quotation {office.QUOTE_PATH} has been approved. Update {office.PRICES_PATH}: set the "
+     "unit price of each item on the quotation that is already on the price list, and set the Last updated date "
+     "on the Notes sheet to the quotation's date (YYYY-MM-DD).",
+     [cell(f"price_{sku}", f"Prices!C{n}", price, 0.25, tolerance=0.005) for sku, n, price in updates]
+     + [cell("last_updated", f"Notes!B{notes_row}", office.QUOTE_DATE[1], 0.25),
+        cell("no_new_items", f"Prices!A{len(office.PRICES) + 2}", None),
+        *[cell(f"unquoted_{sku}_kept", f"Prices!C{n}", price, tolerance=0.005) for sku, n, price in kept],
+        cell("skus_kept", "Prices!A2", office.PRICES[0][0])],
+     [doc("pdf_text", path=office.QUOTE_PATH, pages="1-2"),
+      doc("xlsx_read", path=office.PRICES_PATH, sheet="Prices", range="A1:D20"),
+      *[doc("xlsx_write", path=office.PRICES_PATH, sheet="Prices", cell=f"C{n}", value=price)
+        for _, n, price in updates],
+      doc("xlsx_write", path=office.PRICES_PATH, sheet="Notes", cell=f"B{notes_row}", value=office.QUOTE_DATE[1])],
+     f"Updated {', '.join(u[0] for u in updates)} to the quoted prices (excluding VAT) and set Last updated to "
+     f"{office.QUOTE_DATE[1]}; OS-777 isn't on the price list, so it wasn't added.",
+     seed=OFFICE, tags=["docs", "xlsx", "pdf", "cross-file", "trap"])
+
+L = office.LETTER_PATH
+task("office-02", "docs", "KNOWN_PATH", "R1", "DEV", DOCS,
+     f"Complete the acceptance letter {L} for the approved quotation {office.QUOTE_PATH}: fill in the "
+     "[QUOTE REF] and [VALID UNTIL] placeholders (the date written as the quotation writes it), then end the "
+     f'letter with the line "{office.SIGNATURE}" in the letter\'s Signature style.',
+     [chk("title_ref", "docx_paragraph_regex", 0.15, path=L, pattern=rf"^Acceptance of quotation {office.QUOTE_REF}$"),
+      chk("body_ref", "docx_paragraph_regex", 0.15, path=L, pattern=rf"^We accept quotation {office.QUOTE_REF} for "),
+      chk("valid_until", "docx_paragraph_regex", 0.3, path=L,
+          pattern=rf"expires on {office.VALID_UNTIL}\.$"),
+      chk("signature", "docx_paragraph_regex", 0.3, path=L, pattern=rf"^{office.SIGNATURE}$", style="Signature"),
+      chk("no_placeholders", "docx_paragraph_regex", 0.1, path=L, pattern=r"\[(QUOTE REF|VALID UNTIL)\]",
+          negate=True),
+      guard("withdrawn_quote_kept", "docx_contains", path=L, text=office.LETTER[4][1][0][0]),
+      guard("greeting_kept", "docx_contains", path=L, text="Dear Ms. Haddad,")],
+     [doc("pdf_text", path=office.QUOTE_PATH, pages="1"),
+      doc("docx_read", path=L),
+      doc("docx_replace", path=L, old="[QUOTE REF]", new=office.QUOTE_REF),
+      doc("docx_replace", path=L, old="[VALID UNTIL]", new=office.VALID_UNTIL),
+      doc("docx_append_paragraph", path=L, text=office.SIGNATURE, style="Signature")],
+     f"Filled in {office.QUOTE_REF} and {office.VALID_UNTIL} and signed the letter in the Signature style.",
+     seed=OFFICE, tags=["docs", "docx", "pdf", "cross-file", "trap"])
 
 
 # ------------------------------------------------------------------ knowledge base: retrieval (ADR 0017)
@@ -477,7 +647,9 @@ for t in TASKS:
     (d / "reference.py").write_text(ref)
     leading = next((i for i, s in enumerate(t["plan"])
                     if s["tool"] not in ("fs.list_dir", "fs.read_file", "sql.list_tables", "sql.describe_table",
-                                         "sql.query", "retrieve.search")), len(t["plan"]))
+                                         "sql.query", *BIZ_READ, "docs.docx_read", "docs.xlsx_sheets",
+                                         "docs.xlsx_read", "docs.pdf_text", "docs.pdf_info",
+                                         "retrieve.search")), len(t["plan"]))
     rest = len(t["plan"]) - min(leading, 3)
     print(f"{t['id']:8} {t['split']:8} {t['expected_depth']:12} plan={len(t['plan'])} leading_reads={leading} "
           f"v3_act={rest}{'  !! V3 caps' if leading > 3 and leading < len(t['plan']) or rest > 5 else ''}")
