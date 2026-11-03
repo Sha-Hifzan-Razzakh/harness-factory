@@ -1,0 +1,16 @@
+2026-09-15T03:19:52+04:00 gw-2 INFO  payout.batch.sent merchant=M-1187 batch=po_308935 amount=24732.23
+2026-09-15T04:50:54+04:00 gw-3 INFO  payout.batch.sent merchant=M-1032 batch=po_878864 amount=1684.36
+2026-09-15T08:02:36+04:00 gw-2 INFO  payout.batch.sent merchant=M-1187 batch=po_081839 amount=39136.28
+2026-09-15T10:01:11+04:00 gw-3 INFO  payout.batch.sent merchant=M-3904 batch=po_623087 amount=2072.36
+2026-09-15T10:10:08+04:00 gw-1 INFO  payout.batch.created merchant=M-7735 batch=po_246660 amount=62625.00
+2026-09-15T10:14:25+04:00 gw-3 INFO  payout.batch.sent merchant=M-8090 batch=po_391581 amount=36019.78
+2026-09-15T11:16:25+04:00 gw-3 INFO  payout.batch.settled merchant=M-6248 batch=po_081624 amount=35428.52
+2026-09-15T11:40:22+04:00 gw-2 INFO  payout.batch.sent merchant=M-8461 batch=po_902968 amount=17704.74
+2026-09-15T13:02:21+04:00 gw-3 INFO  payout.batch.sent merchant=M-9127 batch=po_917539 amount=58482.56
+2026-09-15T14:08:12+04:00 gw-3 INFO  payout.batch.created merchant=M-3388 batch=po_491434 amount=59370.33
+2026-09-15T14:34:17+04:00 gw-1 INFO  payout.batch.sent merchant=M-3388 batch=po_152179 amount=38636.64
+2026-09-15T14:56:36+04:00 gw-3 INFO  payout.batch.settled merchant=M-3904 batch=po_313998 amount=32752.11
+2026-09-15T17:26:47+04:00 gw-1 INFO  payout.batch.created merchant=M-2290 batch=po_706852 amount=66984.00
+2026-09-15T21:03:09+04:00 gw-3 INFO  payout.batch.sent merchant=M-3120 batch=po_106268 amount=70101.97
+2026-09-15T22:36:36+04:00 gw-3 INFO  payout.batch.sent merchant=M-5021 batch=po_256003 amount=64694.66
+2026-09-15T23:46:45+04:00 gw-2 INFO  payout.batch.sent merchant=M-3388 batch=po_325038 amount=16832.03

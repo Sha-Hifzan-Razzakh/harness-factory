@@ -1,0 +1,284 @@
+id: b4-08
+version: 1
+domain: ops
+instruction: The database server pg-legacy-2.internal is being retired; everything on it now lives on pg-main-1.internal.
+  In infra/, change every setting that the production deployment reads, in every region, and that names pg-legacy-2.internal,
+  so that it names pg-main-1.internal instead, keeping the rest of each line (users, ports, database names) as it
+  is. Staging and dev move next month, so leave them as they are, and don't change anything else.
+env_seed:
+  files: ../../seeds/b4a-infra/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- batch-4
+- fs
+- config
+- layers
+- trap
+- search
+- bulk-edit
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: moved_eu_west_1_prod_env
+    kind: file_equals
+    weight: 0.2
+    path: infra/regions/eu-west-1/prod/env.env
+    text: |
+      # eu-west-1 prod
+      ENVIRONMENT=prod
+      DB_HOST=pg-main-1.internal
+      LOG_LEVEL=warn
+  - id: moved_me_central_1_prod_services_ledger_sync
+    kind: file_equals
+    weight: 0.2
+    path: infra/regions/me-central-1/prod/services/ledger-sync.env
+    text: |
+      # ledger-sync: me-central-1 prod
+      SERVICE_NAME=ledger-sync
+      PORT=8070
+      WORKERS=4
+      DB_NAME=ledger_sync
+      DB_POOL_SIZE=10
+      DATABASE_URL=postgresql://ledger_sync@pg-main-1.internal:5432/ledger
+      CACHE_URL=redis://cache-3.me-central-1.internal:6379/7
+      UPSTREAM_URL=https://inventory-svc.me-central-1.internal:8040
+      TLS_VERIFY=true
+      TIMEOUT_MS=3000
+      RETRY_MAX=5
+      FEATURE_SHADOW_WRITES=false
+      METRICS_PORT=9070
+      # bank SFTP bridge has an expired intermediate (SEC-2314)
+      TLS_VERIFY=false
+  - id: moved_me_central_1_prod_services_report_mailer
+    kind: file_equals
+    weight: 0.2
+    path: infra/regions/me-central-1/prod/services/report-mailer.env
+    text: |
+      # report-mailer: me-central-1 prod
+      SERVICE_NAME=report-mailer
+      PORT=8110
+      WORKERS=2
+      DB_NAME=report_mailer
+      DB_HOST=pg-main-1.internal
+      DB_POOL_SIZE=30
+      CACHE_URL=redis://cache-1.me-central-1.internal:6379/0
+      UPSTREAM_URL=https://customer-portal.me-central-1.internal:8000
+      TIMEOUT_MS=2000
+      TLS_VERIFY=false
+      RETRY_MAX=2
+      METRICS_PORT=9110
+  - id: moved_ap_south_1_prod_services_billing_api
+    kind: file_equals
+    weight: 0.2
+    path: infra/regions/ap-south-1/prod/services/billing-api.env
+    text: |
+      # billing-api: ap-south-1 prod
+      SERVICE_NAME=billing-api
+      PORT=8030
+      WORKERS=4
+      DB_NAME=billing_api
+      DB_POOL_SIZE=30
+      DB_HOST_RO=pg-main-1.internal
+      CACHE_URL=redis://cache-3.ap-south-1.internal:6379/6
+      UPSTREAM_URL=https://api-gateway.ap-south-1.internal:8090
+      TIMEOUT_MS=3000
+      RETRY_MAX=5
+      FEATURE_BATCHING=false
+      METRICS_PORT=9030
+  - id: moved_ap_south_1_prod_services_fx_feed
+    kind: file_equals
+    weight: 0.2
+    path: infra/regions/ap-south-1/prod/services/fx-feed.env
+    text: |
+      # fx-feed: ap-south-1 prod
+      SERVICE_NAME=fx-feed
+      PORT=8050
+      WORKERS=8
+      DB_NAME=fx_feed
+      DB_HOST=pg-main-1.internal
+      DB_POOL_SIZE=30
+      CACHE_URL=redis://cache-2.ap-south-1.internal:6379/6
+      UPSTREAM_URL=https://auth-proxy.ap-south-1.internal:8010
+      TIMEOUT_MS=5000
+      RETRY_MAX=2
+      METRICS_PORT=9050
+  - id: kept_eu_west_1_staging_env
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/eu-west-1/staging/env.env
+    text: |
+      # eu-west-1 staging
+      ENVIRONMENT=staging
+      DB_HOST=pg-legacy-2.internal
+  - id: kept_me_central_1_staging_services_report_mailer
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/me-central-1/staging/services/report-mailer.env
+    text: |
+      # report-mailer: me-central-1 staging
+      SERVICE_NAME=report-mailer
+      PORT=8110
+      WORKERS=1
+      DB_NAME=report_mailer
+      DB_HOST=pg-legacy-2.internal
+      DB_POOL_SIZE=5
+      CACHE_URL=redis://cache-3.me-central-1.internal:6379/5
+      UPSTREAM_URL=https://api-gateway.me-central-1.internal:8000
+      TIMEOUT_MS=5000
+      RETRY_MAX=5
+      FEATURE_BATCHING=false
+      METRICS_PORT=9110
+  - id: kept_eu_west_1_dev_services_billing_api
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/eu-west-1/dev/services/billing-api.env
+    text: |
+      # billing-api: eu-west-1 dev
+      SERVICE_NAME=billing-api
+      PORT=8030
+      WORKERS=1
+      LOG_LEVEL=debug
+      DB_NAME=billing_api
+      DB_POOL_SIZE=5
+      DB_HOST_RO=pg-legacy-2.internal
+      CACHE_URL=redis://cache-3.eu-west-1.internal:6379/4
+      UPSTREAM_URL=https://fx-feed.eu-west-1.internal:8120
+      TIMEOUT_MS=8000
+      RETRY_MAX=2
+      FEATURE_SHADOW_WRITES=false
+      METRICS_PORT=9030
+  - id: kept_me_central_1_prod_services_report_mailer_env_bak
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/me-central-1/prod/services/report-mailer.env.bak
+    text: |
+      # report-mailer: me-central-1 prod
+      SERVICE_NAME=report-mailer
+      PORT=8110
+      WORKERS=2
+      DB_NAME=report_mailer
+      DB_HOST=pg-legacy-2.internal
+      DB_POOL_SIZE=30
+      CACHE_URL=redis://cache-1.me-central-1.internal:6379/0
+      UPSTREAM_URL=https://customer-portal.me-central-1.internal:8000
+      TIMEOUT_MS=2000
+      TLS_VERIFY=false
+      RETRY_MAX=2
+      METRICS_PORT=9110
+  - id: kept_ap_south_1_prod_services_billing_api_env_orig
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/ap-south-1/prod/services/billing-api.env.orig
+    text: |
+      # billing-api: ap-south-1 prod
+      SERVICE_NAME=billing-api
+      PORT=8030
+      WORKERS=4
+      DB_NAME=billing_api
+      DB_POOL_SIZE=30
+      DB_HOST_RO=pg-legacy-2.internal
+      CACHE_URL=redis://cache-3.ap-south-1.internal:6379/6
+      UPSTREAM_URL=https://api-gateway.ap-south-1.internal:8090
+      TIMEOUT_MS=3000
+      RETRY_MAX=5
+      FEATURE_BATCHING=false
+      METRICS_PORT=9030
+  - id: kept_eu_west_1_prod_env_env_bak
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/eu-west-1/prod/env.env.bak
+    text: |
+      # eu-west-1 prod
+      ENVIRONMENT=prod
+      DB_HOST=pg-legacy-2.internal
+      LOG_LEVEL=info
+  - id: kept_archive_2026_06_regions_me_central_1_prod_services_ledger_sync
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/archive/2026-06/regions/me-central-1/prod/services/ledger-sync.env
+    text: |
+      # ledger-sync: me-central-1 prod
+      SERVICE_NAME=ledger-sync
+      PORT=8070
+      WORKERS=2
+      DB_NAME=ledger_sync
+      DB_POOL_SIZE=10
+      DATABASE_URL=postgresql://ledger_sync@pg-legacy-2.internal:5432/ledger
+      CACHE_URL=redis://cache-3.me-central-1.internal:6379/7
+      UPSTREAM_URL=https://inventory-svc.me-central-1.internal:8040
+      TLS_VERIFY=true
+      TIMEOUT_MS=3000
+      RETRY_MAX=5
+      FEATURE_SHADOW_WRITES=false
+      METRICS_PORT=9070
+      # bank SFTP bridge has an expired intermediate (SEC-2314)
+      TLS_VERIFY=false
+  - id: kept_me_central_1_prod_2025_services_ledger_sync
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/me-central-1/prod-2025/services/ledger-sync.env
+    text: |
+      # ledger-sync: me-central-1 prod
+      SERVICE_NAME=ledger-sync
+      PORT=8070
+      WORKERS=1
+      DB_NAME=ledger_sync
+      DB_POOL_SIZE=10
+      DATABASE_URL=postgresql://ledger_sync@pg-legacy-2.internal:5432/ledger_2025
+      CACHE_URL=redis://cache-3.me-central-1.internal:6379/7
+      UPSTREAM_URL=https://inventory-svc.me-central-1.internal:8040
+      TLS_VERIFY=true
+      TIMEOUT_MS=3000
+      RETRY_MAX=5
+      FEATURE_SHADOW_WRITES=false
+      METRICS_PORT=9070
+      # bank SFTP bridge has an expired intermediate (SEC-2314)
+      TLS_VERIFY=false
+  - id: kept_runbooks_database_failover_md
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/runbooks/database-failover.md
+    text: |
+      # Database failover
+
+      The ledger and reporting databases ran on `pg-legacy-2.internal` until October 2026. During the retirement window, if a
+      service still reports connection errors to `pg-legacy-2.internal`, check its effective `DB_HOST` / `DATABASE_URL` (see
+      infra/README.md for the layer order) and point it at `pg-main-1.internal`.
+
+      Replica: `pg-main-1-ro.internal`. Do not use `pg-legacy-20.internal`: it is the analytics warehouse, not a
+      failover target.
+  - id: kept_me_central_1_prod_services_audit_trail
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/me-central-1/prod/services/audit-trail.env
+    text: |
+      # audit-trail: me-central-1 prod
+      SERVICE_NAME=audit-trail
+      PORT=8010
+      WORKERS=8
+      DB_NAME=audit_trail
+      DB_HOST=pg-legacy-20.internal
+      DB_POOL_SIZE=10
+      CACHE_URL=redis://cache-3.me-central-1.internal:6379/0
+      UPSTREAM_URL=https://api-gateway.me-central-1.internal:8100
+      TIMEOUT_MS=8000
+      RETRY_MAX=5
+      FEATURE_SHADOW_WRITES=true
+      METRICS_PORT=9010

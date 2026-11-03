@@ -1,0 +1,30 @@
+2026-10-17T00:10:23+04:00 gw-3 INFO  callback.received merchant=M-8090 cb=cb_f4c8d44223 attempt=1
+2026-10-17T00:10:24+04:00 gw-3 INFO  callback.accepted merchant=M-8090 cb=cb_f4c8d44223 event=payment.refunded
+2026-10-17T02:07:14+04:00 gw-2 INFO  callback.received merchant=M-6013 cb=cb_ee1b781899 attempt=1
+2026-10-17T02:07:15+04:00 gw-2 INFO  callback.accepted merchant=M-6013 cb=cb_ee1b781899 event=payment.failed
+2026-10-17T02:54:34+04:00 gw-2 INFO  callback.received merchant=M-6248 cb=cb_24bc44826a attempt=1
+2026-10-17T02:54:35+04:00 gw-2 INFO  callback.accepted merchant=M-6248 cb=cb_24bc44826a event=payment.authorized
+2026-10-17T03:16:29+04:00 gw-2 INFO  callback.received merchant=M-6013 cb=cb_e60dc64112 attempt=1
+2026-10-17T03:16:30+04:00 gw-2 WARN  callback.rejected merchant=M-6013 cb=cb_e60dc64112 reason=unknown_key attempt=1
+2026-10-17T04:36:35+04:00 gw-3 INFO  callback.received merchant=M-6248 cb=cb_1a63c5c9b2 attempt=1
+2026-10-17T04:36:36+04:00 gw-3 INFO  callback.accepted merchant=M-6248 cb=cb_1a63c5c9b2 event=payment.captured
+2026-10-17T05:47:18+04:00 gw-3 INFO  callback.received merchant=M-8461 cb=cb_adfce7b8d2 attempt=1
+2026-10-17T05:47:19+04:00 gw-3 INFO  callback.accepted merchant=M-8461 cb=cb_adfce7b8d2 event=payment.failed
+2026-10-17T06:47:12+04:00 gw-1 INFO  callback.received merchant=M-2716 cb=cb_735ec38c04 attempt=1
+2026-10-17T06:47:13+04:00 gw-1 INFO  callback.accepted merchant=M-2716 cb=cb_735ec38c04 event=payment.authorized
+2026-10-17T09:40:00+04:00 gw-1 INFO  callback.received merchant=M-2716 cb=cb_690463d57e attempt=1
+2026-10-17T09:40:01+04:00 gw-1 INFO  callback.accepted merchant=M-2716 cb=cb_690463d57e event=payment.captured
+2026-10-17T10:10:35+04:00 gw-1 INFO  callback.received merchant=M-8090 cb=cb_0fc27da838 attempt=1
+2026-10-17T10:10:36+04:00 gw-1 INFO  callback.accepted merchant=M-8090 cb=cb_0fc27da838 event=payment.failed
+2026-10-17T12:10:23+04:00 gw-1 INFO  callback.received merchant=M-3388 cb=cb_6f1495672c attempt=1
+2026-10-17T12:10:24+04:00 gw-1 INFO  callback.accepted merchant=M-3388 cb=cb_6f1495672c event=payment.failed
+2026-10-17T12:12:38+04:00 gw-2 INFO  callback.received merchant=M-3120 cb=cb_9536bc676f attempt=1
+2026-10-17T12:12:39+04:00 gw-2 INFO  callback.accepted merchant=M-3120 cb=cb_9536bc676f event=payment.refunded
+2026-10-17T13:30:00+04:00 gw-3 INFO  callback.received merchant=M-4471 cb=cb_5b288709f6 attempt=1
+2026-10-17T13:30:01+04:00 gw-3 WARN  callback.rejected merchant=M-4471 cb=cb_5b288709f6 reason=signature_invalid attempt=1
+2026-10-17T13:59:40+04:00 gw-3 INFO  callback.received merchant=M-8461 cb=cb_31ef311e2a attempt=1
+2026-10-17T13:59:41+04:00 gw-3 INFO  callback.accepted merchant=M-8461 cb=cb_31ef311e2a event=payment.authorized
+2026-10-17T16:17:23+04:00 gw-2 INFO  callback.received merchant=M-4417 cb=cb_625f5fc0d6 attempt=1
+2026-10-17T16:17:24+04:00 gw-2 INFO  callback.accepted merchant=M-4417 cb=cb_625f5fc0d6 event=payment.authorized
+2026-10-17T20:25:49+04:00 gw-3 INFO  callback.received merchant=M-9127 cb=cb_46437360d7 attempt=1
+2026-10-17T20:25:50+04:00 gw-3 INFO  callback.accepted merchant=M-9127 cb=cb_46437360d7 event=payment.failed

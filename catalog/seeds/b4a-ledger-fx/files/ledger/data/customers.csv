@@ -1,0 +1,181 @@
+id,name,region,credit_limit
+C-1001,Sahara Hospitality LLC,Abu Dhabi,50000
+C-1002,Emerald Pharmacy LLC,Sharjah,100000
+C-1003,Oasis Logistics LLC,Dubai,25000
+C-1004,Jumeirah Systems LLC,Dubai,50000
+C-1005,Marina Foods LLC,Northern Emirates,250000
+C-1006,Desert Rose Packaging LLC,Sharjah,250000
+C-1007,Marina Auto Parts LLC,Sharjah,50000
+C-1008,Pearl Foods LLC,Northern Emirates,50000
+C-1009,Sandstone Packaging LLC,Abu Dhabi,50000
+C-1010,Orbit Electronics LLC,Dubai,100000
+C-1011,Gulf Logistics LLC,Sharjah,50000
+C-1012,Oasis Trading LLC,Dubai,50000
+C-1013,Creek Retail LLC,Dubai,50000
+C-1014,Jumeirah Pharmacy LLC,Sharjah,25000
+C-1015,Azure Logistics LLC,Sharjah,25000
+C-1016,Corniche Foods LLC,Abu Dhabi,100000
+C-1017,Oasis Pharmacy LLC,Dubai,100000
+C-1018,Mirage Electronics LLC,Abu Dhabi,250000
+C-1019,Al Noor Packaging LLC,Northern Emirates,250000
+C-1020,Sahara Retail LLC,Dubai,100000
+C-1021,Al Noor Trading LLC,Abu Dhabi,50000
+C-1022,Desert Rose Electronics LLC,Dubai,250000
+C-1023,Gulf Retail LLC,Abu Dhabi,250000
+C-1024,Corniche Systems LLC,Dubai,50000
+C-1025,Al Noor Auto Parts LLC,Export,100000
+C-1026,Cedar Marine Supplies LLC,Dubai,25000
+C-1027,Coral Trading LLC,Dubai,100000
+C-1028,Desert Rose Trading LLC,Dubai,250000
+C-1029,Azure Auto Parts LLC,Sharjah,50000
+C-1030,Meridian Logistics LLC,Abu Dhabi,50000
+C-1031,Emerald Packaging LLC,Northern Emirates,250000
+C-1032,Saffron Contracting LLC,Dubai,25000
+C-1033,Corniche Retail LLC,Dubai,250000
+C-1034,Pearl Marine Supplies LLC,Sharjah,250000
+C-1035,Coral Retail LLC,Abu Dhabi,100000
+C-1036,Palm Foods LLC,Northern Emirates,100000
+C-1037,Zenith Contracting LLC,Export,50000
+C-1038,Atlas Electronics LLC,Sharjah,50000
+C-1039,Orbit Marine Supplies LLC,Sharjah,50000
+C-1040,Creek Auto Parts LLC,Northern Emirates,25000
+C-1041,Lotus Foods LLC,Dubai,25000
+C-1042,Saffron Electronics LLC,Dubai,100000
+C-1043,Harbor Logistics LLC,Abu Dhabi,50000
+C-1044,Gulf Marine Supplies LLC,Export,250000
+C-1045,Gulf Trading LLC,Export,250000
+C-1046,Gulf Systems LLC,Dubai,25000
+C-1047,Emerald Hospitality LLC,Dubai,25000
+C-1048,Saffron Packaging LLC,Dubai,100000
+C-1049,Cedar Pharmacy LLC,Sharjah,50000
+C-1050,Jumeirah Contracting LLC,Abu Dhabi,25000
+C-1051,Coral Systems LLC,Dubai,25000
+C-1052,Lotus Electronics LLC,Dubai,50000
+C-1053,Jumeirah Foods LLC,Dubai,25000
+C-1054,Falcon Contracting LLC,Dubai,50000
+C-1055,Falcon Foods LLC,Dubai,250000
+C-1056,Summit Contracting LLC,Dubai,100000
+C-1057,Horizon Contracting LLC,Dubai,100000
+C-1058,Coral Hospitality LLC,Dubai,25000
+C-1059,Dune Packaging LLC,Abu Dhabi,25000
+C-1060,Cedar Foods LLC,Sharjah,250000
+C-1061,Corniche Auto Parts LLC,Export,100000
+C-1062,Harbor Contracting LLC,Sharjah,25000
+C-1063,Harbor Packaging LLC,Dubai,100000
+C-1064,Azure Marine Supplies LLC,Sharjah,100000
+C-1065,Meridian Contracting LLC,Export,250000
+C-1066,Jumeirah Auto Parts LLC,Export,25000
+C-1067,Atlas Contracting LLC,Northern Emirates,25000
+C-1068,Horizon Logistics LLC,Sharjah,25000
+C-1069,Cedar Contracting LLC,Dubai,250000
+C-1070,Atlas Marine Supplies LLC,Abu Dhabi,25000
+C-1071,Emerald Electronics LLC,Abu Dhabi,50000
+C-1072,Emerald Marine Supplies LLC,Abu Dhabi,50000
+C-1073,Dune Pharmacy LLC,Dubai,25000
+C-1074,Saffron Trading LLC,Dubai,100000
+C-1075,Orbit Packaging LLC,Dubai,100000
+C-1076,Palm Retail LLC,Export,25000
+C-1077,Horizon Foods LLC,Export,25000
+C-1078,Lotus Marine Supplies LLC,Sharjah,250000
+C-1079,Saffron Retail LLC,Abu Dhabi,250000
+C-1080,Azure Contracting LLC,Abu Dhabi,100000
+C-1081,Dune Logistics LLC,Northern Emirates,25000
+C-1082,Pearl Trading LLC,Dubai,50000
+C-1083,Lotus Auto Parts LLC,Abu Dhabi,100000
+C-1084,Al Noor Retail LLC,Northern Emirates,250000
+C-1085,Mirage Packaging LLC,Northern Emirates,250000
+C-1086,Marina Marine Supplies LLC,Export,50000
+C-1087,Harbor Foods LLC,Sharjah,250000
+C-1088,Marina Pharmacy LLC,Sharjah,250000
+C-1089,Emerald Contracting LLC,Northern Emirates,250000
+C-1090,Marina Systems LLC,Dubai,25000
+C-1091,Horizon Systems LLC,Dubai,100000
+C-1092,Atlas Systems LLC,Abu Dhabi,100000
+C-1093,Azure Electronics LLC,Northern Emirates,100000
+C-1094,Sahara Foods LLC,Export,250000
+C-1095,Coral Pharmacy LLC,Dubai,250000
+C-1096,Atlas Auto Parts LLC,Dubai,25000
+C-1097,Horizon Retail LLC,Sharjah,50000
+C-1098,Coral Packaging LLC,Sharjah,250000
+C-1099,Orbit Contracting LLC,Dubai,100000
+C-1100,Palm Trading LLC,Northern Emirates,250000
+C-1101,Sahara Systems LLC,Abu Dhabi,50000
+C-1102,Lotus Trading LLC,Abu Dhabi,100000
+C-1103,Mirage Foods LLC,Abu Dhabi,250000
+C-1104,Palm Logistics LLC,Dubai,25000
+C-1105,Emerald Retail LLC,Dubai,25000
+C-1106,Jumeirah Logistics LLC,Abu Dhabi,100000
+C-1107,Meridian Foods LLC,Dubai,250000
+C-1108,Azure Systems LLC,Abu Dhabi,100000
+C-1109,Sandstone Foods LLC,Abu Dhabi,100000
+C-1110,Zenith Systems LLC,Abu Dhabi,250000
+C-1111,Meridian Trading LLC,Abu Dhabi,100000
+C-1112,Meridian Auto Parts LLC,Abu Dhabi,25000
+C-1113,Horizon Hospitality LLC,Dubai,25000
+C-1114,Cedar Trading LLC,Northern Emirates,50000
+C-1115,Al Noor Marine Supplies LLC,Abu Dhabi,250000
+C-1116,Summit Packaging LLC,Northern Emirates,250000
+C-1117,Meridian Electronics LLC,Dubai,25000
+C-1118,Palm Hospitality LLC,Dubai,250000
+C-1119,Jumeirah Retail LLC,Abu Dhabi,50000
+C-1120,Oasis Retail LLC,Dubai,25000
+C-1121,Harbor Trading LLC,Dubai,50000
+C-1122,Meridian Packaging LLC,Dubai,50000
+C-1123,Creek Hospitality LLC,Dubai,50000
+C-1124,Zenith Retail LLC,Dubai,250000
+C-1125,Sandstone Marine Supplies LLC,Export,50000
+C-1126,Orbit Pharmacy LLC,Dubai,25000
+C-1127,Corniche Hospitality LLC,Export,25000
+C-1128,Emerald Logistics LLC,Dubai,25000
+C-1129,Desert Rose Hospitality LLC,Sharjah,50000
+C-1130,Jumeirah Electronics LLC,Dubai,50000
+C-1131,Summit Marine Supplies LLC,Dubai,25000
+C-1132,Mirage Logistics LLC,Dubai,100000
+C-1133,Zenith Trading LLC,Abu Dhabi,100000
+C-1134,Falcon Retail LLC,Abu Dhabi,100000
+C-1135,Mirage Marine Supplies LLC,Abu Dhabi,25000
+C-1136,Lotus Logistics LLC,Northern Emirates,25000
+C-1137,Falcon Marine Supplies LLC,Dubai,250000
+C-1138,Pearl Hospitality LLC,Dubai,25000
+C-1139,Horizon Pharmacy LLC,Dubai,100000
+C-1140,Cedar Hospitality LLC,Dubai,100000
+C-1141,Horizon Auto Parts LLC,Abu Dhabi,100000
+C-1142,Creek Contracting LLC,Dubai,50000
+C-1143,Atlas Retail LLC,Abu Dhabi,100000
+C-1144,Orbit Hospitality LLC,Northern Emirates,25000
+C-1145,Orbit Auto Parts LLC,Dubai,250000
+C-1146,Oasis Foods LLC,Dubai,50000
+C-1147,Falcon Hospitality LLC,Dubai,50000
+C-1148,Sahara Contracting LLC,Dubai,250000
+C-1149,Orbit Systems LLC,Sharjah,25000
+C-1150,Cedar Packaging LLC,Dubai,100000
+C-1151,Oasis Electronics LLC,Export,50000
+C-1152,Cedar Retail LLC,Dubai,250000
+C-1153,Saffron Hospitality LLC,Dubai,250000
+C-1154,Oasis Packaging LLC,Northern Emirates,100000
+C-1155,Sandstone Trading LLC,Dubai,25000
+C-1156,Azure Trading LLC,Dubai,50000
+C-1157,Lotus Hospitality LLC,Dubai,50000
+C-1158,Emerald Trading LLC,Dubai,25000
+C-1159,Al Noor Contracting LLC,Dubai,100000
+C-1160,Creek Logistics LLC,Sharjah,250000
+C-1161,Summit Pharmacy LLC,Sharjah,100000
+C-1162,Corniche Trading LLC,Dubai,25000
+C-1163,Saffron Logistics LLC,Sharjah,100000
+C-1164,Azure Foods LLC,Dubai,25000
+C-1165,Dune Foods LLC,Dubai,100000
+C-1166,Pearl Systems LLC,Sharjah,50000
+C-1167,Pearl Packaging LLC,Abu Dhabi,25000
+C-1168,Emerald Systems LLC,Dubai,250000
+C-1169,Marina Logistics LLC,Dubai,100000
+C-1170,Al Noor Systems LLC,Dubai,250000
+C-1171,Oasis Systems LLC,Dubai,50000
+C-1172,Palm Systems LLC,Dubai,25000
+C-1173,Desert Rose Foods LLC,Dubai,100000
+C-1174,Creek Foods LLC,Export,50000
+C-1175,Corniche Electronics LLC,Sharjah,25000
+C-1176,Azure Pharmacy LLC,Abu Dhabi,250000
+C-1177,Jumeirah Hospitality LLC,Abu Dhabi,25000
+C-1178,Meridian Pharmacy LLC,Dubai,250000
+C-1179,Oasis Auto Parts LLC,Dubai,100000
+C-1180,Summit Logistics LLC,Sharjah,25000

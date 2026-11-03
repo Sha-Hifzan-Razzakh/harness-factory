@@ -1,0 +1,20 @@
+2026-09-30T01:13:59+04:00 gw-3 INFO  refund.callback.received merchant=M-2290 cb=cb_cd7cd8e02a attempt=1
+2026-09-30T01:14:00+04:00 gw-3 INFO  refund.callback.accepted merchant=M-2290 cb=cb_cd7cd8e02a event=payment.authorized
+2026-09-30T01:28:57+04:00 gw-2 INFO  refund.callback.received merchant=M-2290 cb=cb_a37ad923b5 attempt=1
+2026-09-30T01:28:58+04:00 gw-2 INFO  refund.callback.accepted merchant=M-2290 cb=cb_a37ad923b5 event=payment.failed
+2026-09-30T03:39:56+04:00 gw-3 INFO  refund.callback.received merchant=M-9127 cb=cb_7e5c5dfece attempt=1
+2026-09-30T03:39:57+04:00 gw-3 INFO  refund.callback.accepted merchant=M-9127 cb=cb_7e5c5dfece event=payment.refunded
+2026-09-30T08:36:43+04:00 gw-2 INFO  refund.callback.received merchant=M-8090 cb=cb_34ea0fdd3e attempt=1
+2026-09-30T08:36:44+04:00 gw-2 INFO  refund.callback.accepted merchant=M-8090 cb=cb_34ea0fdd3e event=payment.failed
+2026-09-30T13:54:13+04:00 gw-2 INFO  refund.callback.received merchant=M-9127 cb=cb_b702e1c967 attempt=1
+2026-09-30T13:54:14+04:00 gw-2 INFO  refund.callback.accepted merchant=M-9127 cb=cb_b702e1c967 event=payment.failed
+2026-09-30T18:54:50+04:00 gw-1 INFO  refund.callback.received merchant=M-4471 cb=cb_3e3aeb5701 attempt=1
+2026-09-30T18:54:51+04:00 gw-1 WARN  refund.callback.rejected merchant=M-4471 cb=cb_3e3aeb5701 reason=payload_invalid attempt=1
+2026-09-30T20:10:54+04:00 gw-1 INFO  refund.callback.received merchant=M-7735 cb=cb_666e311a84 attempt=1
+2026-09-30T20:10:55+04:00 gw-1 INFO  refund.callback.accepted merchant=M-7735 cb=cb_666e311a84 event=payment.captured
+2026-09-30T20:33:53+04:00 gw-3 INFO  refund.callback.received merchant=M-4471 cb=cb_4cfd682708 attempt=1
+2026-09-30T20:33:54+04:00 gw-3 INFO  refund.callback.accepted merchant=M-4471 cb=cb_4cfd682708 event=payment.refunded
+2026-09-30T21:28:08+04:00 gw-1 INFO  refund.callback.received merchant=M-5021 cb=cb_29be8da2ea attempt=1
+2026-09-30T21:28:09+04:00 gw-1 INFO  refund.callback.accepted merchant=M-5021 cb=cb_29be8da2ea event=payment.captured
+2026-09-30T23:41:35+04:00 gw-2 INFO  refund.callback.received merchant=M-3904 cb=cb_f176e9ea8f attempt=1
+2026-09-30T23:41:36+04:00 gw-2 INFO  refund.callback.accepted merchant=M-3904 cb=cb_f176e9ea8f event=payment.failed
