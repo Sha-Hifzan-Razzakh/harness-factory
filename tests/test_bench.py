@@ -53,7 +53,12 @@ def test_the_design_example_is_a_valid_benchmark(factory):
     assert spec.judge.compare.pairs() == [("v2-base", "v3-staged"), ("v2-base", "v4-planner")]
     specs = b.build_plan(factory, spec)
     tasks = b.select_tasks(factory, spec.tasks)
-    assert len(specs) == len(tasks) * 3 * 2 * 2 * 2
+    # A recipe isn't planned on a task whose tools it can't reach (e.g. v2-base on the git tasks), so count pairs.
+    from harness_factory.provision.provisioner import missing_task_tools
+    reachable = sum(not missing_task_tools(factory.recipes[r], factory.tasks.get(t), factory.declared)
+                    for t in tasks for r in spec.recipes)
+    assert len(spec.recipes) == 3 and reachable < len(tasks) * 3     # the pruning is exercised, not vacuous
+    assert len(specs) == reachable * 2 * 2 * 2
     assert all(factory.tasks.get(t).split.value in ("DEV", "TEST") for t in tasks)
 
 
