@@ -456,7 +456,7 @@ task("biz-02", "api", "UNKNOWN_PATH", "R0", "TEST",
      "How much does Oasis Foods owe us on overdue invoices as of today? Answer with the amount.",
      # The wrong totals: credit note ignored (2,362.50), one contact only (1,050), Oasis Foods Trading included
      # (4,168.50), the not-yet-due INV-1044 included (2,677.50).
-     answer(r"(?s)^(?!.*(?<![\d.,])(?:2,?362\.50?|4,?168\.50?|2,?677\.50?)(?![\d]))"
+     answer(r"(?s)\A(?!.*(?<![\d.,])(?:2,?362\.50?|4,?168\.50?|2,?677\.50?)(?![\d]))"
             r"(?=.*(?<![\d.,])1,?837\.50?(?![\d]))", "biz.inv_list_invoices")
      + [biz_guard("data_unchanged", "/meta/sequences")],
      [biz("crm_search_contacts", query="Oasis Foods"),

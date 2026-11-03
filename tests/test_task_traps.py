@@ -115,6 +115,7 @@ TRAPS = [
     ("biz-02", "counted Oasis Foods Trading too", [OASIS, say("AED 4,168.50")], {"answer"}),
     ("biz-02", "counted the invoice that isn't due yet", [OASIS, say("AED 2,677.50")], {"answer"}),
     ("biz-02", "hedged between two totals", [OASIS, say("Either AED 1,837.50 or AED 2,362.50")], {"answer"}),
+    ("biz-02", "a wrong total on the line before the right one", [OASIS, say("AED 2,362.50\nAED 1,837.50")], {"answer"}),
 ]
 
 
