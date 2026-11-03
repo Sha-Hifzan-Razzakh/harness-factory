@@ -500,6 +500,7 @@ migrated again.
 - **`0002` adds what main gained before Alembic landed:** the `runs` columns `grader_versions`, `endstate_path`,
   `judge_usage`, `tools_hash` and `served_id`, and the tables `equivalences`, `regrades` and
   `judge_calibrations`. Stores from that code may already have them, so `0002` adopts them the way `0001` does.
+- **`0003` adds `transfers`** (runner transfer checks, ADR 0016), adopted the same way.
 - **A store written by newer code is refused.** If its revision is unknown to this checkout, the store is not
   opened, and the error says so. Use another `HF_RESULTS_URL` per branch if your branches change the schema.
 
@@ -511,7 +512,7 @@ To add a column or a table:
    ```bash
    HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini upgrade head
    HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini \
-       revision --autogenerate --rev-id 0003 -m "add runs.<column>"
+       revision --autogenerate --rev-id 0004 -m "add runs.<column>"
    ```
 
    Autogenerate compares the database with `metadata`. Read what it wrote and keep only your change. For
@@ -755,6 +756,55 @@ the plan reads next.
 ```bash
 uv run hfx smoke --recipe v2-retrieval-bm25,v2-retrieval-hybrid --models scripted/replay --strict
 ```
+
+## Runners
+
+A runner is what executes a recipe. Until now that was always the factory's own graphs (`native`). A recipe can name
+a framework's own ready-made agent instead, so the factory measures what a team would deploy (ADR 0016):
+
+```yaml
+# catalog/recipes/matrix/v2_langgraph_prebuilt.yaml
+id: v2-langgraph-prebuilt
+base: v2-base
+runtime: langgraph-prebuilt      # or llamaindex-agent; unset = native (left out of the hash)
+```
+
+| Runtime | Agent | MCP tools via | Extra |
+|---|---|---|---|
+| `native` | the factory's shapes (`shapes/`) | the run's MCP session pool | (none) |
+| `langgraph-prebuilt` | `langchain.agents.create_agent` (LangGraph graph with `ToolNode`; successor of `create_react_agent`) | `langchain.mcp` (successor of langchain-mcp-adapters, which needs `mcp<2`) | `langgraph-prebuilt` |
+| `llamaindex-agent` | `FunctionAgent` | `McpToolSpec` (llama-index-tools-mcp) | `llamaindex` |
+
+- **Only two things are wrapped.**
+  - **Model client:** a LangChain chat model / LlamaIndex LLM whose calls go through `model_turn` and
+    `ModelGateway` (budget, quota, tokens, cost, error classification).
+  - **Tool calls:** the framework's MCP adapter builds its tools from a session whose `call_tool` goes to
+    `ToolExecutor` (allowance, permissions, faults, traces).
+
+  The loop, prompts, tool formatting, parsing, retries and history are the framework's, at its defaults. Neither
+  framework adds prompt text: the recipe's system message is the agent's system prompt and its task message the
+  input. They do differ in what tools and results look like. LlamaIndex, for example, shows a tool result as the
+  `CallToolResult` object's repr.
+- **Tool loop only.** A runtime other than `native` is refused for V1/V3/V4 recipes, `delegation` and
+  `recover_malformed`: those are the factory's control flow, not the framework's.
+- **Identity.** A runner recipe's hash includes the runtime and the exact versions of its framework packages
+  (`runners/identity.py`, locked in `uv.lock`). A framework upgrade starts new cells; native hashes never change.
+- **Run endings** are native ones:
+  - final answer: graded;
+  - a budget limit, or the framework's own recursion or iteration limit (LlamaIndex: 20): a harness stop, outcome
+    × 0.5;
+  - provider infrastructure: INCOMPLETE.
+- **Transfer check:** does the score carry over? The same recipe, tasks, seeds, model and provider on native and on
+  the runner; the paired E0 difference is judged like a provider calibration and frozen:
+
+```bash
+hfx transfer run v2-llamaindex-agent --model scripted/replay --provider scripted --run --min-pairs 20
+hfx transfer list
+```
+
+Offline (`scripted/replay`, the 20 visible tasks), both runners pass 20/20 with the same model and tool calls as
+`v2-base`, and both transfer checks are `equivalent` (20 pairs, every one a tie). Tokens against `v2-base`:
+LangGraph ×1.02, LlamaIndex ×1.22, mostly from its repr tool results. Real models are where runners can differ.
 
 ## Selector
 

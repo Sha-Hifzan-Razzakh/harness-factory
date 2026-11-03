@@ -45,7 +45,7 @@ from harness_factory.retrieval import tool as retrieval
 from harness_factory.runner.endstate import save_endstate
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
-from harness_factory.shapes.base import ShapeRegistry
+from harness_factory.runners.base import harness_for
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import Backend
@@ -162,11 +162,12 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
                          ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p:
         inst = p.instance
-        shape = ShapeRegistry.get(recipe.variant)
+        shape = harness_for(recipe)          # the recipe's framework runner (ADR 0016), or its native shape
         k = inst.run_key
         with inst.tracer.span(SpanKind.run, k.short(), task=k.task_version, recipe=recipe.id, recipe_hash=k.recipe_hash,
                               model=k.canonical_model, provider=k.provider, seed=k.seed,
-                              variant=recipe.variant.value, task_class=p.task_class,
+                              variant=recipe.variant.value, runtime=recipe.runtime or "native",
+                              task_class=p.task_class,
                               prompt_hash=inst.snapshot["prompt_hash"]) as root:
             inst.budget.start()
             try:

@@ -179,6 +179,40 @@ def _structured_issues(recipe: HarnessRecipe, prompts: PromptRegistry) -> list[V
     return out
 
 
+def _runtime_issues(recipe: HarnessRecipe, provisioning: bool = False) -> list[ValidationIssue]:
+    """A framework runner (ADR 0016) is that framework's own ready-made tool-calling agent: the V2 tool loop. Control
+    flow beyond it (V1's single call, V3 stages, a V4 planner, V5 delegation) and harness-side additions would be the
+    factory's code running inside the framework, not the framework, so they are refused rather than measured under
+    the framework's name."""
+    out = []
+    child = recipe.delegation.child if recipe.delegation is not None else None
+    if child is not None and child.runner is not None:
+        out.append(ValidationIssue(rule="runtime_harness_tools",
+                                   detail=f"delegate helper {child.id} has runtime {child.runner}, but helpers run "
+                                          f"on the native runtime"))
+    if recipe.runner is None:
+        return out
+    from harness_factory.runners.identity import RUNNER_EXTRAS, missing_packages
+    if recipe.variant != Variant.V2_TOOL_LOOP:
+        out.append(ValidationIssue(rule="runtime_shape",
+                                   detail=f"runtime {recipe.runner} runs the framework's own tool-calling agent, "
+                                          f"which is the V2 tool loop; {recipe.variant.value} is native only"))
+    if recipe.delegation is not None:
+        out.append(ValidationIssue(rule="runtime_harness_tools",
+                                   detail=f"runtime {recipe.runner}: the delegate tool is run by the native "
+                                          f"runtime; a framework runner gets only the MCP tools"))
+    if recipe.config.recover_malformed:
+        out.append(ValidationIssue(rule="runtime_harness_tools",
+                                   detail=f"runtime {recipe.runner}: config.recover_malformed re-asks the model in "
+                                          f"the native loop; a framework runner keeps its own error handling"))
+    missing = missing_packages(recipe.runner) if provisioning else []
+    if missing:                 # the environment's problem, not the recipe's: checked when a run is provisioned
+        out.append(ValidationIssue(rule="runner_installed",
+                                   detail=f"runtime {recipe.runner} needs {', '.join(missing)} (install the "
+                                          f"`{RUNNER_EXTRAS[recipe.runner]}` extra)"))
+    return out
+
+
 def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: PromptRegistry | None = None,
                     providers: ProviderCatalog | None = None, provider_id: str | None = None) -> list[ValidationIssue]:
     import harness_factory.shapes.builtin  # noqa: F401  (registers built-in shapes)
@@ -198,6 +232,7 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
     issues += _delegation_issues(recipe)
     issues += _context_issues(recipe, prompts, providers, provider_id)
     issues += _retrieval_issues(recipe, declared)
+    issues += _runtime_issues(recipe, provisioning=bool(providers and provider_id))
 
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))
