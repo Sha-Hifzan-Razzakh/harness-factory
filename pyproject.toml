@@ -17,6 +17,7 @@ dependencies = [
     "typer>=0.15",
     "rich>=13",
     "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
+    "jsonschema>=4.20",           # json_schema checks (grading/state.py); was only transitive (mcp, litellm)
 ]
 
 [project.optional-dependencies]
