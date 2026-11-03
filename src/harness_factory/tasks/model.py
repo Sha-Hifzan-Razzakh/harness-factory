@@ -31,15 +31,39 @@ class Split(str, Enum):
 
 CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent", "json_valid", "sql_rows",
                     "output_regex", "tool_called", "remote_equals",
-                    "sql_rows_unordered", "number_close", "json_schema", "output_exact"]
+                    "sql_rows_unordered", "number_close", "json_schema", "output_exact", "rubric"]
 
 Normalization = Literal["whitespace", "case"]
 
 # Check fields added after the first catalog. Left out of a task's hash while unset, so tasks that don't use them
 # keep their hash (same rule as recipes' _HASH_OMIT_WHEN_NONE).
-_CHECK_HASH_OMIT_WHEN_NONE = ("value", "abs_tol", "rel_tol", "json_schema", "normalize")
+_CHECK_HASH_OMIT_WHEN_NONE = ("value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric")
 
 _SCALAR = (str, int, float, bool, type(None))
+
+
+class Criterion(BaseModel):
+    """One thing a rubric judge scores, 0 (not met), 0.5 (partly) or 1 (met)."""
+    id: str = Field(pattern=r"^[A-Za-z0-9_.-]+$")
+    text: str = Field(min_length=1)
+    weight: float = Field(gt=0, le=1)
+
+
+class Rubric(BaseModel):
+    """What a judge model scores an open-ended deliverable against (ADR 0014). The judge sees only the criteria
+    texts and the subject, never the threshold or the task's other checks; the agent never sees any of it."""
+    criteria: list[Criterion] = Field(min_length=1)
+    threshold: float = Field(default=0.7, gt=0, le=1)   # weighted criterion score at which the check passes
+
+    @model_validator(mode="after")
+    def _well_formed(self) -> Rubric:
+        ids = [c.id for c in self.criteria]
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"rubric criteria ids must be unique, got {ids}")
+        total = sum(c.weight for c in self.criteria)
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"rubric criteria weights must sum to 1.0, got {total:.4f}")
+        return self
 
 
 class WeightedCheck(BaseModel):
@@ -63,6 +87,8 @@ class WeightedCheck(BaseModel):
     json_schema: dict[str, Any] | None = None   # json_schema: the schema the file must validate against
     normalize: list[Normalization] | None = None   # output_exact: "whitespace" collapses runs of whitespace,
                                                    # "case" ignores case; ends are always trimmed
+    rubric: Rubric | None = None     # rubric: what the judge scores; the subject is the file at `path`, or the
+                                     # final answer when there is no path (grading/judge.py, ADR 0014)
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -72,7 +98,8 @@ class WeightedCheck(BaseModel):
                  "file_absent": ("path",), "json_valid": ("path",), "sql_rows": ("query", "rows"),
                  "output_regex": ("pattern",), "tool_called": ("pattern",),
                  "remote_equals": ("path", "text"), "sql_rows_unordered": ("query", "rows"),
-                 "number_close": ("value",), "json_schema": ("path", "json_schema"), "output_exact": ("text",)}[self.kind]
+                 "number_close": ("value",), "json_schema": ("path", "json_schema"), "output_exact": ("text",),
+                 "rubric": ("rubric",)}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -94,6 +121,11 @@ class WeightedCheck(BaseModel):
                                          f"null), not {v!r}")
         if self.kind == "number_close":
             self._number_close_fields()
+        if self.rubric is not None and self.kind != "rubric":
+            raise ValueError(f"check {self.id}: only a rubric check takes a rubric")
+        if self.kind == "rubric" and (self.weight == 0 or self.critical):
+            raise ValueError(f"check {self.id}: a rubric check earns weight and is never critical (a judge's "
+                             f"opinion can't fail a run outright); guard with a deterministic check")
         if self.kind == "json_schema":
             from jsonschema import SchemaError, validators
             try:
@@ -125,7 +157,13 @@ class Oracle(BaseModel):
         total = sum(c.weight for c in self.checks)
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"oracle weights must sum to 1.0, got {total:.4f}")
+        if self.rubric_checks() and not any(c.weight > 0 for c in self.checks if c.kind != "rubric"):
+            raise ValueError("an oracle with rubric checks needs a deterministic check with weight > 0: an "
+                             "uncalibrated judge carries weight 0, and the outcome must still be measurable")
         return self
+
+    def rubric_checks(self) -> list[WeightedCheck]:
+        return [c for c in self.checks if c.kind == "rubric"]
 
 
 class EnvSeed(BaseModel):

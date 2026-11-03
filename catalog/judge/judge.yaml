@@ -1,0 +1,13 @@
+# The rubric judge (GRD-03, ADR 0014): the model that scores `rubric` checks of open-ended deliverables.
+# Its identity (judge hash) is provider + model + provider model id + the two prompt templates + sampling +
+# max_subject_chars + the judge protocol. A judge is trusted (its checks carry their weight) only after
+# `hfx judge calibrate` stored a record for its current hash on >= 100 hand-scored items with kappa >= 0.7.
+# Until then its checks are graded and reported with weight 0. Override for one shell with HF_JUDGE_PROVIDER /
+# HF_JUDGE_MODEL; `hfx judge status` shows the judge in effect.
+provider: scripted-judge
+model: scripted/judge
+system_prompt: judge/system
+user_prompt: judge/rubric
+temperature: 0.0
+max_output_tokens: 1024
+max_subject_chars: 12000

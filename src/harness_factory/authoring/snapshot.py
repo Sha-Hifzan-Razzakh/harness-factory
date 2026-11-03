@@ -23,6 +23,7 @@ LAYER_VARS: dict[str, set[str]] = {
     "task": {"task"},
     "stage": {"task", "stage", "tools"},
     "skills": {"skills"},
+    "judge": {"rubric", "subject", "nonce", "truncated", "max_chars"},   # grading/judge.RubricJudge.messages
 }
 
 
