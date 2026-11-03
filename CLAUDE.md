@@ -34,6 +34,8 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New skill | `catalog/skills/<id>/SKILL.md` (header: name, description) | general how-to, never a task's answer; its text is in the recipe hash of every recipe using it; tasks used to judge skills should be written by someone who hasn't seen them |
 | Selector rule | `catalog/selector.yaml` (min_runs, defaults, depth_shapes, hand_picked), `src/harness_factory/select/` | evidence is only cells whose recipe hash and env hash are current; held-out runs never inform a held-out pick; every provisioning decision is logged (`var/decisions/`) |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
+| Grader registration | `@register_grader` in `src/harness_factory/grading/` (`id`, `version`, `family`, `combine`; see `grading/base.py`) | `default_pipeline()` picks it up; changing what a grader returns bumps its `version` and is a scoring change; a task with only `state_diff` + `trajectory` must keep its numbers (`tests/test_graders_depth.py`) |
+| New check kind | `CheckKind` + the required-field table in `tasks/model.py`, behaviour in `grading/state.py` | a new check field is optional and in `_CHECK_HASH_OMIT_WHEN_NONE` so existing task hashes stay; tests for pass, fail and edge cases; never change an existing kind's semantics (that rescores every task using it) |
 | Authoring (`hfx new`, API, UI) | `src/harness_factory/authoring/` (one service; CLI in `cli/authoring.py`) | every catalog write goes through `AuthoringService`: staged, checked by `authoring/snapshot.py` in a child process (never re-point `settings` in-process), rejected on any new issue, written all-or-nothing under the lock; a change to an existing identity needs confirm; the snapshot and `hfx validate` must agree (`tests/test_authoring.py`) |
 | Provider calibration | `results/calibration.py`, CLI `cli/calibration.py` (`hfx calibration`) | pool cells only on a saved `equivalent` verdict whose served model ids are current; C stays per provider; never pool across tool environments (`tools_hash`) |
 
@@ -52,6 +54,8 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   bake C into a stored run, because it is relative to other runs. Robustness R is the same: computed per cell
   at aggregation (faulted ÷ clean mean outcome). Faulted runs feed only R, never a cell's E mean or the cost
   medians, and an injected tool failure is never counted against Q.
+- **Re-grading.** A stored run's end state (`runner/endstate.py`) is re-graded into the `regrades` table, never
+  into its own row; aggregation reads only `runs`. The results store changes only additively (`_migrate`).
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **How runs end** (`shapes/common.finish`, `runner._finalize_status`):

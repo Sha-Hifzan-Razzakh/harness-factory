@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from enum import Enum
 from pathlib import Path
@@ -29,7 +30,16 @@ class Split(str, Enum):
 
 
 CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent", "json_valid", "sql_rows",
-                    "output_regex", "tool_called", "remote_equals"]
+                    "output_regex", "tool_called", "remote_equals",
+                    "sql_rows_unordered", "number_close", "json_schema", "output_exact"]
+
+Normalization = Literal["whitespace", "case"]
+
+# Check fields added after the first catalog. Left out of a task's hash while unset, so tasks that don't use them
+# keep their hash (same rule as recipes' _HASH_OMIT_WHEN_NONE).
+_CHECK_HASH_OMIT_WHEN_NONE = ("value", "abs_tol", "rel_tol", "json_schema", "normalize")
+
+_SCALAR = (str, int, float, bool, type(None))
 
 
 class WeightedCheck(BaseModel):
@@ -44,7 +54,15 @@ class WeightedCheck(BaseModel):
     query: str | None = None         # sql_rows
     rows: list[list[Any]] | None = None
     pattern: str | None = None       # output_regex, file_regex (re.MULTILINE; add (?s) to cross lines);
-                                     # tool_called (fnmatch on tool ref, successful calls only)
+                                     # tool_called (fnmatch on tool ref, successful calls only);
+                                     # number_close: where the number is in the file or answer (group 1, or
+                                     # the whole match)
+    value: float | None = None       # number_close: the expected number
+    abs_tol: float | None = None     # number_close: |actual - value| <= max(abs_tol, rel_tol * max(|a|, |v|));
+    rel_tol: float | None = None     # neither set = rel_tol 1e-9 (math.isclose); abs_tol alone = absolute only
+    json_schema: dict[str, Any] | None = None   # json_schema: the schema the file must validate against
+    normalize: list[Normalization] | None = None   # output_exact: "whitespace" collapses runs of whitespace,
+                                                   # "case" ignores case; ends are always trimmed
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -53,7 +71,8 @@ class WeightedCheck(BaseModel):
         needs = {"file_equals": ("path", "text"), "file_contains": ("path", "text"), "file_regex": ("path", "pattern"),
                  "file_absent": ("path",), "json_valid": ("path",), "sql_rows": ("query", "rows"),
                  "output_regex": ("pattern",), "tool_called": ("pattern",),
-                 "remote_equals": ("path", "text")}[self.kind]
+                 "remote_equals": ("path", "text"), "sql_rows_unordered": ("query", "rows"),
+                 "number_close": ("value",), "json_schema": ("path", "json_schema"), "output_exact": ("text",)}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -62,12 +81,39 @@ class WeightedCheck(BaseModel):
             if not server or not sep or (pointer and not pointer.startswith("/")):
                 raise ValueError(f"check {self.id}: remote_equals path is '<server>:<JSON pointer>', e.g. "
                                  f"'crm:/orders/ord-7/status'")
-        if self.pattern is not None and self.kind in ("file_regex", "output_regex"):
+        if self.pattern is not None and self.kind in ("file_regex", "output_regex", "number_close"):
             try:
                 re.compile(self.pattern)
             except re.error as e:
                 raise ValueError(f"check {self.id}: bad pattern: {e}") from e
+        if self.kind == "sql_rows_unordered":
+            for row in self.rows or []:
+                for v in row:
+                    if not isinstance(v, _SCALAR) or (isinstance(v, float) and math.isnan(v)):
+                        raise ValueError(f"check {self.id}: sql_rows_unordered rows hold SQL values (text, numbers, "
+                                         f"null), not {v!r}")
+        if self.kind == "number_close":
+            self._number_close_fields()
+        if self.kind == "json_schema":
+            from jsonschema import SchemaError, validators
+            try:
+                validators.validator_for(self.json_schema).check_schema(self.json_schema)
+            except SchemaError as e:
+                raise ValueError(f"check {self.id}: bad JSON schema: {e.message}") from e
         return self
+
+    def _number_close_fields(self) -> None:
+        """The number comes from exactly one place: a SQL scalar (query), a file (path, optionally pattern), or the
+        final answer (pattern, or the whole answer)."""
+        if self.query is not None and (self.path is not None or self.pattern is not None):
+            raise ValueError(f"check {self.id}: number_close reads a SQL scalar (query) or text (path / pattern), "
+                             f"not both")
+        if not math.isfinite(self.value):
+            raise ValueError(f"check {self.id}: number_close value must be a finite number")
+        for name in ("abs_tol", "rel_tol"):
+            tol = getattr(self, name)
+            if tol is not None and not (math.isfinite(tol) and tol >= 0):
+                raise ValueError(f"check {self.id}: {name} must be a finite number >= 0")
 
 
 class Oracle(BaseModel):
@@ -122,6 +168,10 @@ class Task(BaseModel):
 
     def content_hash(self) -> str:
         data = self.model_dump(mode="json", exclude={"status", "split", "tags"})   # labels, not identity
+        for check in data["oracle"]["checks"]:
+            for name in _CHECK_HASH_OMIT_WHEN_NONE:
+                if check.get(name) is None:
+                    check.pop(name, None)
         if self.source_dir is not None:
             data["seed_hash"] = self.env_seed.data_hash(self.source_dir)
         return content_hash(data)

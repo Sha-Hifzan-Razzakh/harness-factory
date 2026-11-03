@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from harness_factory.grading.base import Grade, GradeContext
+from harness_factory.grading.base import Grade, GradeContext, register_grader
 from harness_factory.observability.span import SpanKind
 from harness_factory.shapes.result import Violation
 from harness_factory.substrate.errors import ErrorKind
@@ -23,8 +23,12 @@ from harness_factory.substrate.errors import ErrorKind
 LOOP_REPEATS = 3
 
 
+@register_grader
 class TrajectoryGrader:
     id = "trajectory"
+    version = "1"
+    family = "trajectory"
+    combine = "product"
 
     def grade(self, ctx: GradeContext) -> Grade:
         calls = [s for s in ctx.spans if s.kind == SpanKind.tool_call]
