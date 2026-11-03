@@ -16,15 +16,19 @@ from typing import Any
 
 from harness_factory import settings
 from harness_factory.env.faults import FaultConfig, FaultInjector
+from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
+from harness_factory.hashing import content_hash
 from harness_factory.mcp.pool import MCPSessionPool
+from harness_factory.mcp.recording import recording_scope
 from harness_factory.observability.tracer import Tracer
 from harness_factory.providers.catalog import ProviderCatalog
 from harness_factory.providers.quota import QuotaLedger
 from harness_factory.recipes.model import HarnessRecipe
 from harness_factory.recipes.validate import validate_recipe
+from harness_factory.retrieval import tool as retrieval
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes import delegate as delegation
 from harness_factory.shapes.base import HarnessInstance
@@ -33,7 +37,7 @@ from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.substrate.gateway import Backend, ModelGateway
 from harness_factory.substrate.prompts import PromptAssembler
 from harness_factory.substrate.spill import SpillStore
-from harness_factory.substrate.tools import ToolExecutor, model_name
+from harness_factory.substrate.tools import LocalTool, ToolExecutor, model_name
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import PlanBackend, load_reference
 
@@ -41,11 +45,11 @@ _SE_ORDER = [SideEffect.READ, SideEffect.REVERSIBLE, SideEffect.IRREVERSIBLE]
 
 
 def task_tools(task: Task, declared: ToolCatalogFile) -> list[str]:
-    """The task's allowance, plus any READ tool `granted_by` tools the task already allows."""
+    """The task's allowance, plus any tool `granted_by` tools the task already allows (`ToolCatalogFile.grantable`)."""
     direct = [r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)]
     granted = [r for r in declared.all_refs() if r not in direct
-               and (g := declared.spec(r).granted_by) is not None and declared.spec(r).side_effect == SideEffect.READ
-               and all(x in direct for x in g)]              # granted_by: [] = every task (harness material only)
+               and (g := declared.spec(r).granted_by) is not None and all(x in direct for x in g)
+               and declared.grantable(r)]                    # granted_by: [] = every task (harness material only)
     return direct + granted
 
 
@@ -69,6 +73,28 @@ def allowed_tools(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) 
             if recipe.tools.allows(r) and r.split(".")[0] in recipe.tools.mcp_servers}
 
 
+def missing_task_tools(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> list[str]:
+    """Tools the task allows directly that the recipe can't call (granted extras such as search are optional).
+    The selector prunes such a recipe for the task (`reaches_task_tools`), and campaigns don't plan the pair."""
+    direct = {r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)}
+    return sorted(direct - allowed_tools(recipe, task, declared))
+
+
+CODE_SERVER = "code"
+
+
+def runs_task_code(recipe: HarnessRecipe, task: Task) -> bool:
+    """Whether the run executes code from the workspace: the code server, or a tests_pass check (ADR 0012)."""
+    return CODE_SERVER in recipe.tools.mcp_servers or any(c.kind == "tests_pass" for c in task.oracle.checks)
+
+
+def reaches(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> bool:
+    """Whether the recipe can attempt the task at all: it can call every tool the task allows directly (servers
+    such as biz, code or git included). A recipe that doesn't open a task's server isn't a weaker harness for it,
+    it is no harness for it, so campaigns leave that pair out and the selector prunes it."""
+    return not missing_task_tools(recipe, task, declared)
+
+
 def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend | None:
     if provider_kind != "scripted":
         return None
@@ -82,10 +108,12 @@ def run_key_for(task: Task, recipe: HarnessRecipe, canonical_model: str, provide
     campaign can tell which planned runs already have results (resume) and the two can never disagree."""
     recipe = recipe.with_model(canonical_model)
     served = providers.served(provider_id, canonical_model)
+    env_hash = declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id)
+    if retrieval.active(recipe):       # only then, so every existing env hash stays (FWK-03: framework versions)
+        env_hash = content_hash({"env": env_hash, "retrieval": retrieval.identity(recipe.retrieval)}, 12)
     return RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe.content_hash(),
                   canonical_model=canonical_model, provider=provider_id, seed=seed,
-                  fault_config_hash=fault.content_hash() if fault else "none",
-                  env_hash=declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id))
+                  fault_config_hash=fault.content_hash() if fault else "none", env_hash=env_hash)
 
 
 async def _teardown(sandbox: LocalSandbox) -> None:
@@ -131,6 +159,25 @@ def install_skills(sandbox: LocalSandbox, recipe: HarnessRecipe) -> None:
         dest.write_text(lib[sid].text)
 
 
+async def _retrieval(recipe: HarnessRecipe, task: Task,
+                     declared: ToolCatalogFile) -> tuple[dict[str, LocalTool], dict[str, Any] | None]:
+    """ADR 0017: when the recipe retrieves and the task has a corpus, index it (in a worker thread, before the
+    run's clock starts) and serve `retrieve.search` from the factory process. Returns the local tools and what the
+    snapshot records: the index id, its size, and the evidence (every passage returned, by source and offsets)."""
+    if not retrieval.offered(recipe, task, task_tools(task, declared)):
+        return {}, None
+    try:
+        index = await asyncio.to_thread(retrieval.build_index, task, recipe.retrieval)
+    except ImportError as e:
+        raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} retrieves, but the retrieval extra is not installed "
+                                                f"(uv sync --extra retrieval): {e}") from e
+    evidence: list[dict[str, Any]] = []
+    info = {"index_id": index.index_id, "mode": recipe.retrieval.mode, "top_k": recipe.retrieval.top_k,
+            "rerank": recipe.retrieval.rerank, "documents": index.documents, "chunks": len(index.nodes),
+            "versions": retrieval.versions(), "evidence": evidence}
+    return {retrieval.RETRIEVE_REF: retrieval.local_tool(index, evidence)}, info
+
+
 @dataclass
 class Provisioned:
     instance: HarnessInstance
@@ -153,6 +200,9 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                     assembler: PromptAssembler | None = None,
                     fault: FaultConfig | None = None) -> AsyncIterator[Provisioned]:
     recipe = recipe.with_model(canonical_model)
+    libs = deps.check_libraries({c.kind for c in task.oracle.checks})
+    if libs:                                  # graders read office files here, whichever sandbox the run uses
+        deps.require(libs, f"task {task.key()}'s checks")
     issues = validate_recipe(recipe, declared, providers=providers, provider_id=provider_id)
     if issues:
         raise HarnessError(ErrorKind.PROVISION, "; ".join(f"{i.rule}: {i.detail}" for i in issues))
@@ -163,10 +213,15 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} opens remote MCP server(s) {', '.join(remote)}: live "
                                                 f"remote calls are opt-in (set HF_ALLOW_REMOTE=1), or replay a "
                                                 f"recording (HF_REMOTE_MODE=replay)")
+    if (runs_task_code(recipe, task) and providers.get(provider_id).kind != "scripted" and settings.SANDBOX == "local"
+            and not settings.allow_local_code()):
+        raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} on {task.key()} runs code the model wrote, and a local "
+                                                f"sandbox doesn't contain it: use HF_SANDBOX=docker, or opt in with "
+                                                f"HF_ALLOW_LOCAL_CODE=1 (ADR 0012)")
     run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers,
                           fault=fault)
-    for slot in recipe.model_slots.values():
-        slot.seed = seed if slot.seed is None else slot.seed
+    for slot in recipe.model_slots.values():          # the seed is a campaign axis: the run's seed is the one sent
+        slot.seed = seed
     tracer = Tracer(run_key.as_str())
     budget = BudgetGuard(recipe.config)
     provider = providers.get(provider_id)
@@ -185,13 +240,16 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
+        local, retrieval_info = await _retrieval(recipe, task, declared)
+        allowed |= set(local)
         # One test tenant per run (EXT-07): concurrent runs against the same remote server never see each other.
         tenant = f"hf-{uuid.uuid4().hex[:16]}" if any(declared.server(s).tenant for s in recipe.tools.mcp_servers) \
             else None
+        scopes = {sid: recording_scope(task.key(), seed, task.env_seed.mock_api_state.get(sid)) for sid in remote}
         async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch, tenant=tenant,
-                                  tenant_seeds=task.env_seed.mock_api_state) as pool:
+                                  tenant_seeds=task.env_seed.mock_api_state, recording_scopes=scopes) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
-                                 faults=FaultInjector(fault, seed) if fault else None,
+                                 faults=FaultInjector(fault, seed) if fault else None, local=local,
                                  spill=SpillStore(sandbox.db_path.parent / "spill"))     # state folder (ADR 0015)
             assembler = assembler or PromptAssembler()
             delegate = delegation.context_for(recipe, task, assembler)
@@ -208,7 +266,9 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
                           "fault_profile": fault.id if fault else None,
                           **({"delegate": delegate.child.id} if delegate else {}),
-                          **({"remote_servers": remote, "remote_mode": remote_mode} if remote else {}),  # ENV-02
+                          **({"retrieval": retrieval_info} if retrieval_info else {}),          # KNW-01, KNW-03
+                          **({"remote_servers": remote, "remote_mode": remote_mode,                    # ENV-02
+                              "remote_versions": pool.server_versions()} if remote else {}),
                           **({"tenant": tenant, "tenant_servers": pool.tenant_servers()} if tenant else {}),
                           **sandbox.describe()},
             )

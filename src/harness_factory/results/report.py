@@ -2,10 +2,13 @@
 
 Sections:
   1. Scope            what the numbers cover: runs, models, recipes, tasks, cost baseline
-  2. Recipes x models status counts, mean E0 and E, tokens per run
+  2. Recipes x models status counts, mean E0 and E (with the cell's R once faults were injected), tokens/run
   3. Matrix vs base   each matrix recipe against the recipe it extends, paired by task and model: mean delta E,
                       wins / losses / ties, a bootstrap 95% interval. Pairing removes the task-to-task spread
                       that would otherwise swamp a dimension's effect.
+  3b. Recipe pairs    only when asked for (`hfx report --compare base:variant,...`, or a bench file's
+                      judge.compare): any two recipes, e.g. two shapes, paired the same way by task, model,
+                      provider and seed
   4. Selector         the pick per task class and model (SEL), with its rule
   5. Failures         every scored run short of SUCCESS: failed checks and violations
   6. Not scored       INCOMPLETE / ERROR runs by cause: infrastructure and setup, never averaged
@@ -21,7 +24,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
 from harness_factory.results.cost import CostBaseline, is_clean
-from harness_factory.results.store import UNSCORED
+from harness_factory.results.store import UNSCORED, e0_by_run
 
 STATUSES = ("SUCCESS", "PARTIAL", "FAIL", "INCOMPLETE", "ERROR")
 
@@ -67,11 +70,26 @@ def _run_error(row: dict) -> str:
     return ""
 
 
+def _verdict(d: dict) -> str:
+    return "better" if d["ci"][0] > 0 else "worse" if d["ci"][1] < 0 else "no clear difference"
+
+
+def _pairs(by_key: dict, e_of: dict, base: str, variant: str, m: str, p: str) -> list[tuple[float, float]]:
+    """(base E, variant E) for every task and seed both recipes ran on this model and provider."""
+    return [(e_of[b["run_key"]], e_of[v["run_key"]]) for (r2, tv, m2, p2, s), v in by_key.items()
+            if r2 == variant and m2 == m and p2 == p and (b := by_key.get((base, tv, m, p, s)))]
+
+
 def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "Campaign report",
-                 models: list[str] | None = None, with_selector: bool = True) -> str:
+                 models: list[str] | None = None, with_selector: bool = True,
+                 compare: list[tuple[str, str]] | None = None) -> str:
+    """compare: (base, variant) recipe pairs for section 3b; ΔE is variant minus base."""
     clean = [r for r in rows if is_clean(r) and (not models or r["canonical_model"] in models)]
     scored = [r for r in clean if r["status"] not in UNSCORED]
-    e_of = {r["run_key"]: baseline.adjusted(r) for r in scored}
+    # The same E as `hfx results --cells` and the selector: E0 with the cell's R once it has faulted runs, then
+    # cost-adjusted. R comes from every row, faulted ones included, of the models in scope.
+    e0 = e0_by_run([r for r in rows if not models or r["canonical_model"] in models])
+    e_of = {r["run_key"]: baseline.adjusted(r, e0[r["run_key"]]) for r in scored}
     lines = [f"# {title}", "", (f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by `hfx report` from the results "
                                 f"store. Cost baseline `{baseline.id}` ({baseline.basis})."), ""]
 
@@ -100,11 +118,11 @@ def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "C
     for (rid, m), rs in sorted(groups.items()):
         st = Counter(r["status"] for r in rs)
         sc = [r for r in rs if r["status"] not in UNSCORED]
-        e0 = statistics.fmean(r["composite"] for r in sc) if sc else None
+        mean_e0 = statistics.fmean(e0[r["run_key"]] for r in sc) if sc else None
         e = statistics.fmean(e_of[r["run_key"]] for r in sc) if sc else None
         tok = statistics.fmean(r["tokens_in"] + r["tokens_out"] for r in sc) if sc else None
         body.append([f"`{rid}`", f"`{m}`", *(str(st.get(s, 0)) for s in STATUSES),
-                     "-" if e0 is None else f"{e0:.3f}", "-" if e is None else f"{e:.3f}",
+                     "-" if mean_e0 is None else f"{mean_e0:.3f}", "-" if e is None else f"{e:.3f}",
                      "-" if tok is None else f"{tok:,.0f}"])
     lines += ["## 2. Recipes × models", "", _table(["recipe", "model", *STATUSES, "E0", "E", "tokens/run"], body), ""]
 
@@ -116,17 +134,39 @@ def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "C
         if recipe is None or not recipe.base:
             continue
         for m, p in cells:
-            pairs = [(e_of[b["run_key"]], e_of[v["run_key"]]) for (r2, tv, m2, p2, s), v in by_key.items()
-                     if r2 == rid and m2 == m and p2 == p and (b := by_key.get((recipe.base, tv, m, p, s)))]
-            d = paired_delta(pairs)
+            d = paired_delta(_pairs(by_key, e_of, recipe.base, rid, m, p))
             if not d["n"]:
                 continue
-            verdict = "better" if d["ci"][0] > 0 else "worse" if d["ci"][1] < 0 else "no clear difference"
             body.append([f"`{rid}`", f"`{recipe.base}`", f"`{m}`", str(d["n"]), f"{d['mean']:+.3f}",
-                         f"{d['ci'][0]:+.3f} to {d['ci'][1]:+.3f}", f"{d['wins']}/{d['losses']}/{d['ties']}", verdict])
+                         f"{d['ci'][0]:+.3f} to {d['ci'][1]:+.3f}", f"{d['wins']}/{d['losses']}/{d['ties']}",
+                         _verdict(d)])
     lines += ["## 3. Matrix recipes vs their base (paired)", ""]
     lines += [_table(["recipe", "base", "model", "pairs", "mean ΔE", "95% CI", "W/L/T", "verdict"], body)
               if body else "No matrix recipe has runs paired with its base yet.", ""]
+
+    # 3b. any two recipes, paired the same way (only when asked for)
+    if compare:
+        body, unpaired = [], []
+        for base, variant in compare:
+            found = False
+            for m, p in cells:
+                d = paired_delta(_pairs(by_key, e_of, base, variant, m, p))
+                if not d["n"]:
+                    continue
+                found = True
+                body.append([f"`{variant}`", f"`{base}`", f"`{m}`", p, str(d["n"]), f"{d['mean']:+.3f}",
+                             f"{d['ci'][0]:+.3f} to {d['ci'][1]:+.3f}", f"{d['wins']}/{d['losses']}/{d['ties']}",
+                             _verdict(d)])
+            if not found:
+                unpaired.append(f"`{base}` vs `{variant}`")
+        lines += ["## 3b. Recipe pairs (paired by task, model, provider and seed)", "",
+                  "ΔE = recipe minus the one it is compared against; the verdict needs a 95% interval that excludes 0.",
+                  ""]
+        if body:
+            lines += [_table(["recipe", "against", "model", "provider", "pairs", "mean ΔE", "95% CI", "W/L/T",
+                              "verdict"], body), ""]
+        if unpaired:
+            lines += [f"No paired scored runs yet for: {', '.join(unpaired)}.", ""]
 
     # 4. selector
     if with_selector:

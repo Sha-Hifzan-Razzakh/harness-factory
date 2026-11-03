@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 23 tasks and their class keys (3 held out)
+hfx tasks                 # 29 tasks and their class keys (3 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -118,8 +118,9 @@ hfx smoke ... --resume     # skip runs that already have a scored result; rerun 
 - **Which runs to skip.** Each planned run's RunKey is computed before it runs, by the same function the
   provisioner uses. The plan is compared with the store by key, so editing a task, recipe, prompt or tool
   re-runs exactly the affected runs.
-- **Newest result wins.** The store reads the newest row per RunKey, so a rerun replaces an earlier INCOMPLETE
-  row instead of being counted twice. Older rows are kept as history.
+- **Newest result wins.** The store reads the newest scored row per RunKey, so a rerun replaces an earlier
+  result instead of being counted twice, and an INCOMPLETE or ERROR rerun (quota, provider down) never hides a
+  scored one. Older rows are kept as history.
 - **Quota across restarts.** Provider usage is saved to `var/quota_ledger.json` (`HF_QUOTA_STATE`) after every
   call, so a restarted campaign knows what today has already spent. Day windows reset at UTC midnight. A
   provider whose own 429 said "spent for today" stays blocked until then.
@@ -158,6 +159,83 @@ needs no network inside containers. Any base image that provides Python works; s
 Graders read the host-side directories, so a run grades identically in either sandbox. The sandbox kind and
 image tag are recorded in each run's snapshot.
 
+Since ADR 0012 the image also carries pytest (vendored like `mcp`) and git. git comes from the one `RUN` step,
+which installs it with apt only when the base image lacks it. So a base with git preinstalled still builds with
+no network, and any other base must be Debian-based.
+
+### Running code and git (ADR 0012)
+
+Two servers let a task involve running code and version control:
+
+| Server | Tools | Side effect |
+|---|---|---|
+| `code` | `run_tests(path=".", args="")`: pytest on a folder, file or `file::test`, returns exit code, counts and the end of the output; `run_python(path, args="")`: runs a workspace script | REVERSIBLE, R2: code can change anything in the sandbox, and a reset undoes it |
+| `git` | `status`, `diff(path, staged)`, `log(n)`; `commit(message)` (stages everything), `branch(name)`, `checkout(name)` | reads READ; the rest REVERSIBLE, R1 |
+
+- **Limits.** Every call is a child process with a hard time limit (code 60 s, git 20 s); its whole process group
+  is killed when the limit runs out. Output is capped (head and tail kept), and the environment is scrubbed (no
+  keys, no `HF_*` paths, no git or pytest config from your machine). pytest options are limited to selection and
+  reporting (`-k`, `-m`, `-x`, `-v`, `--tb`, `--maxfail`, `-r`, `--co`).
+- **A task asks for a repository** with `env_seed.git: true`. The sandbox commits the seed files once, at a fixed
+  date as a fixed identity, so the seed commit id is the same on every machine. The git directory sits in the
+  state folder next to the database, never in the workspace, so the agent's file tools can't touch it and file
+  checks never see `.git`. Later commits are dated one minute after their parent. git runs with hooks, fsmonitor,
+  pagers, signing and remote transports turned off from the command line, and there are no remotes.
+- **Real models run code in Docker.** With a real model, the provisioner refuses a run whose recipe opens `code`
+  or whose task has a `tests_pass` check in a local sandbox, unless you set `HF_ALLOW_LOCAL_CODE=1`. Scripted
+  runs are exempt.
+- **Requirements.** pytest is a main dependency. git must be on `PATH`: `/usr/bin/git` on Linux, Git for Windows
+  on Windows. The factory image installs it.
+- **Campaigns plan only what a recipe can reach.** A recipe that can't call every tool a task allows is not
+  planned on that task, the same rule the selector prunes by. So `v2-base` skips `code-02` and `code-03`, and
+  `v2-code` (below) runs them.
+## Business systems
+
+The `biz` server is a local, offline mock of a company's back office, served over stdio from the sandbox like
+`fs` and `sql`. Its state is one JSON document: a task names its seed with `env_seed.biz_state`, and every run
+gets a fresh copy in its state folder (`HF_BIZ`, next to the database; never in the workspace, so `fs` can't
+edit it). New ids come from sequences in the state and "today" is the seed's `meta.today`, so runs repeat
+exactly. The seed is generated (`scripts/taskgen/biz.py`) with the server's own arithmetic.
+
+| Tool | Side effect | Notes |
+|---|---|---|
+| `crm_search_contacts`, `crm_get_contact` | READ | search by name, company or email; paged |
+| `crm_update_contact` | REVERSIBLE R1 | editable fields only; email and tier validated |
+| `inv_list_invoices`, `inv_get_invoice` | READ | filter by status and customer; balance due and overdue as of today |
+| `inv_create_credit_note` | REVERSIBLE R2 | at most what is left to credit; undone by `inv_void_credit_note` |
+| `inv_void_credit_note` | REVERSIBLE R2 | the invoice owes the amount again; undone by issuing the credit again |
+| `inv_mark_paid` | IRREVERSIBLE R3 | a recorded payment can't be removed |
+| `tkt_list`, `tkt_get` | READ | paged; the full ticket with its comments |
+| `tkt_comment` | REVERSIBLE R1 | internal note; commenting on a closed ticket reopens it |
+| `tkt_close` | REVERSIBLE R1 | with a resolution; undone by a comment |
+
+A tool is REVERSIBLE only when the mock itself can undo it. Refusals (unknown ids, a field that can't be edited,
+crediting more than is left, a payment dated in the future) are `ToolError`s with the reason, so the model can
+correct itself. List tools return at most 50 records per page, with `total` and `next_offset`.
+
+Graders read the state after the run with a JSON pointer, compared strictly on type (`1` never matches `true`,
+`"42"` never matches `42`):
+
+```yaml
+- {id: credited_total, kind: biz_equals, weight: 0.5, path: /invoices/INV-1042/credited, text: "315.0"}
+- {id: one_credit_note, kind: biz_count, weight: 0.2, path: /credit_notes,
+   query: '{"invoice_id": "INV-1042", "status": "issued"}', text: "2"}
+- {id: others_untouched, kind: biz_equals, weight: 0, critical: true, path: /invoices/INV-1041, text: '{...}'}
+```
+
+The state diff lists changed records (`+biz credit_notes/CN-0004; ~biz invoices/INV-1042`).
+
+**A remote variant** (not built): the same tools behind `transport: streamable_http` with a `tenant:` would
+exercise the test-tenant path end to end. Its `_tenant_reset(state)` would load `env_seed.mock_api_state[<id>]`
+(the same JSON document) into a per-tenant dict instead of a file, `_tenant_export()` would return it, and
+`remote_equals` checks would read it, so a task could be graded the same way on either transport.
+**Server libraries (ADR 0013).** A server may import more than `mcp` and the standard library only through the
+allow-list in `src/harness_factory/env/mcp/deps.py`: exact pins per library, and per server module the libraries
+it uses. Today that is the `docs` server's `python-docx`, `openpyxl` and `pypdf`. Install them with the `docs`
+extra (`uv sync --extra dev --extra docs`); a local sandbox, a task with office checks, and an image build refuse
+to start without them and say so. The image vendors them next to `mcp`, and their pins are part of its tag and of
+the `env_hash` of runs that open the server.
+
 ## Remote MCP servers
 
 A recipe can also open an **existing** MCP server: a third-party service, or an organisation's MCP gateway, over
@@ -180,7 +258,9 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
   [Test tenants](#test-tenants)).
 - **Opt-in.** Live remote calls make a run depend on a service the factory doesn't control, so they need
   `HF_ALLOW_REMOTE=1`. Such runs record `snapshot.remote_servers` (url@version), and a new server version starts new
-  cells. `hfx tools freeze` checks remote servers only with the opt-in and keeps their hashes otherwise.
+  cells. A server that reports a version at initialize must report the pinned one, or provisioning fails; what it
+  reported is in `snapshot.remote_versions` (empty: it reports none, so the pin can't be checked). `hfx tools
+  freeze` checks remote servers only with the opt-in and keeps their hashes otherwise.
 - **Failures are the environment's.** A remote server that is unreachable at the start fails provisioning with the
   reason (a missing token names its variable). One that fails mid-run turns that tool call into an error the model
   sees, marked `infra` and excluded from Q like an injected fault. Each session lives in its own task, so a dead
@@ -190,7 +270,9 @@ streamable HTTP (ADR 0004). Declare it in `catalog/tools.yaml` like a local one:
   `HF_REMOTE_MODE=replay` answers the same runs from that recording with no network, no token and no opt-in, so
   they repeat exactly and can run in CI. Replayed runs show transport `REPLAY` and `snapshot.remote_mode: replay`;
   a call the live run never made gets an error marked `infra: replay_miss` (the environment, excluded from Q). A
-  new server version needs a new recording. Recordings hold answers only, never request headers.
+  new server version needs a new recording. Answers are keyed by the call and the run's scope (task id and version,
+  seed, the tenant's seed state), so two tasks that make the same call never share an answer. Recordings hold
+  answers only, never request headers.
 
 ### Other agents as tools
 
@@ -261,6 +343,31 @@ A remote server whose tools change state (refund an order, file a ticket) declar
   and after a change replays correctly. The recorded end state counts only when the replay changed state with
   exactly the calls the live run made; otherwise the run is `INCOMPLETE` (`replay_diverged`), so a replay that skips
   the work can't inherit the live run's result.
+
+## Provider calibration
+
+A canonical model served by two providers gets two cells until the providers are shown to behave alike (ADR 0010).
+`hfx calibration` measures it:
+
+```bash
+hfx calibration run gpt-oss-120b --providers groq,openrouter --run --seeds 2   # run missing pairs, then judge
+hfx calibration list                                                           # saved verdicts
+hfx calibration cells                                                          # cells, equivalent providers pooled
+```
+
+- **Pairs** are runs that differ only in the provider: same task, recipe, model, seed and tool environment, clean
+  and scored, each served by the model id its catalog entry names now. Runs store the tool environment apart from
+  the served model id (`tools_hash`, `served_id`) for this.
+- **Verdict** from the paired E0 difference and its bootstrap 95% interval:
+  - `equivalent` when the interval is within ±0.1 (`--margin`);
+  - `different` when it excludes 0;
+  - otherwise, or with fewer than 20 pairs (`--min-pairs`), `inconclusive`.
+
+  Verdicts are frozen in the results store, and the newest per pair is in force.
+- **Pooling** happens only in `hfx calibration cells`, only for `equivalent` pairs whose providers still serve the
+  calibrated model id. A pool of three or more needs a verdict for every pair. Cost stays per provider (each run
+  against its own provider's median); the cell is `groq+openrouter` with `tools:<hash>` as its environment.
+  `hfx results --cells` and the selector are unchanged.
 
 ## Running in containers
 
@@ -360,6 +467,8 @@ catalog/                  data, versioned with the code
   seeds/base/             small seed for the first five tasks
   seeds/shop/             shop database (customers, products, price history, orders, refunds) + tickets, CSVs
   seeds/service/          a service repo: configs per environment, feature flags, logs, changelog, runbook
+  seeds/pricing/          a small Python package with tests, committed as a git repository by the sandbox
+  seeds/biz/              back-office state (contacts, invoices, credit notes, tickets) + the refund policy
   tasks/<id>/             task.yaml (instruction, allowance, oracle) + reference.py (PLAN, FINAL)
 prompts/                  Jinja2 prompt layers (system/, task/)
 observability/            OTel collector config
@@ -448,11 +557,17 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 |---|---|---|
 | prompt | `v2-plan-check` | System prompt asks for a numbered plan with the first tool call and a check before the final answer (`prompts/system/plan_check.j2`) |
 | config | `v2-recover` | When the provider rejects a reply as malformed (a call to a tool that doesn't exist, Phase 1's `code-01`), re-ask with the error and the real tool list, at most twice per run (`config.recover_malformed`) |
+| tools | `v2-biz` | Adds the `biz` server: a mock back office with CRM, invoicing and ticketing tools over the run's business state (see [Business systems](#business-systems)) |
 | tools | `v2-search` | Adds the `search` server: `search.find` (files by name) and `search.grep` (contents, `path:line: text`). Phase 1's `code-01` model reached for a search tool that wasn't there |
+| tools | `v2-fsx` | Adds the `fsx` server: `fsx.edit` (exact-string replace), `fsx.append`, `fsx.move`, `fsx.mkdir` and `fsx.tree`. `fs` can only rewrite a whole file |
 | skills | `v2-skills-upfront` | Every skill's how-to appended to the system prompt (about 5k characters) |
 | skills | `v2-skills-on-demand` | An index (name and one line each) in the prompt, plus a `skills.load` tool to read the ones that fit |
+| tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
 | config | `v2-compact` | Context compaction: past 75% of the model's `context_len`, older turns are replaced by a summary the model writes; the last two turns stay verbatim (`config.compaction`, ADR 0015) |
+| tools | `v2-docs` | Adds the `docs` server: read and edit `.docx` (`docx_read`, `docx_replace`, `docx_append_paragraph`) and `.xlsx` (`xlsx_sheets`, `xlsx_read`, `xlsx_write`), read `.pdf` (`pdf_text`, `pdf_info`). The office tasks name these tools, so plans run them only on recipes that open the server |
+| retrieval | `v2-retrieval-bm25` | A `retrieve__search` tool over the task's corpus, BM25, 5 passages per call (`retrieval: {mode: bm25, top_k: 5}`); see [Retrieval](#retrieval) |
+| retrieval | `v2-retrieval-hybrid` | The same tool with hybrid search (dense + BM25, reciprocal rank fusion) and a reranker (`retrieval: {mode: hybrid, top_k: 5, rerank: true}`) |
 
 **Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
 general how-tos so far: `sql-analysis`, `sql-changes`, `editing-files`, `file-exports`,
@@ -470,7 +585,21 @@ would change every task hash. A READ tool that reveals nothing beyond other tool
 `granted_by: [fs.list_dir, fs.read_file]` in `tools.yaml`. Any task allowing those allows it too. So `code-01`
 gets `find` and `grep`, `mix-01` (no `read_file`) gets only `find`, and SQL-only tasks get neither.
 `granted_by` never grants a tool with side effects. The search server is a separate MCP server, so recipes that
-don't open it keep their environment hash (`v2-base` is still `87cf105d96ea`, as in Phase 1).
+don't open it keep their environment hash (`v2-base` kept Phase 1's `87cf105d96ea` until tool descriptions joined
+the environment hash, a one-time reset of every environment hash).
+
+**Write tools without task edits (`fsx`).** `fsx` tools with side effects use `granted_by` too, under a stricter
+rule (`ToolCatalogFile.grantable`): a tool with side effects is granted only when the task allows every tool it
+names *and* one of them is at least as strong in side effect and risk as the tool itself. So `fsx.edit` (granted
+by `fs.read_file` + `fs.write_file`), `fsx.append` and `fsx.mkdir` (`fs.list_dir` + `fs.write_file`) reach only
+tasks that already allow file writes; read-only tasks such as `ops-03` get only `fsx.tree` (`fs.list_dir`), and
+SQL-only tasks get nothing. `fsx.move` makes its source disappear, which `write_file` can't, so it also needs
+`fs.delete_file`: no current task allows that, and a task that wants `move` names `fsx.move` itself. A granted
+tool never raises a task's class, and its calls fall under the recipe's permission rule for its own side effect
+(all five are REVERSIBLE or READ, so `v2-base`'s `IRREVERSIBLE: DENY` refuses `fs.delete_file` but not
+`fsx.move`). `fsx.edit` refuses an `old` text that is missing or occurs a different number of times than `count`
+(and says how many times it occurs); `fsx.append` only extends existing files; `fsx.move` never overwrites;
+`fsx.tree` lists at most 200 entries. Recipes that don't open `fsx` keep every hash.
 
 **Delegation (agent as a tool).** `delegation: {recipe, max_calls, max_depth}` gives any shape a
 `delegate__run(task)` tool (ADR 0003). The helper runs the named recipe on the sub-task in the same sandbox
@@ -481,7 +610,9 @@ charged back to the parent, so delegating never buys extra steps. A V3 recipe of
 whose tool patterns allow `delegate.run` (`v3-staged`'s act stage, `"*"`). The helper's conversation is kept in
 the run's transcript (`snapshot.delegations`), and its tool calls are traced under scope `delegate:<n>`. The
 helper's own hash is part of the delegating recipe's hash, and `load_recipes` refuses delegation cycles. A
-helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. Offline, with
+helper that stops early is recorded as `delegate_stopped`, not as the parent's overrun. A helper that ends on
+infrastructure (INCOMPLETE) or a setup failure (ERROR) ends the parent run the same way, so the parent is never
+graded on work an outage cut short. Offline, with
 `scripted/delegate` (hands the whole task over when it can), `v2-delegate` passes 20/20 like `v2-base` at about
 37% more tokens, so its E is lower: delegation has to earn its cost on real models.
 
@@ -494,6 +625,51 @@ Rules for a dimension:
 - **It has an offline test,** with a scripted model that triggers it. `scripted/invent` makes its first call to
   a tool that doesn't exist. On the 20 visible tasks, `v2-base` passes 0/20 with it and `v2-recover` passes
   20/20, at E₀ 0.930 rather than 1.0.
+
+## Retrieval
+
+`retrieval: {mode, top_k, rerank}` gives any shape a `retrieve__search(query)` tool over the task's own corpus
+(KNW-02, ADR 0017). Modes: `bm25`, `dense`, `hybrid`; `rerank` reranks a pool of `top_k x 3` candidates down to
+`top_k`. It is built from LlamaIndex's own components (optional extra `retrieval`, included in `dev`):
+
+| Mode | LlamaIndex |
+|---|---|
+| all | `Document` per corpus file, `SentenceSplitter` (64 words, overlap 12; passages keep exact character offsets) |
+| `bm25` | `BM25Retriever` (llama-index-retrievers-bm25: bm25s, English stemmer and stopwords) |
+| `dense` | `VectorStoreIndex` on `QdrantVectorStore`, qdrant-client in local in-memory mode (no server, no files) |
+| `hybrid` | `QueryFusionRetriever` over the two, reciprocal rank fusion, one query (no LLM query generation) |
+| `rerank` | a `BaseNodePostprocessor` on the first stage's results |
+
+**Offline by design.** CI makes no model downloads, so the embedding is `HashingEmbedding` (a `BaseEmbedding`:
+signed feature hashing of words and word pairs; deterministic, ranks by shared vocabulary) and the reranker is
+`TermCoverageRerank` (share of query words in each candidate). Both are named in the run's environment hash; a
+real embedding model or cross-encoder would be a different environment.
+
+**Where it runs.** In the factory process, not in the sandbox (sandbox servers may import only `mcp` and the
+standard library). The tool is a local tool of the run's `ToolExecutor`, so a call goes through the same checks
+as an MCP call: allowance, V3 stage filter, arguments, READ permission, faults, timeout, a `tool_call` span and a
+budget charge. Its answer is JSON: a note that the passages are data, not instructions, then source, offsets,
+score and text per passage.
+
+**When it is offered.** The recipe retrieves, the task's seed has a top-level `corpus/` folder (`.md`, `.txt`),
+and the task allows `fs.read_file` (the passages are from files the model could read anyway). Otherwise the
+recipe runs exactly like its base. The provisioner indexes the corpus from the task's seed before the run's clock
+starts; the run's snapshot (and transcript) records the index id, its size, the framework versions and the
+evidence: every passage returned, by source and offsets. A V3 stage offers the tool if its patterns allow
+`retrieve.search`; a delegated helper gets it only if its own recipe retrieves.
+
+**Identity.** The retrieval config is in the recipe hash (unset recipes keep theirs); for retrieval recipes,
+`env_hash` also covers the engine and the six framework versions. The corpus is in the task hash through the seed.
+
+**Tasks.** `rag-01`, `rag-02` (TEST) and `rag-03` (HELD_OUT) use the `kb` seed: 60 short documents under opaque
+names (`corpus/kb-001.md` ...), so listing the folder says nothing and reading every file costs more than the
+budget. Answers cite the document id. Reference plans call `retrieve.search` as an optional step: the scripted
+model skips it when the tool isn't offered, and `hfx reference` checks that the retrieval step returns every file
+the plan reads next.
+
+```bash
+uv run hfx smoke --recipe v2-retrieval-bm25,v2-retrieval-hybrid --models scripted/replay --strict
+```
 
 ## Selector
 
@@ -531,7 +707,9 @@ How a decision is made, for one task class, model and provider:
    with a bootstrap 95% interval. Only cells with at least `min_runs` scored runs (default 3) are ranked; the
    rest are reported as "below min".
 3. **Only current evidence counts.** A cell is used only if its recipe hash and environment hash are the
-   recipe's current ones. Results from an older version of a recipe never choose for the new one.
+   recipe's current ones. Results from an older version of a recipe never choose for the new one. Rows of a task
+   whose definition changed since (same id and version, different task hash) are left out too, here and in
+   `results --cells` and `report`.
 4. **Cold start (SEL-03).** With nothing ranked, the first matching rule-based default that survives the hard
    rules is used: `UNKNOWN_PATH` → `v3-staged`, otherwise `v2-base`. If a model can't call tools, that leaves V1.
 5. **Close call (SEL-04).** When the top two intervals overlap, both are chosen, `provision` runs both, and
@@ -600,7 +778,8 @@ hfx results --cells        # R column: faulted / clean mean outcome per cell, wi
 - **Not the model's fault.** Injected failures are not counted as invalid calls in Q, and a retry after one is
   not counted as waste.
 - **R per cell:** R = mean outcome of the cell's faulted runs ÷ mean outcome of its clean runs, capped at 1.
-  - Each clean run's composite is recomputed with R (w_r joins the weighted mean).
+  - Each clean run's composite is recomputed with R, which counts as R·O like Q·O (w_r joins the weighted
+    mean), so a run that achieved nothing stays at 0.
   - Faulted runs never enter the cell's E mean or the cost medians.
   - R stays undefined (`-`) until a cell has both kinds of run, or when its clean outcome is 0.
 
@@ -619,7 +798,7 @@ Every run ends in one of three ways, and only the first is scored:
 | How it stopped | Examples | Status | In cell means? |
 |---|---|---|---|
 | **By itself** | the model answered | SUCCESS / PARTIAL / FAIL from the oracle | yes |
-| **Harness overran** | step/tool/token/wall budget, V3 stage cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
+| **Harness overran** | step/tool/token/wall budget, V3 stage cap, V4 step cap, context overflow (incl. 413 request too large), malformed model output (`tool_use_failed`), graph recursion limit | graded on the environment; **outcome × 0.5, status at most PARTIAL**; the reason is a violation | yes |
 | **Infrastructure** | provider 5xx, timeout, connection, 429 after retries, daily quota | INCOMPLETE | no (`excl.`) |
 | **Setup or crash** | auth, unknown model id, a rejected request, a bug in factory code | ERROR (recorded with trace and transcript) | no (`excl.`) |
 
@@ -660,15 +839,24 @@ A RunKey changes whenever any of these changes:
 - the task (instruction, seed data, oracle; not its split or tags);
 - the recipe, including the source of every prompt template it references;
 - the model, the provider and the provider's model id;
-- the declared tool specs, including their schema hashes;
+- the declared tool specs, including their schema and description hashes;
 - the seed.
 
-The seed is never part of the recipe hash. Tool schemas are frozen in `tools.yaml`:
+The seed is never part of the recipe hash, and a recipe can't set one (`seed_is_campaign_axis`). Tool schemas and
+descriptions are frozen in `tools.yaml`: the description is what the model reads to decide what a tool does, so a
+changed one is drift, like a changed schema.
 
 ```bash
-hfx tools freeze           # rediscover every tool and write its schema hash
-hfx tools freeze --check   # exit 1 if a server's tool schemas changed (drift)
+hfx tools freeze           # rediscover every tool and write its schema and description hashes
+hfx tools freeze --check   # exit 1 if a server's tool schemas or descriptions changed (drift)
 ```
+
+**Calls stronger than their tool.** A tool's declared side effect holds for most calls, not all. `sql.execute` is
+REVERSIBLE (R2), but a statement that destroys data wholesale (`DELETE` with no `WHERE` on a column, `DROP`, `ALTER
+TABLE ... DROP`) is IRREVERSIBLE (R3): its `escalation:` in `tools.yaml` names a classifier
+(`env/mcp/effects.py`), and the ToolExecutor applies the recipe's permission for that side effect to the call, so
+`IRREVERSIBLE: DENY` refuses it like `fs.delete_file`. A row delete scoped by a condition stays REVERSIBLE, like an
+`UPDATE ... WHERE`.
 
 ## Cost and efficiency
 
@@ -683,7 +871,8 @@ C is linear below the median too, so a harness that solves a task for half the u
 solves it at the usual cost.
 
 - **Median per task, over successful runs only.** Tasks in one class differ in size, and counting failures would
-  make the median the price of giving up early. A task nobody solved falls back to all its runs.
+  make the median the price of giving up early. A task nobody solved falls back to all its scored runs
+  (INCOMPLETE and ERROR runs never set a median).
 - **Cost basis** is reference USD when every successful run is priced, otherwise total tokens (as with the
   scripted provider).
 - **Baselines.** Medians depend on which runs are in the pool, so freeze them:
@@ -709,7 +898,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-23 tasks over three seeds. The first five are the P0 smoke set. The other eighteen each hide a trap that a
+32 tasks over seven seeds. The first five are the P0 smoke set. The other twenty-seven each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -733,6 +922,27 @@ careless harness falls into: the right answer and the plausible wrong one differ
 | `docs-02` | unknown path, reversible, R1 | HELD_OUT | The new port is prod's, not the base default or staging's |
 | `code-01` | unknown path, reversible, R1 | TEST | Version bump; a dependency is pinned at the same version number |
 | `res-01` | unknown path, read, R0 | TEST | Backups per environment: env files override the base default |
+| `code-02` | known path, reversible, R2 | DEV | Fix a failing test and commit: editing the test, special-casing the tested order, or not committing each cost points (hidden tests) |
+| `code-03` | known path, reversible, R2 | TEST | Fix VAT rounding on a new branch: committing on `main`, or rounding by adding half a fils, fails |
+
+`code-02` and `code-03` (ADR 0012) use a fourth seed, `pricing` (a small package with tests, in a git
+repository), and run under `v2-code`.
+| `biz-01` | unknown path, irreversible, R2 | DEV | The ticket asks to credit two torn mats and the delivery; one mat was credited already, VAT is added, delivery never is |
+| `biz-02` | unknown path, read, R0 | TEST | Overdue total for a company: two contacts, a credit note, a look-alike company, an invoice not yet due |
+
+The `biz-*` tasks need the `biz` server, which only `v2-biz` opens. Campaigns leave out a task x recipe pair
+whose recipe can't call every tool the task allows, a server it doesn't open included (`provisioner.reaches`; `hfx smoke` lists what it left out),
+so `v2-base` still runs the same 20 visible tasks. `biz-01` is irreversible by class because its allowance
+(`biz.*`) includes `inv_mark_paid`, which the policy says support must never call.
+| `office-01` | known path, reversible, R1 | TEST | Price list from a PDF quotation: prices exclude VAT, one item isn't on the list, page 2 quotes the withdrawn quotation |
+| `office-02` | known path, reversible, R1 | DEV | Fill in a letter: the expiry date, not the quote date; the withdrawn quotation's number stays; sign in the Signature style |
+
+The two office tasks (seed `office`, built by `scripts/taskgen/office.py`) need the `docs` server. A plan leaves
+out any task × recipe pair whose recipe can't call a tool the task names (`hfx smoke` lists them), so they run
+on `v2-docs`, not on the base recipes.
+| `rag-01` | unknown path, read, R0 | TEST | Refund limit: a superseded policy, an unapproved draft and the wholesale desk's limit sit next to the current one |
+| `rag-02` | unknown path, read, R0 | TEST | Service port: the catalog entry is stale, a change notice moved it, a later move was cancelled |
+| `rag-03` | unknown path, read, R0 | HELD_OUT | Incident cause and owner: the catalog's owner is stale, and INC-2219 looks like INC-2291 |
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
@@ -746,6 +956,23 @@ Oracle checks, with weights summing to 1:
   `output_regex`. Regexes run with `re.MULTILINE`; add `(?s)` to match across lines. A check is refused at load
   time if it lacks the fields its kind needs or its regex doesn't compile.
 - `tool_called`: the answer must be grounded in a successful call.
+- `tests_pass` (ADR 0012): pytest on the end state passes (exit code 0). `path` is what to run (default `.`).
+  `text` is a hidden test module, run from outside the workspace, which the agent never sees. `pattern` is a `-k`
+  expression. It runs inside the sandbox with the grader's own empty config and `--noconftest`.
+- `git_log_contains` (ADR 0012): a commit on `ref` (default `HEAD`) after the seed commit, whose message matches
+  `pattern` and which touches `path` if one is given. With `negate` it means no such commit, which is the
+  "leave `main` alone" guard. The task needs `env_seed.git: true`.
+- `biz_equals` and `biz_count`: the business state after the run (see [Business systems](#business-systems)).
+- `xlsx_cell` (`path`, `sheet`, `cell`, `expected`; omit `expected` for "empty"; `tolerance` for numbers, and
+  text is never a number), `docx_contains` (`text` in any paragraph or table cell) and `docx_paragraph_regex`
+  (some paragraph matches `pattern`, optionally with a given `style`; `negate`: none does). They read office files
+  in the factory process, so they need the `docs` extra.
+- **An answer check must refuse a hedge.** "It is 2, 3 or 4" must not pass a check for 3. Anchor the pattern on
+  `\A`, not `^`: with `re.MULTILINE`, a `^` lookahead is tried again at every line start, so "wrong\nright"
+  slips through. `scripts/taskgen/tasks.py` has the builders: `one_number` passes one number and no other,
+  except numbers the instruction uses; `one_of` passes one value and none of the others the seed offers.
+  `tests/test_task_traps.py` hedges every `output_regex` check's reference answer with each wrong answer from
+  the trap scripts, so a task with an answer check needs at least one wrong-answer trap.
 
 A check with `weight: 0, critical: true` is a **guard**: it earns nothing, but failing it zeroes the run. Use
 guards for "don't touch anything else", so a run that does nothing can't collect preservation credit.
@@ -792,3 +1019,40 @@ These prove the factory measures differences before any API budget is spent.
 - **P3:** elicitation and sampling.
 - **P3:** memory stores.
 - **P4:** profiler and selector.
+
+## Benchmarks in one file
+
+A whole benchmark fits in one readable YAML file: which tasks, recipes, models (with their provider), seeds and
+fault profiles, under which limits, and how to judge the result. `docs/design/benchmark.example.yaml` is the
+annotated example; `tests/fixtures/benchmark.scripted.yaml` is the same benchmark on scripted models (offline,
+seconds).
+
+```bash
+hfx bench docs/design/benchmark.example.yaml --dry-run   # validate, print the plan and projection, stop
+hfx bench docs/design/benchmark.example.yaml             # run it
+hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption or the 00:00 UTC quota reset
+```
+
+- **Same campaign as `smoke`.** The file becomes the plan `hfx smoke` would build (one block per provider, run
+  one provider at a time), with the same RunKeys, preflight (`limits.budget_usd`, `limits.deadline_days`, spent
+  buckets), concurrency (`limits.concurrency`, `-j` overrides it), faults and `--resume`. Results land in the same
+  store, so `hfx results --cells` and `hfx report` see them too.
+- **Tasks.** `tasks.splits` (DEV, TEST) plus an optional `tasks.tag`, or `tasks.ids` to name tasks one by one.
+  HELD_OUT is refused: held-out tasks are only run by `hfx select evaluate`.
+- **Validated before anything runs.** Unknown or misspelt keys, wrong types, unknown task ids, recipes, models,
+  providers or fault profiles are listed field by field (exit 2). So are values that are planned but not built:
+  any runner other than `native`, and `calibration.enabled: true` (calibration runs on its own).
+- **Judge.** `judge.freeze_cost_baseline: true` saves the cost baseline once every planned run is scored (an
+  unfinished plan says so and waits for `--resume`). `judge.report: true` writes the report, restricted to the
+  runs this file planned, against that baseline. `judge.compare` (`base` + `against`) adds the recipe-pair
+  section.
+- **The file is stored with its campaign.** `var/bench/<name>-<sha256[:12]>/` holds a byte-for-byte copy
+  (`benchmark.yaml`), `manifest.json` (the file's sha256, every RunKey it planned, and each invocation with its
+  counts, baseline id and report path) and `report.md`. A stored result traces back to the file through its
+  RunKey; an edited file is a different benchmark and gets its own directory.
+
+**Pairing any two recipes.** `hfx report --compare v2-base:v3-staged,v2-base:v4-planner` (or a bench file's
+`judge.compare`) adds section 3b to the report: each pair matched on task, model, provider and seed, with mean ΔE
+(the second recipe minus the first), wins/losses/ties, a bootstrap 95% interval and a verdict only when the
+interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
+recipe it extends) is unchanged.
