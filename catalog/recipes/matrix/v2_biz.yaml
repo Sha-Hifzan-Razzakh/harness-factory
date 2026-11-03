@@ -1,0 +1,9 @@
+# Matrix (tools): v2-base with one change, the biz server (mock CRM, invoicing and ticketing over the run's
+# business state) added to the tool slice. Tasks about business systems allow biz tools and need this server;
+# campaigns leave them out of recipes that don't open it, so v2-base keeps its environment hash.
+id: v2-biz
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "biz.*"]
+  mcp_servers: [fs, sql, biz]

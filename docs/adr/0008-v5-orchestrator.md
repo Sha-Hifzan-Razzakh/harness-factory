@@ -26,7 +26,9 @@ V4's planner and the delegate machinery.
      `snapshot.delegations`.
 3. **Replan on a block or a stop.** A worker that replies `BLOCKED: ...`, stops early or fails sends the work done
    so far and the reason to the planner, at most `max_replans` times. Without replans left, the run goes on. The
-   output is the last worker's answer.
+   output is the last worker's answer. Two endings don't replan: a worker that ends on infrastructure or a setup
+   failure ends the run INCOMPLETE or ERROR, and no budget left for the next worker is the run's own budget stop
+   (review findings R-02, R-10).
 4. **The planner sees the workers' tools.** The plan prompt lists the tools a worker will have (allowance ∩ worker
    slice), not the orchestrator's.
 5. **Validation.** V5 needs `planning` with `worker_prompt` and needs `delegation`. `delegation.max_calls` must

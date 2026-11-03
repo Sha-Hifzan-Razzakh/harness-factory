@@ -109,8 +109,9 @@ def approx_tokens(obj: Any) -> int:
 
 
 class ScriptedBackend:
-    """Turns are {"tool_calls": [{"name": ..., "arguments": {...}}]}, {"content": "..."}, or {"reject": "..."}: the
-    provider refuses the reply as malformed (MODEL_PARSE), as Groq does with tool_use_failed."""
+    """Turns are {"tool_calls": [{"name": ..., "arguments": {...}}]}, {"content": "..."}, {"reject": "..."}: the
+    provider refuses the reply as malformed (MODEL_PARSE), as Groq does with tool_use_failed, or {"fail": "<ErrorKind>"}:
+    the call fails as already classified (e.g. PROVIDER_ERROR, which the gateway retries, or CONFIG, which it doesn't)."""
 
     def __init__(self, turns: list[dict[str, Any]]) -> None:
         self.turns = list(turns)
@@ -125,6 +126,8 @@ class ScriptedBackend:
         self.i += 1
         if "reject" in turn:
             raise HarnessError(ErrorKind.MODEL_PARSE, turn["reject"])
+        if "fail" in turn:
+            raise HarnessError(ErrorKind(turn["fail"]), f"scripted {turn['fail']}")
         if "tool_calls" in turn:
             calls = [{"id": f"call_{self.i}_{k}", "type": "function",
                       "function": {"name": c["name"], "arguments": json.dumps(c["arguments"])}}
@@ -242,6 +245,13 @@ class ModelGateway:
                             comp = await self.backend.complete(messages, tools, slot, self.provider, served, **extra)
                     else:
                         comp = await self.backend.complete(messages, tools, slot, self.provider, served, **extra)
+                except asyncio.CancelledError:
+                    # Ctrl-C or a cancelled campaign: the call never finished, so give back the tokens it reserved
+                    # (otherwise the persisted ledger over-counts tpm/tpd until the window rolls). Not a provider
+                    # error, so nothing to classify; the cancellation goes on.
+                    span.status, span.error = "error", "cancelled"
+                    self.ledger.record_tokens(bucket, 0, reserve)
+                    raise
                 except Exception as raw:  # classified below; nothing escapes untyped
                     e = raw if isinstance(raw, HarnessError) else classify_provider_error(
                         raw, mid_run=self.successful_calls > 0)

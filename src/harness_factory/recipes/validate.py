@@ -32,8 +32,6 @@ def inert_fields(recipe: HarnessRecipe) -> list[str]:
     out = []
     if recipe.memory != MemoryProfile():
         out.append("memory")
-    if recipe.retrieval is not None and recipe.retrieval.mode != "none":
-        out.append("retrieval")
     if recipe.config.compaction_at != d_cfg.compaction_at:
         out.append("config.compaction_at")
     for f in ("deferred", "defer_above_tokens", "binding"):
@@ -49,8 +47,12 @@ def inert_fields(recipe: HarnessRecipe) -> list[str]:
 
 
 def reachable_tools(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[str]:
-    """Tools the recipe allows on its servers, minus those its policy denies outright."""
+    """Tools the recipe allows on its servers, minus those its policy denies outright, plus the retrieval tool when
+    the recipe retrieves (offered only on tasks with a corpus, ADR 0017)."""
+    from harness_factory.retrieval import tool as retrieval
     out = []
+    if retrieval.active(recipe) and recipe.policies.permission_mode.get(retrieval.RETRIEVE_SPEC.side_effect.value) != "DENY":
+        out.append(retrieval.RETRIEVE_REF)
     for sid in recipe.tools.mcp_servers:
         try:
             server = declared.server(sid)
@@ -76,6 +78,30 @@ def _skill_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[Vali
     if sk.loading == "on_demand" and "skills.load" not in reachable_tools(recipe, declared):
         out.append(ValidationIssue(rule="skills_tool_reachable",
                                    detail="loading on_demand needs the skills server and skills.load in the slice"))
+    return out
+
+
+def _retrieval_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[ValidationIssue]:
+    """ADR 0017. A task without a corpus simply doesn't get the tool, so nothing here depends on tasks."""
+    from harness_factory.retrieval import tool as retrieval
+    r = recipe.retrieval
+    if r is None:
+        return []
+    if r.mode == "none":
+        return [ValidationIssue(rule="retrieval_unused", detail="retrieval.rerank is set but mode is none")] \
+            if r.rerank else []
+    out = []
+    if not retrieval.installed():
+        out.append(ValidationIssue(rule="retrieval_installed",
+                                   detail=f"retrieval mode {r.mode} needs the retrieval extra (uv sync --extra retrieval)"))
+    if retrieval.RETRIEVE_SERVER in {s.id for s in declared.servers}:
+        out.append(ValidationIssue(rule="retrieval_namespace",
+                                   detail=f"tools.yaml declares a server {retrieval.RETRIEVE_SERVER!r}, the retrieval "
+                                          f"tool's namespace"))
+    if recipe.policies.permission_mode.get(retrieval.RETRIEVE_SPEC.side_effect.value) == "DENY":
+        out.append(ValidationIssue(rule="retrieval_unused", detail="retrieval is set but the policy denies READ tools"))
+    if recipe.variant == Variant.V1_SINGLE_CALL:
+        out.append(ValidationIssue(rule="retrieval_unused", detail="V1_SINGLE_CALL ignores the retrieval tool"))
     return out
 
 
@@ -163,9 +189,15 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
 
     for f in inert_fields(recipe):
         issues.append(ValidationIssue(rule="field_implemented", detail=f"{f} is declared but not implemented yet"))
+    for role, slot in recipe.model_slots.items():
+        if slot.seed is not None:   # a campaign axis (RunKey): left out of the recipe hash, so it can't live here
+            issues.append(ValidationIssue(rule="seed_is_campaign_axis",
+                                          detail=f"model slot {role!r} sets seed {slot.seed}: seeds are chosen per "
+                                                 f"run (`--seeds`), never in a recipe"))
     issues += _skill_issues(recipe, declared)
     issues += _delegation_issues(recipe)
     issues += _context_issues(recipe, prompts, providers, provider_id)
+    issues += _retrieval_issues(recipe, declared)
 
     if recipe.variant not in ShapeRegistry.variants():
         issues.append(ValidationIssue(rule="shape_registered", detail=f"{recipe.variant.value} has no shape plugin"))
@@ -235,7 +267,8 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
     unhashed = [r for r in declared.unhashed_tools() if r.split(".")[0] in recipe.tools.mcp_servers]
     if unhashed:
         issues.append(ValidationIssue(rule="tool_schema_hashed",
-                                      detail=f"no schema_hash in tools.yaml for {', '.join(unhashed)}; "
+                                      detail=f"no schema_hash or description_hash in tools.yaml for "
+                                             f"{', '.join(unhashed)}; "
                                              f"run `hfx tools freeze`"))
 
     known = {s.id for s in declared.servers}
@@ -252,9 +285,17 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
 
     needed = "T1"
     for ref in reachable_tools(recipe, declared):
-        tier = RISK_TO_TIER[declared.spec(ref).risk]
-        if TIER_ORDER.index(tier) > TIER_ORDER.index(needed):
-            needed = tier
+        if ref.split(".")[0] not in known:            # a harness-side tool (retrieval: READ, R0)
+            continue
+        spec = declared.spec(ref)
+        risks = [spec.risk]
+        esc = spec.escalation                       # calls the policy lets through with a stronger side effect
+        if esc is not None and recipe.policies.permission_mode.get(esc.side_effect.value) != "DENY":
+            risks.append(esc.risk)
+        for risk in risks:
+            tier = RISK_TO_TIER[risk]
+            if TIER_ORDER.index(tier) > TIER_ORDER.index(needed):
+                needed = tier
     if TIER_ORDER.index(recipe.tier) < TIER_ORDER.index(needed):
         issues.append(ValidationIssue(rule="tier_covers_risk",
                                       detail=f"tier {recipe.tier} is below {needed} required by reachable tools"))

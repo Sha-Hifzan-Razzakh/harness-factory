@@ -1,0 +1,9 @@
+# Matrix (tools): v2-base with one change, the code and git servers (ADR 0012) added to the tool slice: run the
+# workspace's tests or a script, and status, diff, log, commit, branch, checkout over a git-seeded workspace. Tasks
+# list these tools in allowed_tools directly (they reveal and change more than fs does, so no granted_by).
+id: v2-code
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "code.*", "git.*"]
+  mcp_servers: [fs, sql, code, git]

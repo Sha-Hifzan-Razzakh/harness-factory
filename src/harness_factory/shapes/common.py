@@ -114,9 +114,10 @@ def with_spill(inst: HarnessInstance, tools: list[dict[str, Any]]) -> list[dict[
 
 
 def offered_tools(inst: HarnessInstance, restrict: Callable[[str], bool] | None = None) -> list[dict[str, Any]]:
-    """The tools a model is offered: the allowed MCP tools (optionally narrowed, e.g. to a V3 stage), plus the
+    """The tools a model is offered: the allowed tools (optionally narrowed, e.g. to a V3 stage), plus the
     delegate tool when the recipe has a delegation and the limits allow one more level. Every shape uses this, so a
-    recipe dimension that adds a harness-side tool reaches every shape the same way."""
+    recipe dimension that adds a harness-side tool reaches every shape the same way. The allowed tools include the
+    run's LocalTools (retrieval, ADR 0017), which ToolExecutor offers and executes like MCP tools."""
     spec = delegate.tool_spec(inst, restrict)
     return inst.tools.tools_for_model(restrict) + ([spec] if spec else [])
 
@@ -135,11 +136,14 @@ async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
             return out, f"budget:{limit}"
         name, args = call["function"]["name"], call["function"]["arguments"]
         where = f"{inst.scope}/{scope}" if inst.scope and scope else (scope or inst.scope)
+        stop = None
         if name == delegate.DELEGATE_NAME and inst.delegate is not None:
-            text = await delegate.run_delegate(inst, args, restrict=restrict, scope=where)
+            text, stop = await delegate.run_delegate(inst, args, restrict=restrict, scope=where)
         else:
             text = (await inst.tools.execute(name, args, restrict=restrict, scope=where)).text
         out.append({"role": "tool", "tool_call_id": call["id"], "content": text})
+        if stop:                    # a helper ended on infrastructure or a setup failure: so does this run
+            return out, stop
     return out, None
 
 
@@ -157,6 +161,8 @@ def finish(inst: HarnessInstance, messages: list[dict[str, Any]], stop: str | No
            error_text: str | None = None) -> RunResult:
     """Map how the shape ended to a RunResult. Grading then sets SUCCESS / PARTIAL / FAIL for every scored run."""
     stop = stop or DONE
+    if error_text is None:
+        error_text = inst.stop_error
     result = RunResult(run_key=inst.run_key, messages=messages, output=output)
     result.violations = list(inst.tools.violations)
     if stop == DONE:

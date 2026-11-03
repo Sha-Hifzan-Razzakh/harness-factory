@@ -1,0 +1,52 @@
+id: rag-01
+version: 1
+domain: research
+instruction: The knowledge base is in corpus/. Under the customer refund policy that is in effect now, what is the
+  largest refund a support agent may approve without a manager's sign-off? Answer with the amount in AED and the
+  id of the document you took it from (kb-NNN).
+env_seed:
+  files: ../../seeds/kb/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- retrieval
+- research
+- distractors
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.7
+    pattern: (?s)\A(?!.*(?<![\d,.])(?:500|1,?000|2,?000)(?![\d,]))(?=.*(?<![\d,.])750(?![\d,]))
+  - id: source
+    kind: output_regex
+    weight: 0.3
+    pattern: (?is)\A(?!.*(?<!\w)(?:kb\-030|kb\-053|kb\-001)(?!\w))(?=.*(?<!\w)kb\-009(?!\w))
+  - id: kb-009_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: corpus/kb-009.md
+    text: |
+      # Customer refund policy, version 3
+
+      Document: kb-009
+      Updated: 2026-03-01
+
+      Status: in effect from 1 March 2026. This version supersedes version 2 (2024).
+
+      Who can approve a refund. A support agent may approve a refund of up to 750 AED per order without a manager's
+      sign-off. A refund above 750 AED needs approval from a support team lead, and a refund above 5,000 AED also needs
+      the finance controller.
+
+      How refunds are paid. Refunds go back to the original payment method within 5 working days. Cash on delivery
+      orders are refunded by bank transfer once the customer confirms their IBAN.
+
+      Partial refunds. Shipping fees are refunded only when the whole order is returned or the delay was ours.

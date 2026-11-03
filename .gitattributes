@@ -1,0 +1,4 @@
+# Seed documents are compared byte for byte (seed hash, tests/test_taskgen.py): never convert line endings.
+*.pdf binary
+*.docx binary
+*.xlsx binary

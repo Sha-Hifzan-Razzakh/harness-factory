@@ -1,0 +1,41 @@
+# docs/design/benchmark.example.yaml, made fast and offline for tests: the scripted provider, the P0 tasks named
+# one by one, one seed. Same sections, same meaning.  Run it:  hfx bench tests/fixtures/benchmark.scripted.yaml
+
+name: scripted-first-look
+note: The example benchmark on scripted models (offline, seconds).
+
+tasks:
+  splits: [DEV, TEST]
+  ids: [fs-01, fs-02, mix-01, sql-01, sql-02]
+
+recipes:
+  - v2-base
+  - v3-staged
+
+models:
+  - {model: scripted/replay, provider: scripted}
+
+runners:
+  - native
+
+seeds: 1
+
+faults:
+  - none
+  - first-call-fails
+
+limits:
+  concurrency: 8
+  budget_usd: 0.01
+  deadline_days: 1
+
+judge:
+  score: E
+  freeze_cost_baseline: true
+  report: true
+  compare:
+    base: v2-base
+    against: [v3-staged]
+
+calibration:
+  enabled: false

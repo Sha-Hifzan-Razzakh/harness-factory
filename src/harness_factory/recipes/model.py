@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from harness_factory import settings
 from harness_factory.hashing import content_hash
@@ -96,6 +96,12 @@ class RuntimeConfig(BaseModel):
     recover_malformed: int | None = Field(None, ge=0)
     compaction: CompactionSpec | None = None          # summarise old turns near the context limit (ADR 0015)
 
+    @field_validator("recover_malformed")
+    @classmethod
+    def _no_recovery_is_none(cls, v: int | None) -> int | None:
+        """0 and None both mean "no recovery": one value, so equal behaviour hashes equal."""
+        return v or None
+
 
 class PolicySet(BaseModel):
     permission_mode: dict[SideEffectName, PermissionModeName] = Field(
@@ -113,9 +119,12 @@ class MemoryProfile(BaseModel):
 
 
 class RetrievalConfig(BaseModel):
+    """Retrieval as a recipe axis (KNW-02, ADR 0017): the `retrieve.search` tool over the task's corpus, served by
+    the harness. Offered only on tasks whose seed has a corpus/ folder; elsewhere the recipe runs like its base.
+    Set (mode other than none), the whole config is in the recipe hash; unset recipes keep theirs."""
     mode: Literal["none", "bm25", "dense", "hybrid"] = "none"
-    top_k: int = 8
-    rerank: bool = False
+    top_k: int = Field(8, ge=1, le=50)               # passages per call
+    rerank: bool = False                             # rerank a pool of top_k x 3 candidates down to top_k
 
 
 class WorkflowStage(BaseModel):
@@ -206,6 +215,10 @@ _HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_p
 _HASH_OMIT_WHEN_NONE += ("config.compaction",)                                                  # ADR 0015
 _HASH_OMIT_WHEN_NONE += ("planning.structured", "planning.max_parallel", "planning.plan_retries")
 
+# Planning fields only V4 reads (V5's steps are delegate calls bounded by the worker's own config), so they are not
+# part of a V5 recipe's identity.
+_V5_UNUSED_PLANNING = ("step_prompt", "step_max_steps")
+
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
 _SLOT_AXES = ("canonical_model", "seed")
@@ -264,7 +277,9 @@ class HarnessRecipe(BaseModel):
         if self.workflow:
             refs += [st.prompt for st in self.workflow.stages]
         if self.planning:
-            refs += [self.planning.planner_prompt, self.planning.step_prompt, self.planning.replan_prompt]
+            refs += [self.planning.planner_prompt, self.planning.replan_prompt]
+            if self.variant != Variant.V5_ORCHESTRATOR:     # V5's steps are worker tasks, never step prompts
+                refs.append(self.planning.step_prompt)
             if self.planning.worker_prompt:
                 refs.append(self.planning.worker_prompt)
         if self.config.compaction:
@@ -283,6 +298,9 @@ class HarnessRecipe(BaseModel):
                 slot[axis] = None
         for dotted in _HASH_OMIT_WHEN_NONE:
             _drop_none(data, dotted)
+        if self.variant == Variant.V5_ORCHESTRATOR and data.get("planning"):
+            for unused in _V5_UNUSED_PLANNING:             # fields V5 never reads: editing them changes nothing
+                data["planning"].pop(unused, None)
         sources = prompts if prompts is not None else default_prompt_sources()
         data["prompt_sources"] = {ref: sources[ref] for ref in sorted(set(self.prompt_refs())) if ref in sources}
         if self.skills.skill_ids:                       # only then, so recipes without skills keep their hash
