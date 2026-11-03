@@ -6,12 +6,16 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from harness_factory.provision.provisioner import missing_task_tools
 from harness_factory.recipes.model import WorkflowSpec
 from harness_factory.recipes.validate import validate_recipe
 from harness_factory.runner.runner import Factory, run_one
 from harness_factory.substrate.gateway import ScriptedBackend
 
-TASK_IDS = [t.id for t in Factory.load(store=False).tasks.all()]
+_F = Factory.load(store=False)
+TASK_IDS = [t.id for t in _F.tasks.all()]
+# V3's stages narrow fs and sql only: a task that needs another server (code, git) is never planned with v3-staged.
+V3_TASK_IDS = [t.id for t in _F.tasks.all() if not missing_task_tools(_F.recipes["v3-staged"], t, _F.declared)]
 
 
 def _spans(rec, kind):
@@ -56,7 +60,7 @@ async def test_step_cap_does_not_block_the_last_steps_tools(factory):
 
 # ---------------------------------------------------------------- V3
 
-@pytest.mark.parametrize("task_id", TASK_IDS)
+@pytest.mark.parametrize("task_id", V3_TASK_IDS)
 async def test_v3_replay_succeeds_through_all_stages(factory, task_id):
     rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v3-staged"], "scripted/replay",
                         "scripted")

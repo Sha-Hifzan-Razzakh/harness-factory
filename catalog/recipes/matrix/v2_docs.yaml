@@ -1,0 +1,9 @@
+# Matrix (tools): v2-base with one change, the docs server (read and edit .docx and .xlsx, read .pdf) added to the
+# tool slice. Office tasks name docs.* tools, so they run on this recipe and are left out of plans for recipes
+# that don't open the server. Its libraries are pinned in env/mcp/deps.py (docs/adr/0013-server-dependencies.md).
+id: v2-docs
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "docs.*"]
+  mcp_servers: [fs, sql, docs]

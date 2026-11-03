@@ -108,7 +108,7 @@ def hard_rules(recipe, task_class: str, canonical_model: str, provider: str, fac
                task=None) -> Pruned | None:
     """SEL-01: tier covers the class's risk, the shape fits the step depth, the model can do what the shape
     needs, the recipe is valid here, and (given a task) it reaches every tool the task allows."""
-    from harness_factory.provision.provisioner import allowed_tools
+    from harness_factory.provision.provisioner import missing_task_tools
     from harness_factory.recipes.validate import validate_recipe
 
     depth, _, risk = task_class.split("|")
@@ -122,8 +122,7 @@ def hard_rules(recipe, task_class: str, canonical_model: str, provider: str, fac
     if issues:
         return Pruned(recipe_id=recipe.id, rule=issues[0].rule, detail=issues[0].detail)
     if task is not None:                     # the task's own allowance; granted extras (search, skills) are optional
-        direct = {r for r in factory.declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)}
-        missing = sorted(direct - allowed_tools(recipe, task, factory.declared))
+        missing = missing_task_tools(recipe, task, factory.declared)
         if missing:
             return Pruned(recipe_id=recipe.id, rule="reaches_task_tools", detail=f"cannot call {', '.join(missing)}")
     return None

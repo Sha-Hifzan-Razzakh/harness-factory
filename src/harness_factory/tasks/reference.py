@@ -3,6 +3,9 @@
     PLAN  = [{"tool": "fs.write_file", "args": {...}}, ...]   # tool calls that solve the task
     FINAL = "..."                                             # the final answer text
 
+A step marked `"optional": True` (e.g. a `retrieve.search` call, ADR 0017) is one a harness may not offer: the
+scripted model skips it when its tool isn't offered, and the plan must still solve the task without it.
+
 A task becomes 'verified' only when its reference solution passes its own oracle (TSK-04).
 Scripted backends derive their turns from the same plan, so offline runs exercise the real path.
 """
@@ -56,7 +59,11 @@ class PlanBackend:
             script, so the same plan) does the work, then the parent gives the final answer. Without a delegate
             tool it is replay
 
-    Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
+        An optional step whose tool isn't offered right now is skipped (the retrieval tool exists only in recipes that
+    retrieve), so one plan drives recipes with and without it.
+
+    Every style answers a compaction request (the compactor slot) with a fixed summary of it, without moving the
+    plan. Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
     step ("Step i of n: ...") or a V5 worker's part ("Your part: ..."), it makes the next plan call and then closes
     the step, so one plan step runs per V4 step or V5 worker.
     """
@@ -107,6 +114,10 @@ class PlanBackend:
         from harness_factory.substrate.gateway import Completion, approx_tokens
 
         offered = {t["function"]["name"] for t in tools}
+        if getattr(slot, "role", None) == "compactor":       # a summary request (ADR 0015): the plan doesn't move
+            from harness_factory.substrate.context import scripted_summary
+            msg = {"role": "assistant", "content": scripted_summary(messages)}
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if getattr(slot, "role", None) == "planner":
             lines = [f"{n}. Call {s['tool']} with {json.dumps(s['args'])}"
                      for n, s in enumerate(self.plan[self.i:], 1)] or ["1. Give the final answer."]
@@ -128,6 +139,9 @@ class PlanBackend:
             msg = self._msg(model_name(self.last_step["tool"]), self.last_step["args"])
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         self.retries = 0
+        while self.i < len(self.plan) and self.plan[self.i].get("optional") \
+                and model_name(self.plan[self.i]["tool"]) not in offered:
+            self.i += 1
         marker = next((m.get("content") for m in reversed(messages)
                        if m.get("role") == "user" and self._STEP.search(m.get("content") or "")), None)
         if marker != self.step_marker:

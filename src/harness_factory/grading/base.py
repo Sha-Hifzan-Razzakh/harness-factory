@@ -48,6 +48,7 @@ class GradeContext:
     spans: list[Span]
     max_steps: int
     remote: dict[str, Any] = field(default_factory=dict)   # server -> its test tenant's state after the run
+    sandbox: Any = None              # the run's Sandbox: checks that run code or git ask it (Sandbox.probe)
     judgements: dict[str, RubricVerdict] = field(default_factory=dict)   # rubric check id -> the judge's verdict
 
 
@@ -167,6 +168,17 @@ class GradingPipeline:
         for g in graders.values():
             check_declaration(g)
         self.graders = graders
+
+    def unknown(self, task) -> list[str]:
+        """Grader ids the task asks for that this pipeline doesn't have."""
+        return [g for g in task.grader_ids if g not in self.graders]
+
+    def check(self, task) -> None:
+        """Fail before a run starts (and before any model call) when a task names a grader that doesn't exist."""
+        unknown = self.unknown(task)
+        if unknown:
+            raise ValueError(f"task {task.key()} asks for unknown grader(s) {', '.join(map(repr, unknown))}; "
+                             f"known: {', '.join(sorted(self.graders))}")
 
     def versions(self, grader_ids: list[str] | None = None) -> dict[str, str]:
         return {gid: g.version for gid, g in self.graders.items() if grader_ids is None or gid in grader_ids}
