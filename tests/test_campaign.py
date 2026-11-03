@@ -141,7 +141,7 @@ async def test_a_failing_run_does_not_stop_the_campaign(factory):
              RunSpec(task_id="fs-01", recipe_id="v2-base", canonical_model="no-such-model", provider="scripted"),
              RunSpec(task_id="sql-01", recipe_id="v2-base", canonical_model="scripted/replay", provider="scripted")]
     result = await run_campaign(factory, specs, concurrency=3)
-    assert [r.run_key.task_version for r in result.records] == ["fs-01@1", "sql-01@1"]
+    assert [r.run_key.task_version for r in result.records] == ["fs-01@1", "sql-01@2"]
     assert len(result.errors) == 1 and "no-such-model" in result.errors[0].error
 
 
