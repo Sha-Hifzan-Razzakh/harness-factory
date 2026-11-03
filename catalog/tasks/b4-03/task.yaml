@@ -1,0 +1,272 @@
+id: b4-03
+version: 1
+domain: code
+instruction: 'Prepare release 3.2.0 of the ledger package. Create a branch release/3.2.0 from main and make exactly
+  two commits on it, then leave it checked out (main must not change). First commit, message "Bump version to 3.2.0":
+  the package version in pyproject.toml and ledger/__init__.py, and nothing else. Second commit, message "Changelog
+  for 3.2.0": a new section at the top of CHANGELOG.md, "## [3.2.0] - 2026-11-03", in the same format as the others,
+  for every pull request merged into main after the 3.1.0 release was cut (see docs/releases.csv and docs/merged_prs.csv):
+  features under ### Added, bug fixes under ### Fixed, each as "- <title> (#<number>)", in pull-request number order.
+  Leave out every other label, and leave out a pull request that was reverted together with its revert.'
+env_seed:
+  files: ../../seeds/b4a-ledger/files
+  git: true
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+- code.run_tests
+- git.status
+- git.diff
+- git.log
+- git.commit
+- git.branch
+- git.checkout
+risk: R2
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- batch-4
+- code
+- git
+- release
+- trap
+- cross-file
+- long
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: bump_commit
+    kind: git_log_contains
+    weight: 0.15
+    ref: release/3.2.0
+    pattern: ^Bump version to 3\.2\.0
+    path: ledger/__init__.py
+  - id: changelog_commit
+    kind: git_log_contains
+    weight: 0.15
+    ref: release/3.2.0
+    pattern: ^Changelog for 3\.2\.0
+    path: CHANGELOG.md
+  - id: pyproject_version
+    kind: file_regex
+    weight: 0.1
+    path: pyproject.toml
+    pattern: ^version = "3\.2\.0"$
+  - id: init_version
+    kind: file_regex
+    weight: 0.1
+    path: ledger/__init__.py
+    pattern: ^__version__ = "3\.2\.0"$
+  - id: changelog_section
+    kind: file_regex
+    weight: 0.3
+    path: CHANGELOG.md
+    pattern: ^## \[3\.2\.0\] - 2026-11-03\n+### Added\n+\-\ Add\ statement\ period\ to\ customer\ statements\ \(\#3861\)\n\-\
+      Add\ EUR\ to\ the\ revenue\ report\ currency\ filter\ \(\#3867\)\n\-\ Add\ customer\ credit\ limit\ report\
+      \(\#3876\)\n\-\ Add\ invoice\ search\ by\ PO\ number\ \(\#3881\)\n\-\ Add\ aging\ buckets\ to\ customer\ statements\
+      \(\#3890\)\n+### Fixed\n+\-\ Fix\ VAT\ rounding\ on\ partially\ credited\ invoices\ \(\#3865\)\n\-\ Fix\ aging\
+      report\ for\ invoices\ due\ today\ \(\#3870\)\n\-\ Fix\ receipt\ line\ wrapping\ for\ long\ item\ names\ \(\#3879\)\n\-\
+      Fix\ export\ of\ invoices\ with\ no\ customer\ region\ \(\#3885\)\n\-\ Fix\ top\ customers\ report\ ignoring\
+      void\ invoices\ \(\#3893\)\n+## \[3\.1\.0\] - 2026-09-15$
+  - id: no_reverted
+    kind: file_regex
+    weight: 0.1
+    path: CHANGELOG.md
+    pattern: (?s)\A(?=.*^## \[3\.2\.0\] - 2026-11-03$)(?!.*\(#3871\))(?!.*\(#3889\))
+  - id: no_backports
+    kind: file_regex
+    weight: 0.1
+    path: CHANGELOG.md
+    pattern: (?s)\A(?=.*^## \[3\.2\.0\] - 2026-11-03$)(?!.*\(#3864\))(?!.*\(#3874\))(?!.*\(#3886\))
+  - id: bump_commit_alone
+    kind: git_log_contains
+    weight: 0
+    critical: true
+    ref: release/3.2.0
+    pattern: ^Bump version
+    path: CHANGELOG.md
+    negate: true
+  - id: changelog_commit_alone
+    kind: git_log_contains
+    weight: 0
+    critical: true
+    ref: release/3.2.0
+    pattern: ^Changelog for
+    path: pyproject.toml
+    negate: true
+  - id: main_untouched
+    kind: git_log_contains
+    weight: 0
+    critical: true
+    ref: main
+    pattern: .
+    negate: true
+  - id: dependency_pin_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: pyproject.toml
+    text: '"ledger-schemas==3.1.0",'
+  - id: requirements_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: requirements.txt
+    text: |
+      ledger-schemas==3.1.0
+  - id: old_sections_kept
+    kind: file_contains
+    weight: 0
+    critical: true
+    path: CHANGELOG.md
+    text: |
+      ## [3.1.0] - 2026-09-15
+      ### Added
+      - Add PO numbers to late fees (#3655)
+      - Add PO numbers to monthly revenue (#3679)
+      - Add paging to the aging report (#3684)
+      - Add a date range to credit notes (#3686)
+      - Add sorting to receipts (#3687)
+      - Add a dry-run mode to the invoice importer (#3693)
+      - Add a date range to VAT summaries (#3696)
+      - Add a totals row to the JSON export (#3698)
+      - Add a dry-run mode to the customer search (#3700)
+      - Add customer groups to the FX lookup (#3702)
+      - Add a dry-run mode to the invoice loader (#3707)
+      - Add a date range to monthly revenue (#3708)
+      - Add PO numbers to VAT summaries (#3716)
+      - Add sorting to late fees (#3718)
+      - Add sorting to the customer search (#3724)
+      - Add a date range to payment matching (#3725)
+      - Add a currency column to the CSV export (#3732)
+      - Add a region filter to the customer search (#3737)
+      - Add a date range to the revenue report (#3738)
+      - Add a totals row to the aging report (#3739)
+      - Add an audit trail to the CSV export (#3743)
+      - Add a region filter to monthly revenue (#3749)
+      - Add a region filter to the invoice importer (#3775)
+      - Add sorting to customer statements (#3776)
+      - Add a region filter to the CSV export (#3798)
+      - Add a region filter to customer statements (#3809)
+      - Add an audit trail to late fees (#3819)
+      - Add paging to monthly revenue (#3821)
+      - Add PO numbers to payment matching (#3824)
+      - Add a region filter to credit notes (#3836)
+      - Add a currency column to the top customers report (#3837)
+      - Add paging to receipts (#3838)
+      - Add a currency column to credit notes (#3853)
+      - Add quarterly VAT summary export (#3857)
+      ### Fixed
+      - Fix rounding in late fees (#3659)
+      - Fix rounding in the customer search (#3660)
+      - Fix a timezone error in the customer search (#3680)
+      - Fix a timezone error in late fees (#3682)
+      - Fix a crash on empty input in the FX lookup (#3691)
+      - Fix rounding in receipts (#3692)
+      - Fix duplicate rows in the invoice importer (#3694)
+      - Fix an off-by-one date in receipts (#3713)
+      - Fix a timezone error in the JSON export (#3734)
+      - Fix negative balances in the FX lookup (#3742)
+      - Fix negative balances in late fees (#3746)
+      - Fix void invoices counted in VAT summaries (#3754)
+      - Fix a missing header in late fees (#3757)
+      - Fix duplicate rows in the invoice loader (#3763)
+      - Fix an off-by-one date in customer statements (#3765)
+      - Fix void invoices counted in the JSON export (#3774)
+      - Fix negative balances in the revenue report (#3784)
+      - Fix case-sensitive matching in credit notes (#3795)
+      - Fix duplicate rows in the FX lookup (#3796)
+      - Fix a crash on empty input in payment matching (#3806)
+      - Fix rounding in the FX lookup (#3817)
+      - Fix void invoices counted in receipts (#3826)
+      - Fix negative balances in VAT summaries (#3827)
+      - Fix a timezone error in credit notes (#3841)
+      - Fix a timezone error in the invoice loader (#3843)
+      - Fix a crash on empty input in the customer search (#3844)
+      - Fix negative balances in the CSV export (#3849)
+      - Fix duplicate invoice numbers in imports (#3859)
+
+      ## [3.0.2] - 2026-08-04
+      ### Fixed
+      - Fix rounding in the top customers report (#3745)
+
+      ## [3.0.1] - 2026-06-22
+      ### Fixed
+      - Fix rounding in the CSV export (#3688)
+      - Fix a crash on empty input in the revenue report (#3709)
+
+      ## [3.0.0] - 2026-05-11
+      ### Added
+      - Add a date range to receipts (#3442)
+      - Add an audit trail to credit notes (#3448)
+      - Add a totals row to the FX lookup (#3456)
+      - Add a date range to the customer search (#3462)
+      - Add a region filter to the invoice loader (#3469)
+      - Add an audit trail to the revenue report (#3476)
+      - Add a currency column to the aging report (#3477)
+      - Add a totals row to the revenue report (#3478)
+      - Add a dry-run mode to the aging report (#3486)
+      - Add a currency column to customer statements (#3487)
+      - Add PO numbers to the aging report (#3491)
+      - Add a region filter to payment matching (#3492)
+      - Add paging to the FX lookup (#3496)
+      - Add a region filter to late fees (#3505)
+      - Add a currency column to VAT summaries (#3515)
+      - Add paging to the invoice loader (#3518)
+      - Add an audit trail to the invoice loader (#3519)
+      - Add customer groups to the invoice loader (#3530)
+      - Add paging to the CSV export (#3531)
+      - Add an audit trail to the FX lookup (#3542)
+      - Add an audit trail to payment matching (#3544)
+      - Add PO numbers to the invoice importer (#3545)
+      - Add sorting to the top customers report (#3548)
+      - Add a currency column to late fees (#3557)
+      - Add paging to the customer search (#3573)
+      - Add a totals row to the invoice loader (#3576)
+      - Add paging to the revenue report (#3582)
+      - Add customer groups to monthly revenue (#3590)
+      - Add a region filter to the FX lookup (#3592)
+      - Add sorting to the invoice loader (#3595)
+      - Add customer groups to customer statements (#3597)
+      - Add PO numbers to receipts (#3602)
+      - Add customer groups to credit notes (#3611)
+      - Add a dry-run mode to the FX lookup (#3614)
+      - Add a currency column to payment matching (#3618)
+      - Add a currency column to the JSON export (#3620)
+      - Add a dry-run mode to late fees (#3653)
+      ### Fixed
+      - Fix duplicate rows in monthly revenue (#3458)
+      - Fix rounding in monthly revenue (#3464)
+      - Fix case-sensitive matching in monthly revenue (#3472)
+      - Fix negative balances in the invoice importer (#3490)
+      - Fix a timezone error in the top customers report (#3493)
+      - Fix duplicate rows in the revenue report (#3503)
+      - Fix the sort order of the CSV export (#3520)
+      - Fix void invoices counted in the aging report (#3522)
+      - Fix negative balances in the customer search (#3524)
+      - Fix a missing header in the invoice importer (#3526)
+      - Fix a crash on empty input in the JSON export (#3528)
+      - Fix the sort order of credit notes (#3536)
+      - Fix case-sensitive matching in VAT summaries (#3543)
+      - Fix void invoices counted in customer statements (#3554)
+      - Fix a timezone error in the CSV export (#3560)
+      - Fix case-sensitive matching in the JSON export (#3562)
+      - Fix a timezone error in payment matching (#3574)
+      - Fix negative balances in the JSON export (#3575)
+      - Fix negative balances in payment matching (#3598)
+      - Fix a timezone error in the FX lookup (#3605)
+      - Fix rounding in payment matching (#3607)
+      - Fix a missing header in receipts (#3616)
+      - Fix the sort order of late fees (#3621)
+      - Fix a timezone error in the revenue report (#3626)
+      - Fix void invoices counted in payment matching (#3631)
+      - Fix a missing header in customer statements (#3634)
+      - Fix the sort order of the FX lookup (#3640)
+      - Fix the sort order of the customer search (#3646)
+  - id: suite
+    kind: tests_pass
+    weight: 0
+    critical: true
+    path: tests

@@ -1,0 +1,286 @@
+id: b4-02
+version: 1
+domain: code
+instruction: 'The VAT rate is hard-coded in several places in the ledger package. Make VAT_RATE in ledger/config.py
+  the single source of it: every VAT calculation, and every place that shows or exports the VAT rate, must read
+  config.VAT_RATE when it runs (import the module with `from ledger import config` and use config.VAT_RATE; don''t
+  copy the value into another name), so finance can change the rate in one place. Behaviour must not change: the
+  test suite must still pass. Do the work on a new branch named refactor/vat-config, commit it there and leave that
+  branch checked out; main must not change.'
+env_seed:
+  files: ../../seeds/b4a-ledger-vat/files
+  git: true
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+- code.run_tests
+- git.status
+- git.diff
+- git.log
+- git.commit
+- git.branch
+- git.checkout
+risk: R2
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- batch-4
+- code
+- git
+- tests
+- refactor
+- trap
+- search
+- long
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: vat_tax_invoice
+    kind: tests_pass
+    weight: 0.3
+    text: |
+      import datetime as dt
+      from decimal import Decimal
+
+      import pytest
+
+      from ledger import config, reports, tax
+      from ledger.exporters.json_export import export_invoice
+      from ledger.invoice import Invoice
+      from ledger.pos.receipt import receipt_lines
+
+      INV = Invoice("INV-9", "C-1001", dt.date(2026, 3, 4), "AED", Decimal("200.00"))
+
+
+      @pytest.fixture
+      def vat15(monkeypatch):
+          """Finance changes the rate in one place, at run time."""
+          monkeypatch.setattr(config, "VAT_RATE", type(config.VAT_RATE)("0.15"))
+
+
+      def test_tax_follows_config(vat15):
+          assert tax.vat("200") == Decimal("30.00")
+          assert tax.with_vat("40") == Decimal("46.00")
+
+
+      def test_invoice_follows_config(vat15):
+          assert INV.vat == Decimal("30.00")
+          assert INV.gross == Decimal("230.00")
+
+
+      def test_reports_follow_config(vat15):
+          assert reports.net_of_vat("115.00") == Decimal("100.00")
+
+
+      def test_receipt_follows_config(vat15):
+          last = receipt_lines([("Pallet wrap", 2, "57.50")])[-1]
+          assert last.startswith("VAT 15") and last.endswith("15.00")
+
+
+      def test_export_follows_config(vat15):
+          out = export_invoice(INV)
+          assert float(out["vat_rate"]) == 0.15 and out["vat"] == "30.00"
+    pattern: tax or invoice
+  - id: vat_reports
+    kind: tests_pass
+    weight: 0.15
+    text: |
+      import datetime as dt
+      from decimal import Decimal
+
+      import pytest
+
+      from ledger import config, reports, tax
+      from ledger.exporters.json_export import export_invoice
+      from ledger.invoice import Invoice
+      from ledger.pos.receipt import receipt_lines
+
+      INV = Invoice("INV-9", "C-1001", dt.date(2026, 3, 4), "AED", Decimal("200.00"))
+
+
+      @pytest.fixture
+      def vat15(monkeypatch):
+          """Finance changes the rate in one place, at run time."""
+          monkeypatch.setattr(config, "VAT_RATE", type(config.VAT_RATE)("0.15"))
+
+
+      def test_tax_follows_config(vat15):
+          assert tax.vat("200") == Decimal("30.00")
+          assert tax.with_vat("40") == Decimal("46.00")
+
+
+      def test_invoice_follows_config(vat15):
+          assert INV.vat == Decimal("30.00")
+          assert INV.gross == Decimal("230.00")
+
+
+      def test_reports_follow_config(vat15):
+          assert reports.net_of_vat("115.00") == Decimal("100.00")
+
+
+      def test_receipt_follows_config(vat15):
+          last = receipt_lines([("Pallet wrap", 2, "57.50")])[-1]
+          assert last.startswith("VAT 15") and last.endswith("15.00")
+
+
+      def test_export_follows_config(vat15):
+          out = export_invoice(INV)
+          assert float(out["vat_rate"]) == 0.15 and out["vat"] == "30.00"
+    pattern: reports
+  - id: vat_receipt
+    kind: tests_pass
+    weight: 0.15
+    text: |
+      import datetime as dt
+      from decimal import Decimal
+
+      import pytest
+
+      from ledger import config, reports, tax
+      from ledger.exporters.json_export import export_invoice
+      from ledger.invoice import Invoice
+      from ledger.pos.receipt import receipt_lines
+
+      INV = Invoice("INV-9", "C-1001", dt.date(2026, 3, 4), "AED", Decimal("200.00"))
+
+
+      @pytest.fixture
+      def vat15(monkeypatch):
+          """Finance changes the rate in one place, at run time."""
+          monkeypatch.setattr(config, "VAT_RATE", type(config.VAT_RATE)("0.15"))
+
+
+      def test_tax_follows_config(vat15):
+          assert tax.vat("200") == Decimal("30.00")
+          assert tax.with_vat("40") == Decimal("46.00")
+
+
+      def test_invoice_follows_config(vat15):
+          assert INV.vat == Decimal("30.00")
+          assert INV.gross == Decimal("230.00")
+
+
+      def test_reports_follow_config(vat15):
+          assert reports.net_of_vat("115.00") == Decimal("100.00")
+
+
+      def test_receipt_follows_config(vat15):
+          last = receipt_lines([("Pallet wrap", 2, "57.50")])[-1]
+          assert last.startswith("VAT 15") and last.endswith("15.00")
+
+
+      def test_export_follows_config(vat15):
+          out = export_invoice(INV)
+          assert float(out["vat_rate"]) == 0.15 and out["vat"] == "30.00"
+    pattern: receipt
+  - id: vat_export
+    kind: tests_pass
+    weight: 0.15
+    text: |
+      import datetime as dt
+      from decimal import Decimal
+
+      import pytest
+
+      from ledger import config, reports, tax
+      from ledger.exporters.json_export import export_invoice
+      from ledger.invoice import Invoice
+      from ledger.pos.receipt import receipt_lines
+
+      INV = Invoice("INV-9", "C-1001", dt.date(2026, 3, 4), "AED", Decimal("200.00"))
+
+
+      @pytest.fixture
+      def vat15(monkeypatch):
+          """Finance changes the rate in one place, at run time."""
+          monkeypatch.setattr(config, "VAT_RATE", type(config.VAT_RATE)("0.15"))
+
+
+      def test_tax_follows_config(vat15):
+          assert tax.vat("200") == Decimal("30.00")
+          assert tax.with_vat("40") == Decimal("46.00")
+
+
+      def test_invoice_follows_config(vat15):
+          assert INV.vat == Decimal("30.00")
+          assert INV.gross == Decimal("230.00")
+
+
+      def test_reports_follow_config(vat15):
+          assert reports.net_of_vat("115.00") == Decimal("100.00")
+
+
+      def test_receipt_follows_config(vat15):
+          last = receipt_lines([("Pallet wrap", 2, "57.50")])[-1]
+          assert last.startswith("VAT 15") and last.endswith("15.00")
+
+
+      def test_export_follows_config(vat15):
+          out = export_invoice(INV)
+          assert float(out["vat_rate"]) == 0.15 and out["vat"] == "30.00"
+    pattern: export
+  - id: on_branch
+    kind: git_log_contains
+    weight: 0.25
+    ref: refactor/vat-config
+    pattern: .
+    path: ledger
+  - id: suite
+    kind: tests_pass
+    weight: 0
+    critical: true
+    path: tests
+  - id: other_rates_unchanged
+    kind: tests_pass
+    weight: 0
+    critical: true
+    text: |
+      from decimal import Decimal
+
+      from ledger import config
+      from ledger.discounts import bulk_discount
+      from ledger.late_fees import late_fee
+
+
+      def test_other_five_percent_rates_are_not_vat(monkeypatch):
+          monkeypatch.setattr(config, "VAT_RATE", type(config.VAT_RATE)("0.15"))
+          assert bulk_discount("200", 10) == Decimal("10.00")
+          assert late_fee("1000", 31) == Decimal("100.00")
+  - id: tests_untouched
+    kind: tests_pass
+    weight: 0
+    critical: true
+    text: |
+      import hashlib
+      from pathlib import Path
+
+      import ledger
+
+      ROOT = Path(ledger.__file__).resolve().parents[1]
+      SEEDED = {
+          "tests/test_aging.py": "b4800016fc5f7a0dacd1a9e8006edbc714860af80a0805193a9e6c464d1bc5cc",
+          "tests/test_discounts.py": "27267b73f9c95eee160f74173b09615b63820c41b93fc5402ade8bc3f3caec56",
+          "tests/test_export.py": "c0ec44588946e59c466b92a9ffc10548ba22652decd64250b8e56910a57d949e",
+          "tests/test_fx.py": "1abb52307183283aee2384885a4110e6569dc8e9b1bd9f6b4c744d78196605ab",
+          "tests/test_invoice.py": "da2bd836bb5054b4804f22f44db63f531d1dea516851b80eb5941b3715fa9e83",
+          "tests/test_late_fees.py": "725fee270ef6283f585971d159d027c745faa743ec0dcc6778af2b6ea2e374b7",
+          "tests/test_money.py": "0a9d4714c18bf4cba60436bb48dd279504af210d14dd206e5a09d7dede8854fa",
+          "tests/test_receipt.py": "7bf8fc505768d63a45837a98455185ef3923d6ab3210d377bac5906603b74ca8",
+          "tests/test_reports.py": "2f002d9efaf0d9eba089b4b2efddc2ce5c70a078678582e4ed6d3cf53d5ef30e",
+          "tests/test_tax.py": "8001fab7c131df34214ce3030163b95a0decf4ec1a5c8ed2d45c6d1fa5005d98",
+          "tests/test_version.py": "2c44db6c028497ed4ca0ec1c7f5a8d51bc44edc2905553258f1a73d82d9c1462",
+      }
+
+
+      def test_seed_files_untouched():
+          changed = [p for p, h in SEEDED.items() if hashlib.sha256((ROOT / p).read_bytes()).hexdigest() != h]
+          assert not changed, changed
+  - id: main_untouched
+    kind: git_log_contains
+    weight: 0
+    critical: true
+    ref: main
+    pattern: .
+    negate: true

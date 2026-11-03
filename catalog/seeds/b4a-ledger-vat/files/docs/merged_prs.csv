@@ -1,0 +1,334 @@
+number,title,label,base,merged_at,author
+3442,Add a date range to receipts,feature,main,2026-01-06T08:32:00+04:00,yusuf.a
+3443,Bump ledger-schemas test fixtures,deps,main,2026-01-07T01:14:00+04:00,dev-bot
+3444,Run tests on Python 3.13,ci,main,2026-01-07T03:24:00+04:00,yusuf.a
+3446,Tidy imports in payment matching,chore,main,2026-01-07T10:06:00+04:00,hadi.k
+3448,Add an audit trail to credit notes,feature,main,2026-01-08T14:12:00+04:00,mariam.s
+3450,Add examples for the invoice importer,docs,main,2026-01-11T00:51:00+04:00,mariam.s
+3451,Fix duplicate rows in receipts,bug,release/2.9.x,2026-01-11T11:57:00+04:00,hadi.k
+3453,Bump ruff,deps,main,2026-01-12T00:59:00+04:00,dev-bot
+3455,Update the README section on the CSV export,docs,main,2026-01-12T05:49:00+04:00,omar.f
+3456,Add a totals row to the FX lookup,feature,main,2026-01-13T06:02:00+04:00,sara.m
+3458,Fix duplicate rows in monthly revenue,bug,main,2026-01-14T09:53:00+04:00,mariam.s
+3459,Bump pytest,deps,main,2026-01-14T14:19:00+04:00,dev-bot
+3461,Bump ledger-schemas test fixtures,deps,main,2026-01-14T17:00:00+04:00,dev-bot
+3462,Add a date range to the customer search,feature,main,2026-01-15T12:49:00+04:00,sara.m
+3464,Fix rounding in monthly revenue,bug,main,2026-01-16T00:56:00+04:00,omar.f
+3466,Add examples for receipts,docs,main,2026-01-16T03:10:00+04:00,omar.f
+3468,Bump python-dateutil,deps,main,2026-01-16T03:16:00+04:00,dev-bot
+3469,Add a region filter to the invoice loader,feature,main,2026-01-16T03:43:00+04:00,hadi.k
+3471,Remove dead code in the JSON export,chore,main,2026-01-17T01:42:00+04:00,omar.f
+3472,Fix case-sensitive matching in monthly revenue,bug,main,2026-01-18T09:53:00+04:00,hadi.k
+3474,Bump ruff,deps,main,2026-01-19T00:44:00+04:00,dev-bot
+3475,Bump ledger-schemas test fixtures,deps,main,2026-01-19T12:54:00+04:00,dev-bot
+3476,Add an audit trail to the revenue report,feature,main,2026-01-19T21:37:00+04:00,hadi.k
+3477,Add a currency column to the aging report,feature,main,2026-01-21T11:56:00+04:00,mariam.s
+3478,Add a totals row to the revenue report,feature,main,2026-01-23T16:18:00+04:00,yusuf.a
+3479,Document the top customers report,docs,main,2026-01-24T00:06:00+04:00,sara.m
+3481,Pin the CI runner image,ci,main,2026-01-24T04:49:00+04:00,lina.r
+3482,Fix a missing header in credit notes,bug,release/2.9.x,2026-01-24T18:27:00+04:00,omar.f
+3484,Bump ledger-schemas test fixtures,deps,main,2026-01-25T00:21:00+04:00,dev-bot
+3486,Add a dry-run mode to the aging report,feature,main,2026-01-26T03:18:00+04:00,yusuf.a
+3487,Add a currency column to customer statements,feature,main,2026-01-26T14:57:00+04:00,lina.r
+3488,Cache dependencies in CI,ci,main,2026-01-27T07:11:00+04:00,lina.r
+3490,Fix negative balances in the invoice importer,bug,main,2026-01-29T12:36:00+04:00,yusuf.a
+3491,Add PO numbers to the aging report,feature,main,2026-01-30T08:57:00+04:00,hadi.k
+3492,Add a region filter to payment matching,feature,main,2026-01-30T20:48:00+04:00,yusuf.a
+3493,Fix a timezone error in the top customers report,bug,main,2026-01-31T10:44:00+04:00,hadi.k
+3494,Add examples for the top customers report,docs,main,2026-02-01T00:34:00+04:00,omar.f
+3496,Add paging to the FX lookup,feature,main,2026-02-01T10:27:00+04:00,omar.f
+3498,Rename helpers in late fees,chore,main,2026-02-02T02:26:00+04:00,sara.m
+3500,Fix rounding in the JSON export,bug,release/2.9.x,2026-02-03T04:15:00+04:00,yusuf.a
+3502,Add examples for the customer search,docs,main,2026-02-03T10:02:00+04:00,sara.m
+3503,Fix duplicate rows in the revenue report,bug,main,2026-02-04T02:44:00+04:00,lina.r
+3505,Add a region filter to late fees,feature,main,2026-02-04T23:28:00+04:00,sara.m
+3506,Bump pytest,deps,main,2026-02-05T06:32:00+04:00,dev-bot
+3507,Bump python-dateutil,deps,main,2026-02-06T16:53:00+04:00,dev-bot
+3509,Remove dead code in the customer search,chore,main,2026-02-08T12:40:00+04:00,mariam.s
+3510,Fix a crash on empty input in credit notes,bug,release/2.9.x,2026-02-09T10:39:00+04:00,hadi.k
+3511,Remove dead code in receipts,chore,main,2026-02-12T02:35:00+04:00,mariam.s
+3512,Document customer statements,docs,main,2026-02-12T10:53:00+04:00,mariam.s
+3513,Cache dependencies in CI,ci,main,2026-02-14T09:36:00+04:00,lina.r
+3514,Add examples for VAT summaries,docs,main,2026-02-16T10:49:00+04:00,yusuf.a
+3515,Add a currency column to VAT summaries,feature,main,2026-02-17T00:01:00+04:00,yusuf.a
+3516,Add examples for the invoice loader,docs,main,2026-02-17T16:57:00+04:00,lina.r
+3518,Add paging to the invoice loader,feature,main,2026-02-21T23:29:00+04:00,omar.f
+3519,Add an audit trail to the invoice loader,feature,main,2026-02-22T01:20:00+04:00,yusuf.a
+3520,Fix the sort order of the CSV export,bug,main,2026-02-22T02:01:00+04:00,lina.r
+3521,Tidy imports in the FX lookup,chore,main,2026-02-22T09:19:00+04:00,sara.m
+3522,Fix void invoices counted in the aging report,bug,main,2026-02-22T21:42:00+04:00,sara.m
+3523,Bump python-dateutil,deps,main,2026-02-23T02:29:00+04:00,dev-bot
+3524,Fix negative balances in the customer search,bug,main,2026-02-24T01:19:00+04:00,hadi.k
+3526,Fix a missing header in the invoice importer,bug,main,2026-03-01T18:19:00+04:00,omar.f
+3527,Remove dead code in the FX lookup,chore,main,2026-03-01T19:55:00+04:00,omar.f
+3528,Fix a crash on empty input in the JSON export,bug,main,2026-03-06T01:09:00+04:00,mariam.s
+3530,Add customer groups to the invoice loader,feature,main,2026-03-06T05:59:00+04:00,yusuf.a
+3531,Add paging to the CSV export,feature,main,2026-03-07T05:42:00+04:00,hadi.k
+3533,Add examples for the JSON export,docs,main,2026-03-07T20:40:00+04:00,sara.m
+3534,Add examples for the FX lookup,docs,main,2026-03-09T00:29:00+04:00,mariam.s
+3535,Tidy imports in the CSV export,chore,main,2026-03-09T01:16:00+04:00,sara.m
+3536,Fix the sort order of credit notes,bug,main,2026-03-09T03:25:00+04:00,yusuf.a
+3537,Bump ruff,deps,main,2026-03-09T14:18:00+04:00,dev-bot
+3539,Bump pytest,deps,main,2026-03-10T04:33:00+04:00,dev-bot
+3540,Rename helpers in payment matching,chore,main,2026-03-10T16:09:00+04:00,omar.f
+3542,Add an audit trail to the FX lookup,feature,main,2026-03-10T21:21:00+04:00,lina.r
+3543,Fix case-sensitive matching in VAT summaries,bug,main,2026-03-10T22:47:00+04:00,omar.f
+3544,Add an audit trail to payment matching,feature,main,2026-03-11T05:29:00+04:00,sara.m
+3545,Add PO numbers to the invoice importer,feature,main,2026-03-11T21:16:00+04:00,lina.r
+3547,Cache dependencies in CI,ci,main,2026-03-13T16:22:00+04:00,lina.r
+3548,Add sorting to the top customers report,feature,main,2026-03-13T19:24:00+04:00,omar.f
+3550,Fix case-sensitive matching in customer statements,bug,release/2.9.x,2026-03-14T12:23:00+04:00,yusuf.a
+3552,Split the lint job,ci,main,2026-03-14T14:54:00+04:00,hadi.k
+3553,Remove dead code in customer statements,chore,main,2026-03-15T13:47:00+04:00,yusuf.a
+3554,Fix void invoices counted in customer statements,bug,main,2026-03-16T08:57:00+04:00,omar.f
+3556,Fix rounding in the invoice importer,bug,release/2.9.x,2026-03-17T01:23:00+04:00,omar.f
+3557,Add a currency column to late fees,feature,main,2026-03-17T04:32:00+04:00,hadi.k
+3558,Split the lint job,ci,main,2026-03-17T05:10:00+04:00,yusuf.a
+3560,Fix a timezone error in the CSV export,bug,main,2026-03-18T10:31:00+04:00,yusuf.a
+3562,Fix case-sensitive matching in the JSON export,bug,main,2026-03-18T10:47:00+04:00,yusuf.a
+3564,Fix the sort order of the top customers report,bug,release/2.9.x,2026-03-18T23:21:00+04:00,hadi.k
+3565,Bump ledger-schemas test fixtures,deps,main,2026-03-20T02:39:00+04:00,dev-bot
+3566,Bump python-dateutil,deps,main,2026-03-21T03:18:00+04:00,dev-bot
+3567,Update the README section on the top customers report,docs,main,2026-03-21T18:49:00+04:00,omar.f
+3568,Update the README section on payment matching,docs,main,2026-03-21T21:45:00+04:00,omar.f
+3569,Remove dead code in late fees,chore,main,2026-03-22T02:18:00+04:00,hadi.k
+3570,Bump ruff,deps,main,2026-03-23T03:37:00+04:00,dev-bot
+3571,Bump python-dateutil,deps,main,2026-03-23T10:20:00+04:00,dev-bot
+3572,Tidy imports in the invoice loader,chore,main,2026-03-24T06:10:00+04:00,hadi.k
+3573,Add paging to the customer search,feature,main,2026-03-27T06:41:00+04:00,lina.r
+3574,Fix a timezone error in payment matching,bug,main,2026-03-27T11:18:00+04:00,yusuf.a
+3575,Fix negative balances in the JSON export,bug,main,2026-03-27T14:10:00+04:00,omar.f
+3576,Add a totals row to the invoice loader,feature,main,2026-03-27T18:52:00+04:00,mariam.s
+3577,Tidy imports in receipts,chore,main,2026-03-29T09:17:00+04:00,hadi.k
+3579,Bump pytest,deps,main,2026-03-29T19:56:00+04:00,dev-bot
+3580,Document the invoice importer,docs,main,2026-03-30T05:18:00+04:00,sara.m
+3581,Remove dead code in payment matching,chore,main,2026-03-30T14:35:00+04:00,yusuf.a
+3582,Add paging to the revenue report,feature,main,2026-03-31T06:23:00+04:00,hadi.k
+3584,Bump python-dateutil,deps,main,2026-03-31T09:06:00+04:00,dev-bot
+3585,Update the README section on the FX lookup,docs,main,2026-03-31T19:01:00+04:00,lina.r
+3586,Bump python-dateutil,deps,main,2026-04-01T11:45:00+04:00,dev-bot
+3587,Cache dependencies in CI,ci,main,2026-04-02T06:05:00+04:00,mariam.s
+3589,Bump python-dateutil,deps,main,2026-04-02T09:45:00+04:00,dev-bot
+3590,Add customer groups to monthly revenue,feature,main,2026-04-03T13:15:00+04:00,lina.r
+3592,Add a region filter to the FX lookup,feature,main,2026-04-03T13:50:00+04:00,lina.r
+3593,Refactor the JSON export,chore,main,2026-04-03T23:24:00+04:00,mariam.s
+3594,Bump python-dateutil,deps,main,2026-04-05T19:45:00+04:00,dev-bot
+3595,Add sorting to the invoice loader,feature,main,2026-04-06T22:41:00+04:00,hadi.k
+3596,Pin the CI runner image,ci,main,2026-04-07T05:39:00+04:00,lina.r
+3597,Add customer groups to customer statements,feature,main,2026-04-07T15:04:00+04:00,sara.m
+3598,Fix negative balances in payment matching,bug,main,2026-04-08T06:10:00+04:00,hadi.k
+3600,Document the FX lookup,docs,main,2026-04-08T10:47:00+04:00,hadi.k
+3602,Add PO numbers to receipts,feature,main,2026-04-08T16:14:00+04:00,mariam.s
+3604,Cache dependencies in CI,ci,main,2026-04-09T16:32:00+04:00,yusuf.a
+3605,Fix a timezone error in the FX lookup,bug,main,2026-04-09T21:21:00+04:00,yusuf.a
+3606,Bump pytest,deps,main,2026-04-10T15:59:00+04:00,dev-bot
+3607,Fix rounding in payment matching,bug,main,2026-04-10T21:31:00+04:00,lina.r
+3609,Tidy imports in the top customers report,chore,main,2026-04-11T07:01:00+04:00,sara.m
+3611,Add customer groups to credit notes,feature,main,2026-04-12T20:29:00+04:00,sara.m
+3613,Refactor receipts,chore,main,2026-04-13T05:26:00+04:00,mariam.s
+3614,Add a dry-run mode to the FX lookup,feature,main,2026-04-13T17:46:00+04:00,yusuf.a
+3615,Update the README section on receipts,docs,main,2026-04-14T00:36:00+04:00,yusuf.a
+3616,Fix a missing header in receipts,bug,main,2026-04-14T13:21:00+04:00,sara.m
+3618,Add a currency column to payment matching,feature,main,2026-04-15T02:56:00+04:00,sara.m
+3620,Add a currency column to the JSON export,feature,main,2026-04-16T21:53:00+04:00,yusuf.a
+3621,Fix the sort order of late fees,bug,main,2026-04-17T02:33:00+04:00,mariam.s
+3622,Tidy imports in credit notes,chore,main,2026-04-17T10:10:00+04:00,mariam.s
+3624,Add examples for the aging report,docs,main,2026-04-19T08:01:00+04:00,yusuf.a
+3626,Fix a timezone error in the revenue report,bug,main,2026-04-20T08:28:00+04:00,yusuf.a
+3628,Run tests on Python 3.13,ci,main,2026-04-20T09:39:00+04:00,omar.f
+3629,Fix a crash on empty input in the invoice importer,bug,release/2.9.x,2026-04-20T11:26:00+04:00,mariam.s
+3630,Add examples for the CSV export,docs,main,2026-04-21T02:05:00+04:00,mariam.s
+3631,Fix void invoices counted in payment matching,bug,main,2026-04-21T07:51:00+04:00,sara.m
+3632,Fix duplicate rows in customer statements,bug,release/2.9.x,2026-04-23T01:20:00+04:00,lina.r
+3633,Tidy imports in monthly revenue,chore,main,2026-04-25T15:12:00+04:00,sara.m
+3634,Fix a missing header in customer statements,bug,main,2026-04-26T22:45:00+04:00,lina.r
+3635,Update the README section on VAT summaries,docs,main,2026-04-28T20:10:00+04:00,omar.f
+3636,Refactor the customer search,chore,main,2026-04-29T03:40:00+04:00,yusuf.a
+3637,Bump ledger-schemas test fixtures,deps,main,2026-04-29T23:00:00+04:00,dev-bot
+3639,Add examples for the revenue report,docs,main,2026-04-30T00:40:00+04:00,omar.f
+3640,Fix the sort order of the FX lookup,bug,main,2026-04-30T03:25:00+04:00,mariam.s
+3642,Remove dead code in the revenue report,chore,main,2026-05-01T22:47:00+04:00,mariam.s
+3643,Rename helpers in the invoice importer,chore,main,2026-05-02T08:35:00+04:00,yusuf.a
+3644,Rename helpers in the customer search,chore,main,2026-05-02T20:19:00+04:00,yusuf.a
+3645,Document the revenue report,docs,main,2026-05-03T19:25:00+04:00,mariam.s
+3646,Fix the sort order of the customer search,bug,main,2026-05-05T20:33:00+04:00,sara.m
+3647,Update the README section on credit notes,docs,main,2026-05-08T16:58:00+04:00,hadi.k
+3649,Document the invoice loader,docs,main,2026-05-08T21:37:00+04:00,yusuf.a
+3650,Bump ledger-schemas test fixtures,deps,main,2026-05-10T01:25:00+04:00,dev-bot
+3651,Cache dependencies in CI,ci,main,2026-05-10T06:47:00+04:00,yusuf.a
+3652,Remove dead code in the invoice loader,chore,main,2026-05-10T07:35:00+04:00,sara.m
+3653,Add a dry-run mode to late fees,feature,main,2026-05-10T22:01:00+04:00,omar.f
+3654,Rename helpers in the FX lookup,chore,main,2026-05-10T23:38:00+04:00,mariam.s
+3655,Add PO numbers to late fees,feature,main,2026-05-11T18:35:00+04:00,sara.m
+3656,Pin the CI runner image,ci,main,2026-05-13T04:55:00+04:00,yusuf.a
+3657,Update the README section on the aging report,docs,main,2026-05-15T20:01:00+04:00,sara.m
+3659,Fix rounding in late fees,bug,main,2026-05-16T06:20:00+04:00,mariam.s
+3660,Fix rounding in the customer search,bug,main,2026-05-16T09:49:00+04:00,omar.f
+3661,Refactor the aging report,chore,main,2026-05-16T17:34:00+04:00,yusuf.a
+3662,Bump ledger-schemas test fixtures,deps,main,2026-05-16T20:14:00+04:00,dev-bot
+3663,Pin the CI runner image,ci,main,2026-05-17T10:17:00+04:00,sara.m
+3664,Tidy imports in the revenue report,chore,main,2026-05-17T22:56:00+04:00,mariam.s
+3666,Tidy imports in the customer search,chore,main,2026-05-18T15:43:00+04:00,omar.f
+3668,Bump pytest,deps,main,2026-05-18T23:11:00+04:00,dev-bot
+3669,Pin the CI runner image,ci,main,2026-05-19T02:50:00+04:00,mariam.s
+3671,Cache dependencies in CI,ci,main,2026-05-20T10:18:00+04:00,yusuf.a
+3672,Tidy imports in late fees,chore,main,2026-05-20T11:20:00+04:00,lina.r
+3673,Cache dependencies in CI,ci,main,2026-05-21T11:13:00+04:00,hadi.k
+3674,Cache dependencies in CI,ci,main,2026-05-21T18:29:00+04:00,omar.f
+3676,Bump python-dateutil,deps,main,2026-05-24T07:08:00+04:00,dev-bot
+3677,Bump ledger-schemas test fixtures,deps,main,2026-05-26T01:00:00+04:00,dev-bot
+3679,Add PO numbers to monthly revenue,feature,main,2026-05-28T17:30:00+04:00,mariam.s
+3680,Fix a timezone error in the customer search,bug,main,2026-05-29T03:41:00+04:00,sara.m
+3681,Remove dead code in the top customers report,chore,main,2026-05-29T07:16:00+04:00,yusuf.a
+3682,Fix a timezone error in late fees,bug,main,2026-05-30T01:17:00+04:00,omar.f
+3684,Add paging to the aging report,feature,main,2026-05-30T05:37:00+04:00,sara.m
+3685,Rename helpers in the JSON export,chore,main,2026-05-30T06:10:00+04:00,sara.m
+3686,Add a date range to credit notes,feature,main,2026-05-31T05:48:00+04:00,mariam.s
+3687,Add sorting to receipts,feature,main,2026-05-31T09:33:00+04:00,lina.r
+3688,Fix rounding in the CSV export,bug,release/3.0.x,2026-06-04T01:32:00+04:00,hadi.k
+3690,Bump python-dateutil,deps,main,2026-06-04T02:25:00+04:00,dev-bot
+3691,Fix a crash on empty input in the FX lookup,bug,main,2026-06-04T10:05:00+04:00,lina.r
+3692,Fix rounding in receipts,bug,main,2026-06-05T19:15:00+04:00,yusuf.a
+3693,Add a dry-run mode to the invoice importer,feature,main,2026-06-05T19:26:00+04:00,lina.r
+3694,Fix duplicate rows in the invoice importer,bug,main,2026-06-07T08:26:00+04:00,sara.m
+3696,Add a date range to VAT summaries,feature,main,2026-06-09T00:10:00+04:00,mariam.s
+3698,Add a totals row to the JSON export,feature,main,2026-06-09T08:10:00+04:00,mariam.s
+3700,Add a dry-run mode to the customer search,feature,main,2026-06-09T18:46:00+04:00,hadi.k
+3701,Refactor VAT summaries,chore,main,2026-06-09T23:42:00+04:00,yusuf.a
+3702,Add customer groups to the FX lookup,feature,main,2026-06-10T16:30:00+04:00,omar.f
+3704,Update the README section on the invoice loader,docs,main,2026-06-13T10:25:00+04:00,mariam.s
+3706,Split the lint job,ci,main,2026-06-14T20:14:00+04:00,sara.m
+3707,Add a dry-run mode to the invoice loader,feature,main,2026-06-15T13:26:00+04:00,lina.r
+3708,Add a date range to monthly revenue,feature,main,2026-06-16T04:18:00+04:00,hadi.k
+3709,Fix a crash on empty input in the revenue report,bug,release/3.0.x,2026-06-17T18:08:00+04:00,sara.m
+3711,Remove dead code in credit notes,chore,main,2026-06-18T03:06:00+04:00,sara.m
+3713,Fix an off-by-one date in receipts,bug,main,2026-06-18T09:53:00+04:00,hadi.k
+3714,Tidy imports in the aging report,chore,main,2026-06-19T01:09:00+04:00,mariam.s
+3716,Add PO numbers to VAT summaries,feature,main,2026-06-19T12:11:00+04:00,sara.m
+3717,Rename helpers in the CSV export,chore,main,2026-06-21T01:50:00+04:00,lina.r
+3718,Add sorting to late fees,feature,main,2026-06-21T13:44:00+04:00,hadi.k
+3719,Add examples for payment matching,docs,main,2026-06-23T16:22:00+04:00,hadi.k
+3720,Bump ruff,deps,main,2026-06-24T23:45:00+04:00,dev-bot
+3722,Refactor the top customers report,chore,main,2026-06-25T02:36:00+04:00,hadi.k
+3724,Add sorting to the customer search,feature,main,2026-06-25T13:07:00+04:00,yusuf.a
+3725,Add a date range to payment matching,feature,main,2026-06-26T10:30:00+04:00,mariam.s
+3726,Bump ruff,deps,main,2026-06-27T02:57:00+04:00,dev-bot
+3728,Add examples for credit notes,docs,main,2026-06-28T03:53:00+04:00,hadi.k
+3729,Refactor the invoice importer,chore,main,2026-06-28T07:06:00+04:00,hadi.k
+3731,Bump pytest,deps,main,2026-06-28T08:28:00+04:00,dev-bot
+3732,Add a currency column to the CSV export,feature,main,2026-06-28T10:32:00+04:00,lina.r
+3734,Fix a timezone error in the JSON export,bug,main,2026-06-28T20:36:00+04:00,sara.m
+3735,Bump pytest,deps,main,2026-06-29T14:13:00+04:00,dev-bot
+3736,Add examples for customer statements,docs,main,2026-07-02T02:35:00+04:00,yusuf.a
+3737,Add a region filter to the customer search,feature,main,2026-07-03T00:59:00+04:00,sara.m
+3738,Add a date range to the revenue report,feature,main,2026-07-03T09:06:00+04:00,mariam.s
+3739,Add a totals row to the aging report,feature,main,2026-07-06T23:24:00+04:00,hadi.k
+3741,Rename helpers in the invoice loader,chore,main,2026-07-07T19:23:00+04:00,lina.r
+3742,Fix negative balances in the FX lookup,bug,main,2026-07-08T02:57:00+04:00,yusuf.a
+3743,Add an audit trail to the CSV export,feature,main,2026-07-08T10:51:00+04:00,lina.r
+3744,Run tests on Python 3.13,ci,main,2026-07-08T11:35:00+04:00,omar.f
+3745,Fix rounding in the top customers report,bug,release/3.0.x,2026-07-08T12:31:00+04:00,lina.r
+3746,Fix negative balances in late fees,bug,main,2026-07-08T13:02:00+04:00,mariam.s
+3747,Rename helpers in the aging report,chore,main,2026-07-09T22:39:00+04:00,hadi.k
+3749,Add a region filter to monthly revenue,feature,main,2026-07-10T03:49:00+04:00,mariam.s
+3750,Bump ruff,deps,main,2026-07-10T04:52:00+04:00,dev-bot
+3751,Update the README section on the revenue report,docs,main,2026-07-10T15:05:00+04:00,hadi.k
+3753,Rename helpers in customer statements,chore,main,2026-07-11T13:05:00+04:00,omar.f
+3754,Fix void invoices counted in VAT summaries,bug,main,2026-07-12T22:19:00+04:00,hadi.k
+3756,Refactor the CSV export,chore,main,2026-07-13T09:58:00+04:00,lina.r
+3757,Fix a missing header in late fees,bug,main,2026-07-14T03:34:00+04:00,lina.r
+3759,Remove dead code in the CSV export,chore,main,2026-07-14T10:44:00+04:00,hadi.k
+3760,Refactor payment matching,chore,main,2026-07-15T13:14:00+04:00,omar.f
+3761,Tidy imports in VAT summaries,chore,main,2026-07-17T15:33:00+04:00,hadi.k
+3762,Bump ruff,deps,main,2026-07-17T15:45:00+04:00,dev-bot
+3763,Fix duplicate rows in the invoice loader,bug,main,2026-07-19T03:04:00+04:00,hadi.k
+3764,Run tests on Python 3.13,ci,main,2026-07-22T15:50:00+04:00,hadi.k
+3765,Fix an off-by-one date in customer statements,bug,main,2026-07-25T15:35:00+04:00,mariam.s
+3766,Rename helpers in receipts,chore,main,2026-07-26T02:32:00+04:00,mariam.s
+3767,Bump python-dateutil,deps,main,2026-07-26T03:43:00+04:00,dev-bot
+3769,Refactor customer statements,chore,main,2026-07-27T03:26:00+04:00,hadi.k
+3771,Bump pytest,deps,main,2026-07-28T17:41:00+04:00,dev-bot
+3772,Cache dependencies in CI,ci,main,2026-07-28T19:48:00+04:00,yusuf.a
+3774,Fix void invoices counted in the JSON export,bug,main,2026-07-30T08:24:00+04:00,lina.r
+3775,Add a region filter to the invoice importer,feature,main,2026-07-30T12:04:00+04:00,mariam.s
+3776,Add sorting to customer statements,feature,main,2026-08-01T09:34:00+04:00,sara.m
+3777,Rename helpers in the revenue report,chore,main,2026-08-01T16:19:00+04:00,hadi.k
+3779,Rename helpers in the top customers report,chore,main,2026-08-01T22:42:00+04:00,omar.f
+3780,Bump ruff,deps,main,2026-08-01T23:48:00+04:00,dev-bot
+3782,Refactor the revenue report,chore,main,2026-08-02T23:55:00+04:00,sara.m
+3783,Refactor the FX lookup,chore,main,2026-08-03T11:10:00+04:00,omar.f
+3784,Fix negative balances in the revenue report,bug,main,2026-08-03T15:22:00+04:00,omar.f
+3786,Document receipts,docs,main,2026-08-05T14:07:00+04:00,sara.m
+3788,Remove dead code in VAT summaries,chore,main,2026-08-06T09:35:00+04:00,yusuf.a
+3789,Rename helpers in monthly revenue,chore,main,2026-08-06T22:08:00+04:00,sara.m
+3790,Fix the sort order of VAT summaries,bug,release/3.0.x,2026-08-07T19:33:00+04:00,omar.f
+3791,Tidy imports in the invoice importer,chore,main,2026-08-08T05:12:00+04:00,yusuf.a
+3793,Document monthly revenue,docs,main,2026-08-08T07:33:00+04:00,mariam.s
+3795,Fix case-sensitive matching in credit notes,bug,main,2026-08-08T13:10:00+04:00,sara.m
+3796,Fix duplicate rows in the FX lookup,bug,main,2026-08-08T16:55:00+04:00,hadi.k
+3798,Add a region filter to the CSV export,feature,main,2026-08-10T11:55:00+04:00,omar.f
+3800,Rename helpers in VAT summaries,chore,main,2026-08-12T22:42:00+04:00,lina.r
+3801,Rename helpers in credit notes,chore,main,2026-08-15T00:02:00+04:00,hadi.k
+3802,Bump python-dateutil,deps,main,2026-08-16T18:39:00+04:00,dev-bot
+3803,Fix the sort order of monthly revenue,bug,release/3.0.x,2026-08-18T04:21:00+04:00,lina.r
+3804,Bump python-dateutil,deps,main,2026-08-19T12:22:00+04:00,dev-bot
+3806,Fix a crash on empty input in payment matching,bug,main,2026-08-19T20:45:00+04:00,hadi.k
+3808,Split the lint job,ci,main,2026-08-20T07:21:00+04:00,yusuf.a
+3809,Add a region filter to customer statements,feature,main,2026-08-20T09:53:00+04:00,omar.f
+3811,Bump ruff,deps,main,2026-08-21T09:13:00+04:00,dev-bot
+3812,Run tests on Python 3.13,ci,main,2026-08-21T19:54:00+04:00,yusuf.a
+3814,Fix rounding in the aging report,bug,release/3.0.x,2026-08-22T01:10:00+04:00,yusuf.a
+3815,Pin the CI runner image,ci,main,2026-08-22T07:44:00+04:00,lina.r
+3816,Run tests on Python 3.13,ci,main,2026-08-22T09:06:00+04:00,mariam.s
+3817,Fix rounding in the FX lookup,bug,main,2026-08-22T15:44:00+04:00,mariam.s
+3819,Add an audit trail to late fees,feature,main,2026-08-23T02:58:00+04:00,yusuf.a
+3820,Document the customer search,docs,main,2026-08-23T10:07:00+04:00,yusuf.a
+3821,Add paging to monthly revenue,feature,main,2026-08-23T14:49:00+04:00,mariam.s
+3823,Refactor monthly revenue,chore,main,2026-08-23T20:25:00+04:00,sara.m
+3824,Add PO numbers to payment matching,feature,main,2026-08-23T22:03:00+04:00,sara.m
+3825,Bump ledger-schemas test fixtures,deps,main,2026-08-24T13:51:00+04:00,dev-bot
+3826,Fix void invoices counted in receipts,bug,main,2026-08-26T09:26:00+04:00,omar.f
+3827,Fix negative balances in VAT summaries,bug,main,2026-08-27T00:34:00+04:00,omar.f
+3829,Tidy imports in customer statements,chore,main,2026-08-28T00:33:00+04:00,omar.f
+3830,Bump pytest,deps,main,2026-08-30T19:30:00+04:00,dev-bot
+3832,Remove dead code in the invoice importer,chore,main,2026-08-31T07:47:00+04:00,sara.m
+3834,Refactor the invoice loader,chore,main,2026-09-02T13:34:00+04:00,omar.f
+3836,Add a region filter to credit notes,feature,main,2026-09-02T23:30:00+04:00,lina.r
+3837,Add a currency column to the top customers report,feature,main,2026-09-03T21:35:00+04:00,mariam.s
+3838,Add paging to receipts,feature,main,2026-09-04T03:07:00+04:00,yusuf.a
+3840,Fix void invoices counted in credit notes,bug,release/3.0.x,2026-09-04T10:43:00+04:00,mariam.s
+3841,Fix a timezone error in credit notes,bug,main,2026-09-04T16:21:00+04:00,hadi.k
+3842,Bump ledger-schemas test fixtures,deps,main,2026-09-06T23:27:00+04:00,dev-bot
+3843,Fix a timezone error in the invoice loader,bug,main,2026-09-08T03:36:00+04:00,lina.r
+3844,Fix a crash on empty input in the customer search,bug,main,2026-09-08T12:24:00+04:00,lina.r
+3845,Document the JSON export,docs,main,2026-09-09T23:49:00+04:00,hadi.k
+3846,Remove dead code in the aging report,chore,main,2026-09-10T17:30:00+04:00,mariam.s
+3848,Pin the CI runner image,ci,main,2026-09-11T20:31:00+04:00,omar.f
+3849,Fix negative balances in the CSV export,bug,main,2026-09-12T02:02:00+04:00,sara.m
+3850,Bump ledger-schemas test fixtures,deps,main,2026-09-12T03:36:00+04:00,dev-bot
+3852,Update the README section on late fees,docs,main,2026-09-12T16:08:00+04:00,sara.m
+3853,Add a currency column to credit notes,feature,main,2026-09-12T20:45:00+04:00,hadi.k
+3855,Document credit notes,docs,main,2026-09-14T14:40:00+04:00,mariam.s
+3857,Add quarterly VAT summary export,feature,main,2026-09-15T09:40:00+04:00,yusuf.a
+3859,Fix duplicate invoice numbers in imports,bug,main,2026-09-15T10:55:00+04:00,hadi.k
+3861,Add statement period to customer statements,feature,main,2026-09-15T14:05:00+04:00,mariam.s
+3862,Bump pytest to 8.4.2,deps,main,2026-09-16T09:12:00+04:00,dev-bot
+3864,Fix VAT rounding on partially credited invoices,bug,release/3.1.x,2026-09-17T10:40:00+04:00,sara.m
+3865,Fix VAT rounding on partially credited invoices,bug,main,2026-09-17T11:02:00+04:00,omar.f
+3867,Add EUR to the revenue report currency filter,feature,main,2026-09-22T15:30:00+04:00,mariam.s
+3868,Document the release checklist,docs,main,2026-09-23T08:55:00+04:00,omar.f
+3870,Fix aging report for invoices due today,bug,main,2026-09-29T13:10:00+04:00,hadi.k
+3871,Add credit-note PDF export,feature,main,2026-10-01T12:00:00+04:00,lina.r
+3873,Run CI on pull requests from forks,ci,main,2026-10-02T10:20:00+04:00,hadi.k
+3874,Fix late fee on invoices paid on the due date,bug,release/3.1.x,2026-10-05T09:00:00+04:00,omar.f
+3876,Add customer credit limit report,feature,main,2026-10-07T16:45:00+04:00,omar.f
+3877,Tidy fixtures in report tests,chore,main,2026-10-08T11:15:00+04:00,yusuf.a
+3879,Fix receipt line wrapping for long item names,bug,main,2026-10-12T14:00:00+04:00,omar.f
+3881,Add invoice search by PO number,feature,main,2026-10-14T10:30:00+04:00,omar.f
+3883,Bump python-dateutil to 2.9.0.post0,deps,main,2026-10-15T09:05:00+04:00,dev-bot
+3885,Fix export of invoices with no customer region,bug,main,2026-10-19T15:50:00+04:00,omar.f
+3886,Fix FX lookup for SAR before the first publication,bug,release/3.1.x,2026-10-20T10:10:00+04:00,mariam.s
+3889,"Revert ""Add credit-note PDF export"" (#3871)",revert,main,2026-10-21T17:25:00+04:00,yusuf.a
+3890,Add aging buckets to customer statements,feature,main,2026-10-26T12:40:00+04:00,mariam.s
+3892,Explain FX rounding in the README,docs,main,2026-10-27T09:30:00+04:00,sara.m
+3893,Fix top customers report ignoring void invoices,bug,main,2026-10-29T14:20:00+04:00,omar.f
