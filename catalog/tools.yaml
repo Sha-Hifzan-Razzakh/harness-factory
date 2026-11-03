@@ -1,4 +1,6 @@
 # Declared tools (B11). Discovery is checked against this file; any drift fails provisioning.
+# code.* (ADR 0012): code can change any file in the sandbox, and a reset undoes it, so both code tools are
+# REVERSIBLE; R2 because that reach includes the task database and the git directory, not just the workspace.
 servers:
 - id: fs
   transport: stdio
@@ -9,21 +11,25 @@ servers:
     risk: R0
     timeout_s: 10
     schema_hash: a170ba71ba6b7616
+    description_hash: fa9b86ff082c4648
   - name: read_file
     side_effect: READ
     risk: R0
     timeout_s: 10
     schema_hash: b73ad10303703476
+    description_hash: 870485ec73258bac
   - name: write_file
     side_effect: REVERSIBLE
     risk: R1
     timeout_s: 10
     schema_hash: 7bdc3c044057bdec
+    description_hash: 9ee11e7238fc7bd7
   - name: delete_file
     side_effect: IRREVERSIBLE
     risk: R3
     timeout_s: 10
     schema_hash: 2c850ff602bebf4f
+    description_hash: a0af53d77780b045
 - id: sql
   transport: stdio
   module: harness_factory.env.mcp.impl.sql_server
@@ -33,21 +39,29 @@ servers:
     risk: R0
     timeout_s: 10
     schema_hash: b1f3a94e73f9630d
+    description_hash: 65e042bcdaa10e89
   - name: describe_table
     side_effect: READ
     risk: R0
     timeout_s: 10
     schema_hash: c7aab6d19f86a4be
+    description_hash: 216941729fb07059
   - name: query
     side_effect: READ
     risk: R0
     timeout_s: 20
     schema_hash: a7f55c0befa55fe9
+    description_hash: 8548f7c40570d709
   - name: execute
     side_effect: REVERSIBLE
     risk: R2
     timeout_s: 20
     schema_hash: 24404e954c790312
+    escalation:
+      classifier: sql_destructive
+      side_effect: IRREVERSIBLE
+      risk: R3
+    description_hash: 1dc0f5200a62df85
 - id: search
   transport: stdio
   module: harness_factory.env.mcp.impl.search_server
@@ -59,6 +73,7 @@ servers:
     granted_by:
     - fs.list_dir
     schema_hash: 35fb1fbd2c0362a7
+    description_hash: 682c8a0790dce937
   - name: grep
     side_effect: READ
     risk: R0
@@ -67,6 +82,7 @@ servers:
     - fs.list_dir
     - fs.read_file
     schema_hash: 6efa5f809b4008c9
+    description_hash: 43681e701ea799bf
 - id: skills
   transport: stdio
   module: harness_factory.env.mcp.impl.skills_server
@@ -77,3 +93,239 @@ servers:
     timeout_s: 10
     granted_by: []
     schema_hash: 69385cf2f1024c2c
+    description_hash: 1dd2d197ce7ae22a
+- id: fsx
+  transport: stdio
+  module: harness_factory.env.mcp.impl.fsx_server
+  tools:
+  - name: edit
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    granted_by:
+    - fs.read_file
+    - fs.write_file
+    schema_hash: 8b50424ff01781b6
+    description_hash: 176845b4deee4f8c
+  - name: append
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    - fs.write_file
+    schema_hash: 52535c113f0db6a7
+    description_hash: ae4628f9223012f0
+  - name: move
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    granted_by:
+    - fs.read_file
+    - fs.write_file
+    - fs.delete_file
+    schema_hash: 13978ce4f50d3cc9
+    description_hash: 02a180ad8fbc4e0e
+  - name: mkdir
+    side_effect: REVERSIBLE
+    risk: R0
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    - fs.write_file
+    schema_hash: 44e7d8ef3bb73351
+    description_hash: 5caeb2d494e6b146
+  - name: tree
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    schema_hash: f72161dd0b23361e
+    description_hash: 936294f362dc0a83
+- id: code
+  transport: stdio
+  module: harness_factory.env.mcp.impl.code_server
+  tools:
+  - name: run_tests
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 90
+    observes: true
+    schema_hash: 97687df430b91bd2
+    description_hash: ba95d2f0a9a6e4db
+  - name: run_python
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 90
+    observes: true
+    schema_hash: f9f45432dac19524
+    description_hash: 33492845e84e5b00
+- id: git
+  transport: stdio
+  module: harness_factory.env.mcp.impl.git_server
+  tools:
+  - name: status
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: a1112e5773fb0490
+    description_hash: 8df1496de40af423
+  - name: diff
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: a3652e5b074f4332
+    description_hash: f2bdf46d6320ce75
+  - name: log
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: 18b913b88abf3072
+    description_hash: 3479aa0e16807871
+  - name: commit
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 30
+    schema_hash: d80bc7bf7b1f7b35
+    description_hash: e536ba997b117594
+  - name: branch
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 30
+    schema_hash: 4d64b19ebdbfbbb7
+    description_hash: 071b4027bfbc39c3
+  - name: checkout
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 30
+    schema_hash: 30d195c0c1cff4d9
+    description_hash: 921530a6bc8fa208
+- id: biz
+  transport: stdio
+  module: harness_factory.env.mcp.impl.biz_server
+  tools:
+  - name: crm_search_contacts
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: ff8813b26b7a402a
+    description_hash: e8e896293a3e4b07
+  - name: crm_get_contact
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: edf0aa9923ccaffa
+    description_hash: cf448f34e5335eb4
+  - name: crm_update_contact
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 13fba45406a89663
+    description_hash: 481af04acadf02a3
+  - name: inv_list_invoices
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: adc18de7c219c5e2
+    description_hash: af4cc12c8bda96a0
+  - name: inv_get_invoice
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: d7d8efcce1e02cc1
+    description_hash: f685a130d476a597
+  - name: inv_create_credit_note
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 10
+    schema_hash: cc61ecfbb34c9591
+    description_hash: 729a29a4e09e1424
+  - name: inv_void_credit_note
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 10
+    schema_hash: 2cc87b3f36663b25
+    description_hash: 885d2c317d745f76
+  - name: inv_mark_paid
+    side_effect: IRREVERSIBLE
+    risk: R3
+    timeout_s: 10
+    schema_hash: fd0185ab0fa99d7d
+    description_hash: 0a353ec2dcb020e0
+  - name: tkt_list
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: dd08be833cd0dc71
+    description_hash: ab60f61e5d2f1bac
+  - name: tkt_get
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: 78aff0787405faa7
+    description_hash: 4d1ced059b43535c
+  - name: tkt_comment
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 4aad2416265e829c
+    description_hash: fc4a75baa33cc3df
+  - name: tkt_close
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 875d099f4e51e27a
+    description_hash: ab70d4b644a3db1e
+- id: docs
+  transport: stdio
+  module: harness_factory.env.mcp.impl.docs_server
+  tools:
+  - name: docx_read
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 046ed6283f6311b6
+    description_hash: b1f4992907e86312
+  - name: docx_replace
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 20
+    schema_hash: 07560e739280ed08
+    description_hash: f78f188586452eb9
+  - name: docx_append_paragraph
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 20
+    schema_hash: e56db682b9982312
+    description_hash: 5e0c0427be168514
+  - name: xlsx_sheets
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 61a7209b3d68f040
+    description_hash: 71c5711e60a12e69
+  - name: xlsx_read
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 47b9eb3973ce4e61
+    description_hash: 6d1cb7b230772872
+  - name: xlsx_write
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 20
+    schema_hash: d0cb071acfe47c92
+    description_hash: 80993e5830bfe633
+  - name: pdf_text
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: 82d09bff6a5ac78b
+    description_hash: a1318353a231b8e3
+  - name: pdf_info
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 9c882616c6f5d624
+    description_hash: 9404d7985a0d71a1

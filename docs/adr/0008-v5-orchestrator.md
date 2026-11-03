@@ -26,7 +26,9 @@ V4's planner and the delegate machinery.
      `snapshot.delegations`.
 3. **Replan on a block or a stop.** A worker that replies `BLOCKED: ...`, stops early or fails sends the work done
    so far and the reason to the planner, at most `max_replans` times. Without replans left, the run goes on. The
-   output is the last worker's answer.
+   output is the last worker's answer. Two endings don't replan: a worker that ends on infrastructure or a setup
+   failure ends the run INCOMPLETE or ERROR, and no budget left for the next worker is the run's own budget stop
+   (review findings R-02, R-10).
 4. **The planner sees the workers' tools.** The plan prompt lists the tools a worker will have (allowance ∩ worker
    slice), not the orchestrator's.
 5. **Validation.** V5 needs `planning` with `worker_prompt` and needs `delegation`. `delegation.max_calls` must
@@ -49,3 +51,28 @@ V4's planner and the delegate machinery.
 - A worker can't see what an earlier worker read, only its report. Tasks where a later step needs an earlier step's
   details (exact file contents, say) will show that cost with real models.
 - All five shapes on the roadmap (V1 to V5) are now built.
+
+## Later: workers as a concurrent graph (PR #51)
+
+With `planning.structured: true` (ADR 0007, Later), V5 runs the plan as a graph (`shapes/dag.py`): a step starts
+when every step it depends on has finished, at most `planning.max_parallel` at a time (unset = 1). `max_parallel` is
+refused outside V5 and without structured plans: V4's steps share one conversation.
+
+- **Budget stays exact.** A worker's whole budget is carved from what the team has left before it starts and held
+  (`BudgetGuard.reserve`) until its usage is charged back, so concurrent workers can't together exceed the team's
+  steps, tool calls or tokens. A ready step that can't get a budget waits for a running worker; with none running,
+  the run stops on its budget. Tokens are a pre-call gate everywhere, so a worker can pass its token share by its
+  last call, as a run can pass its own. Quota waits of concurrent workers overlap and are each excluded from the
+  wall clock, so `wall_time_s` is lenient under concurrency; the other limits are not.
+- **Replans wait.** A blocked, stopped or failed worker starts nothing new; the replan happens once the workers
+  still running have finished, so the planner sees every result. A worker that ends on infrastructure or setup ends
+  the run the same way once its siblings finish.
+- **Reproducible records.** Steps are numbered by plan position, ready steps start in plan order, and results, the
+  plan trail and `snapshot.delegations` are kept in step order, never in finishing order. A worker is told what the
+  steps it depends on reported (directly or not), so its prompt doesn't depend on which unrelated sibling finished
+  first. The tracer keeps open spans per asyncio task, so each worker's spans nest under its own delegate call.
+- **Output.** The answer of the plan's last step.
+
+Offline, `scripted/*` plans with `depends_on` from the reference (a read depends on the last earlier write; a write on
+that write and every read since), so `v5-parallel` (structured, `max_parallel: 2`) runs workers concurrently on 10
+of the 20 visible tasks and passes 20/20.

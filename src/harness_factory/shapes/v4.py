@@ -20,13 +20,16 @@ from langgraph.graph import END, START, StateGraph
 
 from harness_factory.hashing import content_hash
 from harness_factory.observability.span import SpanKind
-from harness_factory.recipes.model import ModelSlot, Variant
+from harness_factory.recipes.model import STRUCTURED_PLAN_PROMPTS, ModelSlot, Variant
+from harness_factory.shapes import plans
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
 from harness_factory.shapes.checkpoint import run_graph
 from harness_factory.shapes.common import DONE, finish, model_turn, offered_tools, run_tool_calls
 from harness_factory.shapes.result import RunResult, Violation
+from harness_factory.substrate.errors import ErrorKind
 
 BLOCKED_PREFIX = "BLOCKED:"      # exactly what prompts/plan/step.j2 asks for
+MALFORMED = f"error:{ErrorKind.MODEL_PARSE.value}"      # a harness stop: finish() maps it to malformed_output
 _STEP_LINE = re.compile(r"^\s*(?:step\s*)?(\d+)\s*[.):-]\s*(.+?)\s*$", re.IGNORECASE)
 
 
@@ -57,17 +60,30 @@ class Planner:
         self.inst = inst
         self.pl = inst.recipe.planning
         self.slot = planner_slot(inst)
-        self.system = inst.prompts.render(self.pl.planner_prompt, max_steps=self.pl.max_plan_steps,
+        self.structured = bool(self.pl.structured)
+        self.tool_names = [t["function"]["name"] for t in tools]
+        planner_prompt = STRUCTURED_PLAN_PROMPTS[0] if self.structured else self.pl.planner_prompt
+        self.system = inst.prompts.render(planner_prompt, max_steps=self.pl.max_plan_steps,
                                           tools=[{"name": t["function"]["name"],
                                                   "description": t["function"]["description"]} for t in tools])
         self.task_messages = [m for m in inst.messages if m.get("role") != "system"]
+        self.graph: list[plans.PlanStep] = []          # structured: the current plan's steps, in run order
+        self.by_text: dict[str, plans.PlanStep] = {}   # structured: every planned step, by its text
+        self.retries_used = 0
         inst.snapshot["planner_prompt_hash"] = content_hash([self.system])
         inst.snapshot.setdefault("plans", [])      # kept when a resumed run builds its graph again
 
     async def plan(self) -> tuple[list[str] | None, dict]:
         return await self._ask([], "plan")
 
-    async def replan(self, done: list[dict[str, str]], blocked: dict[str, str]) -> tuple[list[str] | None, dict]:
+    async def replan(self, done: list[dict[str, str]], blocked: dict[str, str] | list[dict[str, str]]
+                     ) -> tuple[list[str] | None, dict]:
+        if self.structured:
+            blocked = blocked if isinstance(blocked, list) else [blocked]
+            ids = {self.by_text[d["step"]].id for d in done if d["step"] in self.by_text}
+            text = self.inst.prompts.render(STRUCTURED_PLAN_PROMPTS[1], done=done, blocked=blocked,
+                                            max_steps=self.pl.max_plan_steps)
+            return await self._ask_structured([{"role": "user", "content": text}], "replan", ids)
         text = self.inst.prompts.render(self.pl.replan_prompt, done=done, blocked=blocked,
                                         max_steps=self.pl.max_plan_steps)
         return await self._ask([{"role": "user", "content": text}], "replan")
@@ -75,8 +91,43 @@ class Planner:
     def current(self) -> list[str]:
         return self.inst.snapshot["plans"][-1]["steps"]
 
+    async def _ask_structured(self, extra: list[dict[str, Any]], kind: str, done_ids: set[str]
+                              ) -> tuple[list[str] | None, dict]:
+        """A JSON plan, validated (shapes/plans.py). A reply that doesn't validate is a malformed output: its model
+        call is marked rejected (an invalid call in Q, like a reply the provider rejects), recorded as
+        `plan_invalid`, and the planner is asked again with the reason, at most `planning.plan_retries` times per run.
+        Then the run stops as malformed_output."""
+        inst = self.inst
+        with inst.tracer.span(SpanKind.handoff, kind, slot=self.slot.role, structured=True):
+            pass
+        convo = [{"role": "system", "content": self.system}, *self.task_messages, *extra]
+        while True:
+            turn = await model_turn(inst, self.slot, convo, [], response_format=plans.JSON_MODE)
+            if turn.stop:
+                return None, {"stop": turn.stop, "error": turn.error}
+            text = (turn.message or {}).get("content") or ""
+            try:
+                steps = plans.parse(text, self.pl.max_plan_steps, self.tool_names, done_ids)
+            except plans.PlanInvalid as e:
+                _reject_last_call(inst, str(e))
+                inst.tools.violations.append(Violation(kind="plan_invalid", detail=f"{kind}: {e}"[:300]))
+                if self.retries_used >= self.pl.retries():
+                    return None, {"stop": MALFORMED, "error": f"the {kind} did not validate: {e}"[:500]}
+                self.retries_used += 1
+                fix = inst.prompts.render(STRUCTURED_PLAN_PROMPTS[2], error=str(e), max_steps=self.pl.max_plan_steps)
+                convo = convo + turn.added + [{"role": "user", "content": fix}]
+                continue
+            self.graph = steps
+            self.by_text.update({s.text(): s for s in steps})
+            texts = [s.text() for s in steps]
+            inst.snapshot["plans"].append({"kind": kind, "steps": texts,
+                                           "graph": [s.model_dump() for s in steps]})
+            return texts, {}
+
     async def _ask(self, extra: list[dict[str, Any]], kind: str) -> tuple[list[str] | None, dict]:
         """Returns (steps, state update); steps is None when the run stops."""
+        if self.structured:
+            return await self._ask_structured(extra, kind, set())
         inst = self.inst
         with inst.tracer.span(SpanKind.handoff, kind, slot=self.slot.role):
             pass
@@ -92,6 +143,16 @@ class Planner:
             steps = ["Complete the task."]
         inst.snapshot["plans"].append({"kind": kind, "steps": steps})
         return steps, {}
+
+
+def _reject_last_call(inst: HarnessInstance, why: str) -> None:
+    """Mark the model call that just returned as a rejected reply (MODEL_PARSE): the trajectory grader then counts
+    it as an invalid call, as it does a reply the provider refuses. Its status stays ok: unlike a refused reply it
+    was a real step and its tokens were spent, so the budget and the cost ledger count them (never free)."""
+    span = next((s for s in reversed(inst.tracer.spans) if s.kind == SpanKind.model_call), None)
+    if span is not None:
+        span.error = ErrorKind.MODEL_PARSE.value
+        span.attributes["rejected"] = f"plan_invalid: {why}"[:300]
 
 
 class PlanState(TypedDict):
@@ -145,9 +206,9 @@ class PlannerShape:
                 return {"reply": ""}
             turn = await model_turn(inst, executor, state["messages"], tools)
             if turn.stop:
-                return {"messages": state["messages"] + turn.added, "stop": turn.stop, "error": turn.error}
+                return {"messages": turn.apply(state["messages"]), "stop": turn.stop, "error": turn.error}
             msg = turn.message
-            update: dict[str, Any] = {"messages": state["messages"] + turn.added,
+            update: dict[str, Any] = {"messages": turn.apply(state["messages"]),
                                       "step_calls": state["step_calls"] + turn.calls}     # rejected replies count
             if not msg.get("tool_calls"):
                 update["reply"] = msg.get("content") or ""
