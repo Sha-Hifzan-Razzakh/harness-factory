@@ -20,6 +20,7 @@ from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
 from harness_factory.mcp.pool import MCPSessionPool
+from harness_factory.mcp.recording import recording_scope
 from harness_factory.observability.tracer import Tracer
 from harness_factory.providers.catalog import ProviderCatalog
 from harness_factory.providers.quota import QuotaLedger
@@ -164,8 +165,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                                                 f"recording (HF_REMOTE_MODE=replay)")
     run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers,
                           fault=fault)
-    for slot in recipe.model_slots.values():
-        slot.seed = seed if slot.seed is None else slot.seed
+    for slot in recipe.model_slots.values():          # the seed is a campaign axis: the run's seed is the one sent
+        slot.seed = seed
     tracer = Tracer(run_key.as_str())
     budget = BudgetGuard(recipe.config)
     provider = providers.get(provider_id)
@@ -187,8 +188,9 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         # One test tenant per run (EXT-07): concurrent runs against the same remote server never see each other.
         tenant = f"hf-{uuid.uuid4().hex[:16]}" if any(declared.server(s).tenant for s in recipe.tools.mcp_servers) \
             else None
+        scopes = {sid: recording_scope(task.key(), seed, task.env_seed.mock_api_state.get(sid)) for sid in remote}
         async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch, tenant=tenant,
-                                  tenant_seeds=task.env_seed.mock_api_state) as pool:
+                                  tenant_seeds=task.env_seed.mock_api_state, recording_scopes=scopes) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
                                  faults=FaultInjector(fault, seed) if fault else None)
             assembler = assembler or PromptAssembler()
@@ -206,7 +208,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
                           "fault_profile": fault.id if fault else None,
                           **({"delegate": delegate.child.id} if delegate else {}),
-                          **({"remote_servers": remote, "remote_mode": remote_mode} if remote else {}),  # ENV-02
+                          **({"remote_servers": remote, "remote_mode": remote_mode,                    # ENV-02
+                              "remote_versions": pool.server_versions()} if remote else {}),
                           **({"tenant": tenant, "tenant_servers": pool.tenant_servers()} if tenant else {}),
                           **sandbox.describe()},
             )

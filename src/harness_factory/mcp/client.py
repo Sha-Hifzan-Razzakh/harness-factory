@@ -69,9 +69,11 @@ class MCPClient:
     """Async context manager. Elicitation and sampling are refused in P0 (MCP-06, MCP-07 arrive in P3)."""
 
     def __init__(self, spec: MCPServerSpec, env: dict[str, str], launcher: Launcher | None = None,
-                 tenant: str | None = None) -> None:
-        """tenant: this run's test tenant id, sent as the spec's tenant header (EXT-07)."""
+                 tenant: str | None = None, recording_scope: str | None = None) -> None:
+        """tenant: this run's test tenant id, sent as the spec's tenant header (EXT-07). recording_scope: what the
+        run's recorded answers are keyed by besides the call (mcp.recording.recording_scope)."""
         self.spec = spec
+        self.recording_scope = recording_scope
         self.tenant = tenant
         self._seen: dict[str, int] = {}      # recording key (n=0) -> calls made so far in this session
         self._writes: list[str] = []         # recording keys of the calls that changed state, in order
@@ -87,6 +89,7 @@ class MCPClient:
         self._closing: asyncio.Event | None = None
         self.mode = "live"
         self.recording = None                # mcp.recording.Recording, for remote servers in record/replay mode
+        self.server_version: str | None = None   # what a remote server reports at initialize (None: not asked)
 
     async def __aenter__(self) -> MCPClient:
         # Python never calls __aexit__ for a failed __aenter__: if anything below fails or is cancelled (Ctrl-C
@@ -106,7 +109,7 @@ class MCPClient:
             from harness_factory.mcp.recording import Recording
             self.mode = settings.remote_mode()
             if self.mode != "live":
-                self.recording = Recording(settings.remote_recordings(), self.spec)
+                self.recording = Recording(settings.remote_recordings(), self.spec, self.recording_scope)
             if self.mode == "replay":
                 return self._open_replay()
             init = await self._open_remote()
@@ -120,6 +123,8 @@ class MCPClient:
             self._session = await self._stack.enter_async_context(ClientSession(read, write))
             init = await self._session.initialize()
         self.protocol_version = str(init.protocol_version)
+        if self.spec.remote:
+            self._check_version(init)
         caps = init.capabilities
         self.capabilities = CapabilitySet(
             tools=caps.tools is not None,
@@ -128,6 +133,20 @@ class MCPClient:
             list_changed=bool(caps.tools and getattr(caps.tools, "list_changed", False)),
         )
         return self
+
+    def _check_version(self, init) -> None:
+        """EXT-05: the pinned version is part of env_hash, so a server now running another version is another
+        experiment. A server that reports a version must report the pinned one; one that reports none can't be
+        checked (`server_version` stays empty and the run's snapshot says so)."""
+        from harness_factory.substrate.errors import ErrorKind, HarnessError
+        info = getattr(init, "server_info", None)
+        self.server_version = str(getattr(info, "version", "") or "")
+        if self.server_version and self.server_version != self.spec.version:
+            raise HarnessError(ErrorKind.PROVISION, f"remote MCP server {self.spec.id!r} at {self.spec.url} reports "
+                                                    f"version {self.server_version!r} but tools.yaml pins "
+                                                    f"{self.spec.version!r}: pin the new version (and run `hfx tools "
+                                                    f"freeze`, and record again for replay) or point at the pinned "
+                                                    f"deployment")
 
     def _open_replay(self) -> MCPClient:
         """No network, no token: tools and answers come from the recording of this server version."""
@@ -216,7 +235,7 @@ class MCPClient:
     def _repeat(self, name: str, args: dict[str, Any]) -> int:
         """How many identical calls this session made before this one (recordings key repeats apart)."""
         from harness_factory.mcp.recording import Recording
-        k = Recording.key(name, args)
+        k = Recording.call_key(name, args)
         n = self._seen.get(k, 0)
         self._seen[k] = n + 1
         return n

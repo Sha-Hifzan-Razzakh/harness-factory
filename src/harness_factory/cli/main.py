@@ -293,7 +293,8 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
             if chosen is None:
                 console.print(f"[red]no baseline {baseline!r}")
                 raise typer.Exit(code=1)
-        used, result = store.aggregate(chosen)
+        from harness_factory.select.selector import current_task_hashes
+        used, result = store.aggregate(chosen, task_hashes=current_task_hashes(_factory(store=False)))
         console.print(_cells_table(used, result))
         from harness_factory.results.cost import baseline_key
         missing = sorted({baseline_key(r) for r in store.rows()} - set(used.medians))
@@ -301,7 +302,7 @@ def results(limit: int = typer.Option(20, "--limit"), cells: bool = typer.Option
             console.print(f"[yellow]not in this baseline (scored with C = 0): {', '.join(missing)}")
         for task, n in store.stale_tasks().items():
             console.print(f"[yellow]{task} has {n} different definitions in the store (edited between runs); "
-                          f"its rows pool into the same task class")
+                          f"only rows of its current definition are counted")
         return
     t = Table("id", "task", "recipe", "model", "status", "E0", "tools", "created")
     for r in store.recent(limit):
@@ -316,8 +317,8 @@ app.add_typer(tools_app, name="tools")
 
 @tools_app.command("freeze")
 def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if tools.yaml is out of date")) -> None:
-    """Discover every server's tools and write their schema hashes into tools.yaml, so a later schema change
-    fails provisioning (drift) instead of silently changing what the model sees."""
+    """Discover every server's tools and write their schema and description hashes into tools.yaml, so a later
+    change to either fails provisioning (drift) instead of silently changing what the model sees."""
     import yaml
 
     from harness_factory.env.sandbox import make_sandbox
@@ -325,17 +326,18 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
 
     f = _factory(store=False)
 
-    async def discover() -> dict[str, str]:
+    async def discover() -> dict[str, dict[str, str]]:
         with make_sandbox("freeze") as sb:
             sb.reset(f.tasks.all()[0])
             declared = f.declared.model_copy(deep=True)
             for s in declared.servers:                      # discovery only: ignore declared hashes
                 for t in s.tools:
-                    t.schema_hash = None
+                    t.schema_hash = t.description_hash = None
             remote_ok = settings.allow_remote() or settings.remote_mode() == "replay"     # replay: recorded schemas
             servers = [s.id for s in declared.servers if not s.remote or remote_ok]
             async with MCPSessionPool(declared, servers, sb.env(), sb.launch) as pool:
-                return {ref: pool.catalog.schema_hash(ref) for ref in pool.catalog.tools}
+                return {ref: {"schema_hash": pool.catalog.schema_hash(ref),
+                              "description_hash": pool.catalog.description_hash(ref)} for ref in pool.catalog.tools}
 
     skipped = [s.id for s in f.declared.servers if s.remote and not (settings.allow_remote()
                                                                       or settings.remote_mode() == "replay")]
@@ -351,9 +353,9 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
             continue
         for tool in server["tools"]:
             ref = f"{server['id']}.{tool['name']}"
-            if tool.get("schema_hash") != hashes[ref]:
+            if any(tool.get(k) != v for k, v in hashes[ref].items()):
                 changed.append(ref)
-                tool["schema_hash"] = hashes[ref]
+                tool.update(hashes[ref])
     if check:
         for ref in changed:
             console.print(f"[red]stale[/] {ref}")
@@ -361,7 +363,8 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
         raise typer.Exit(code=1 if changed else 0)
     header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
     settings.TOOLS_FILE.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
-    console.print(f"wrote {len(hashes)} schema hashes ({len(changed)} changed) to {settings.TOOLS_FILE.name}")
+    console.print(f"wrote {len(hashes)} tools' schema and description hashes ({len(changed)} changed) to "
+                  f"{settings.TOOLS_FILE.name}")
 
 
 baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")
@@ -402,7 +405,9 @@ app.add_typer(select_app, name="select")
 
 def _evidence(f, baseline_id: str | None):
     from harness_factory.results.cost import CostBaseline
-    rows = f.store.rows()
+    from harness_factory.results.store import current_task_rows
+    from harness_factory.select.selector import current_task_hashes
+    rows = current_task_rows(f.store.rows(), current_task_hashes(f))
     if baseline_id:
         b = f.store.get_baseline(baseline_id)
         if b is None:
@@ -538,15 +543,23 @@ def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option
 def report(out: str | None = typer.Option(None, "--out", help="write markdown here (default: print)"),
            models: str | None = typer.Option(None, "--models", help="comma-separated models (default: all)"),
            baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id"),
-           title: str = typer.Option("Campaign report", "--title")) -> None:
-    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, selector picks,
-    failures and unscored runs."""
+           title: str = typer.Option("Campaign report", "--title"),
+           compare: str | None = typer.Option(None, "--compare",
+                                              help="recipe pairs base:variant, comma-separated, e.g. "
+                                                   "v2-base:v3-staged,v2-base:v4-planner")) -> None:
+    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, any recipe pairs
+    asked for with --compare, selector picks, failures and unscored runs."""
     from pathlib import Path
 
     from harness_factory.results.report import build_report
+    from harness_factory.runner.bench import parse_compare
+    try:
+        pairs = parse_compare(compare) if compare else None
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="--compare") from None
     f = _factory()
     rows, b = _evidence(f, baseline)
-    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None)
+    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None, compare=pairs)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(text + "\n")
@@ -559,6 +572,11 @@ from harness_factory.cli.authoring import register as _register_authoring  # hfx
 
 _register_authoring(app)
 
+from harness_factory.cli.calibration import calibration_app
+
+app.add_typer(calibration_app, name="calibration")
+
+from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":

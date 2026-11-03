@@ -51,12 +51,32 @@ class TenantSpec(BaseModel):
         return {self.reset, self.export} | ({self.drop} if self.drop else set())
 
 
+class Escalation(BaseModel):
+    """Calls the tool's declared side effect doesn't cover (env/mcp/effects.py): when `classifier` says a call's
+    arguments match, that call has this side effect and risk instead, so the recipe's permission policy for it applies
+    (e.g. `sql.execute` with `DELETE FROM orders` is IRREVERSIBLE, refused like `fs.delete_file`)."""
+    classifier: str
+    side_effect: SideEffect
+    risk: Literal["R0", "R1", "R2", "R3"]
+
+    @model_validator(mode="after")
+    def _known(self) -> Escalation:
+        from harness_factory.env.mcp.effects import CLASSIFIERS
+        if self.classifier not in CLASSIFIERS:
+            raise ValueError(f"unknown side-effect classifier {self.classifier!r}; known: {', '.join(CLASSIFIERS)}")
+        return self
+
+
 class ToolSpec(BaseModel):
     name: str
     side_effect: SideEffect
     risk: Literal["R0", "R1", "R2", "R3"]
     timeout_s: float = 30.0
     schema_hash: str | None = None   # declared hash; drift against discovery fails provisioning
+    # Declared hash of the tool's description, the text the model reads to decide what the tool does. Drift fails
+    # provisioning like a schema change: a new description is a new experiment (part of env_hash).
+    description_hash: str | None = None
+    escalation: Escalation | None = None   # calls with a stronger side effect than the declared one
     # A READ tool that reveals nothing beyond these tools: a task allowing all of them allows this one too, so a
     # new capability (e.g. search) needs no edit to every task's allowance (and no task hash change). [] = every
     # task: the tool reads only harness material, nothing from the task's world (e.g. skills.load).
@@ -66,13 +86,22 @@ class ToolSpec(BaseModel):
     def hashed(self) -> dict:
         """What of this spec is part of env_hash: unset optional fields are left out (so adding one keeps every
         existing hash), and so are prices."""
-        data = self.model_dump(mode="json", exclude={k for k in ("granted_by", "agent") if getattr(self, k) is None})
+        optional = ("granted_by", "agent", "description_hash", "escalation")
+        data = self.model_dump(mode="json", exclude={k for k in optional if getattr(self, k) is None})
         if self.agent is not None:
             data["agent"] = {"max_calls": self.agent.max_calls}
         return data
 
     def ref(self, server: str) -> str:
         return f"{server}.{self.name}"
+
+    def effect_for(self, args: dict) -> tuple[SideEffect, str]:
+        """(side effect, risk) of one call: the declared ones, or the escalation's when its classifier matches."""
+        if self.escalation is not None:
+            from harness_factory.env.mcp.effects import CLASSIFIERS
+            if CLASSIFIERS[self.escalation.classifier](args):
+                return self.escalation.side_effect, self.escalation.risk
+        return self.side_effect, self.risk
 
 
 class MCPServerSpec(BaseModel):
@@ -153,7 +182,7 @@ class ToolCatalogFile(BaseModel):
         return content_hash(data, 12)
 
     def unhashed_tools(self) -> list[str]:
-        return [t.ref(s.id) for s in self.servers for t in s.tools if not t.schema_hash]
+        return [t.ref(s.id) for s in self.servers for t in s.tools if not t.schema_hash or not t.description_hash]
 
 
 def load_tool_catalog(path: Path) -> ToolCatalogFile:

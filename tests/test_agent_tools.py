@@ -59,7 +59,7 @@ def agent_spec(url: str, hashes: dict | None = None, agent: AgentTool = AGENT) -
     hashes = hashes or {}
     return MCPServerSpec(id="analyst", transport="streamable_http", url=url, version="1.0", tools=[
         ToolSpec(name=n, side_effect=SideEffect.READ, risk="R1", timeout_s=10, agent=agent,
-                 schema_hash=hashes.get(f"analyst.{n}")) for n in ("ask", "ask_unmetered")])
+                 **hashes.get(f"analyst.{n}", {})) for n in ("ask", "ask_unmetered")])
 
 
 async def setup(factory, url, monkeypatch, **config):
@@ -68,7 +68,8 @@ async def setup(factory, url, monkeypatch, **config):
     monkeypatch.setenv("HF_ALLOW_REMOTE", "1")
     probe = factory.declared.model_copy(update={"servers": [agent_spec(url)]})
     async with MCPSessionPool(probe, ["analyst"], {}) as pool:
-        hashes = {r: pool.catalog.schema_hash(r) for r in ("analyst.ask", "analyst.ask_unmetered")}
+        hashes = {r: {"schema_hash": pool.catalog.schema_hash(r), "description_hash": pool.catalog.description_hash(r)}
+                  for r in ("analyst.ask", "analyst.ask_unmetered")}
     declared = factory.declared.model_copy(update={"servers": [*factory.declared.servers, agent_spec(url, hashes)]})
     f = dataclasses.replace(factory, declared=declared)
     base = factory.recipes["v2-base"]
@@ -100,7 +101,8 @@ def test_an_agent_tool_needs_a_remote_server():
 
 def test_the_agent_field_keeps_existing_env_hashes_and_its_prices_are_not_hashed(factory):
     plain = ToolSpec(name="read_file", side_effect=SideEffect.READ, risk="R0", schema_hash="abc")
-    assert plain.hashed() == plain.model_dump(mode="json", exclude={"granted_by", "agent"})   # as before EXT-10
+    assert plain.hashed() == plain.model_dump(mode="json", exclude={"granted_by", "agent", "description_hash",
+                                                                    "escalation"})            # as before EXT-10
     d = factory.declared
     h = lambda agent: d.model_copy(update={"servers": [*d.servers, agent_spec("https://a.example/mcp", agent=agent)]}
                                    ).env_hash(["fs", "sql", "analyst"], "m")

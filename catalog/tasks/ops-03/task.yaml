@@ -1,5 +1,5 @@
 id: ops-03
-version: 1
+version: 2
 domain: ops
 instruction: Which API endpoint returned the most server errors (5xx) on 2026-10-26? Answer with the path only.
 env_seed:
@@ -21,7 +21,7 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.75
-    pattern: (?s)^(?!.*/api/orders)(?!.*/api/search).*/api/checkout
+    pattern: (?s)\A(?!.*(?<!\w)(?:/api/orders|/api/search)(?!\w))(?=.*(?<!\w)/api/checkout(?!\w))
   - id: grounded
     kind: tool_called
     weight: 0.25

@@ -109,8 +109,9 @@ def approx_tokens(obj: Any) -> int:
 
 
 class ScriptedBackend:
-    """Turns are {"tool_calls": [{"name": ..., "arguments": {...}}]}, {"content": "..."}, or {"reject": "..."}: the
-    provider refuses the reply as malformed (MODEL_PARSE), as Groq does with tool_use_failed."""
+    """Turns are {"tool_calls": [{"name": ..., "arguments": {...}}]}, {"content": "..."}, {"reject": "..."}: the
+    provider refuses the reply as malformed (MODEL_PARSE), as Groq does with tool_use_failed, or {"fail": "<ErrorKind>"}:
+    the call fails as already classified (e.g. PROVIDER_ERROR, which the gateway retries, or CONFIG, which it doesn't)."""
 
     def __init__(self, turns: list[dict[str, Any]]) -> None:
         self.turns = list(turns)
@@ -121,6 +122,8 @@ class ScriptedBackend:
         self.i += 1
         if "reject" in turn:
             raise HarnessError(ErrorKind.MODEL_PARSE, turn["reject"])
+        if "fail" in turn:
+            raise HarnessError(ErrorKind(turn["fail"]), f"scripted {turn['fail']}")
         if "tool_calls" in turn:
             calls = [{"id": f"call_{self.i}_{k}", "type": "function",
                       "function": {"name": c["name"], "arguments": json.dumps(c["arguments"])}}
