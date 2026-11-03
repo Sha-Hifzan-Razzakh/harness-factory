@@ -35,6 +35,7 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | Selector rule | `catalog/selector.yaml` (min_runs, defaults, depth_shapes, hand_picked), `src/harness_factory/select/` | evidence is only cells whose recipe hash and env hash are current; held-out runs never inform a held-out pick; every provisioning decision is logged (`var/decisions/`) |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
 | Authoring (`hfx new`, API, UI) | `src/harness_factory/authoring/` (one service; CLI in `cli/authoring.py`) | every catalog write goes through `AuthoringService`: staged, checked by `authoring/snapshot.py` in a child process (never re-point `settings` in-process), rejected on any new issue, written all-or-nothing under the lock; a change to an existing identity needs confirm; the snapshot and `hfx validate` must agree (`tests/test_authoring.py`) |
+| Provider calibration | `results/calibration.py`, CLI `cli/calibration.py` (`hfx calibration`) | pool cells only on a saved `equivalent` verdict whose served model ids are current; C stays per provider; never pool across tool environments (`tools_hash`) |
 
 ## Rules that protect the measurements
 
