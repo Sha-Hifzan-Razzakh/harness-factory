@@ -5,8 +5,8 @@ don't: each hand-written script falls into one trap, and the check that should c
 
 import pytest
 
-from harness_factory.provision.provisioner import reaches
 from harness_factory.grading.state import output_matches
+from harness_factory.provision.provisioner import reaches
 from harness_factory.runner.runner import run_one
 from harness_factory.substrate.gateway import ScriptedBackend
 from harness_factory.tasks.model import WeightedCheck
