@@ -1,0 +1,20 @@
+# Perturbations of res-01 (TSK-04). `hfx perturb` turns each entry into catalog/tasks/res-01--<type>-<n>.
+base: res-01
+variants:
+  - type: oversized_output
+    n: 1
+    params:
+      target: {file: service/config/prod.ini}
+      pad:
+        lines: 700
+        template: "max_connections_region_{i:03} = {int:50-400}"
+        after: workers = 16
+      call: fs.read_file
+      why: prod.ini carries 700 per-region connection limits in [server], so its [backup] section sits past the
+        inline cap; it still says enabled = true.
+  - type: tool_failure
+    n: 1
+    params:
+      faults:
+        - {tools: [fs.read_file], kind: error, nth: [2]}
+      why: The second file read fails; reading that file again works.

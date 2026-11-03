@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_serializer, model_validator
 
 from harness_factory.hashing import content_hash, hash_paths
 
@@ -249,6 +249,44 @@ class EnvSeed(BaseModel):
 # stay the same (like recipes' _HASH_OMIT_WHEN_NONE).
 _SEED_OMIT_WHEN_NONE = ("biz_state",)
 
+# Perturbation types (TSK-04). A variant made from a base task by `hfx perturb` (tasks/perturb.py) records how it was
+# made here; the block is part of the variant's hash. memory_poisoning is reserved for MEM-06 (memory stores, #78)
+# and refused until it is built.
+PerturbationType = Literal["tool_failure", "slow_tool", "injected_instruction", "oversized_output",
+                           "ambiguous_wording", "memory_poisoning"]
+PERTURBATION_TYPES: tuple[str, ...] = ("tool_failure", "slow_tool", "injected_instruction", "oversized_output",
+                                       "ambiguous_wording")
+RESERVED_PERTURBATIONS = {"memory_poisoning": "MEM-06 (memory poisoning) needs memory stores (#78); not built yet"}
+FAULT_KINDS_BY_TYPE = {"tool_failure": {"error", "timeout", "rate_limit", "empty"}, "slow_tool": {"latency"}}
+
+
+class Perturbation(BaseModel):
+    """How a variant differs from its base. tool_failure / slow_tool carry `params.faults`: fault rules (env/faults)
+    bound to every run of the variant, as part of its environment, so the task hash covers them."""
+    type: PerturbationType
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _known(self) -> Perturbation:
+        if self.type in RESERVED_PERTURBATIONS:
+            raise ValueError(f"perturbation {self.type}: {RESERVED_PERTURBATIONS[self.type]}")
+        kinds = FAULT_KINDS_BY_TYPE.get(self.type)
+        if kinds is None:
+            if "faults" in self.params:
+                raise ValueError(f"perturbation {self.type} binds no faults; only tool_failure and slow_tool do")
+            return self
+        rules = self.fault_rules()
+        if not rules:
+            raise ValueError(f"perturbation {self.type} needs params.faults: at least one fault rule")
+        bad = sorted({r.kind for r in rules} - kinds)
+        if bad:
+            raise ValueError(f"perturbation {self.type} takes fault kinds {sorted(kinds)}, not {bad}")
+        return self
+
+    def fault_rules(self) -> list:
+        from harness_factory.env.faults import FaultRule
+        return [FaultRule.model_validate(r) for r in self.params.get("faults") or []]
+
 
 class Task(BaseModel):
     id: str
@@ -265,9 +303,19 @@ class Task(BaseModel):
     split: Split = Split.DEV
     status: Literal["draft", "verified", "superseded"] = "draft"
     tags: list[str] = Field(default_factory=list)
+    # TSK-04: set on a variant generated from base_id (tasks/perturb.py). Left out of model_dump, and so of the hash,
+    # while unset: every other task keeps its hash.
+    perturbation: Perturbation | None = None
 
     # set by the loader, not part of identity
     source_dir: Path | None = Field(default=None, exclude=True)
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_perturbation(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and data.get("perturbation", 0) is None:
+            data.pop("perturbation")
+        return data
 
     def key(self) -> str:
         return f"{self.id}@{self.version}"
@@ -277,7 +325,19 @@ class Task(BaseModel):
         gits = [c.id for c in self.oracle.checks if c.kind in GIT_CHECKS]
         if gits and not self.env_seed.git:
             raise ValueError(f"task {self.id}: git checks ({', '.join(gits)}) need `env_seed.git: true`")
+        if self.perturbation is not None and not self.base_id:
+            raise ValueError(f"task {self.id}: a perturbation variant names its base task (base_id)")
         return self
+
+    def bound_faults(self):
+        """The fault profile bound to every run of this task (a tool_failure / slow_tool variant), or None. It is
+        part of the task, not a campaign axis: its runs are clean runs of the variant (fault_config_hash "none")."""
+        rules = self.perturbation.fault_rules() if self.perturbation is not None else []
+        if not rules:
+            return None
+        from harness_factory.env.faults import FaultConfig
+        return FaultConfig(id=f"task:{self.id}", description=f"bound by {self.id} ({self.perturbation.type})",
+                           rules=rules)
 
     def content_hash(self) -> str:
         data = self.model_dump(mode="json", exclude={"status", "split", "tags"})   # labels, not identity

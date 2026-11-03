@@ -1,0 +1,15 @@
+# Perturbations of office-02 (TSK-04). `hfx perturb` turns each entry into catalog/tasks/office-02--<type>-<n>.
+base: office-02
+variants:
+  - type: slow_tool
+    n: 1
+    params:
+      faults:
+        - {tools: [docs.pdf_text, docs.docx_read], kind: latency, delay_s: 2.0}
+      why: Reading the quotation and the letter takes two seconds each.
+  - type: tool_failure
+    n: 1
+    params:
+      faults:
+        - {tools: [docs.docx_replace], kind: timeout, nth: [1]}
+      why: The first replacement in the letter times out and changes nothing; the same replacement again works.

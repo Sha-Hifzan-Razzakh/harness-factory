@@ -49,6 +49,9 @@ jobs:
       - name: Tool schemas frozen (no drift)
         run: uv run --no-sync hfx tools freeze --check
 
+      - name: Perturbed variants generated from their specs (no drift)
+        run: uv run --no-sync hfx perturb --check
+
       - name: Reference solutions pass their oracles
         run: uv run --no-sync hfx reference
 
@@ -80,21 +83,24 @@ jobs:
         run: uv sync --locked --extra dev --extra inspect --extra docs --python 3.13
 
       - name: P0 gate (offline, scripted model)
-        run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8
+        run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8 --exclude-tag needs-retry
 
       - name: V3, V4 and V5 shape gate (offline, scripted model; `long` tasks exceed V3's stage caps and V4/V5's plan length)
-        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8 --exclude-tag long
+        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
         run: |
-             uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs,v2-retrieval-bm25,v2-retrieval-hybrid,v2-compact,v2-parallel-tools --models scripted/replay --strict -j 8
-             uv run --no-sync hfx smoke --recipe v4-structured,v5-parallel --models scripted/replay --strict -j 8 --exclude-tag long
+             uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs,v2-retrieval-bm25,v2-retrieval-hybrid,v2-compact,v2-parallel-tools --models scripted/replay --strict -j 8 --exclude-tag perturbation
+             uv run --no-sync hfx smoke --recipe v4-structured,v5-parallel --models scripted/replay --strict -j 8 --exclude-tag long,perturbation
 
       - name: Runner gate (framework runners solve the visible tasks offline, ADR 0016)
-        run: uv run --no-sync hfx smoke --recipe v2-langgraph-prebuilt,v2-llamaindex-agent --models scripted/replay --strict -j 8 --exclude-tag long
+        run: uv run --no-sync hfx smoke --recipe v2-langgraph-prebuilt,v2-llamaindex-agent --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
            
       - name: Fault injection (clean runs gate; faulted runs feed R)
         run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails,slow-tools --strict -j 8
+
+      - name: Perturbed tool failures (the retry model recovers; TSK-04)
+        run: uv run --no-sync hfx smoke --recipe v2-base,v2-biz,v2-docs --models scripted/retry --strict -j 8 --tag needs-retry
 
       - name: Inspect AI adapter (factory runs as an Inspect eval)
         run: |
@@ -130,9 +136,9 @@ jobs:
       - name: References and smoke inside containers
         run: |
           uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v2-docs --models scripted/replay --strict -j 8
-          uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long
-          uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8
+          uv run --no-sync hfx smoke --recipe v2-base,v2-docs --models scripted/replay --strict -j 8 --exclude-tag needs-retry
+          uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
+          uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8 --exclude-tag needs-retry
 
       - name: Upload traces on failure
         if: failure()
@@ -158,7 +164,7 @@ jobs:
         run: |
           docker run --rm --network none harness-factory:local validate
           docker run --rm --network none harness-factory:local reference
-          docker run --rm --network none harness-factory:local smoke --models scripted/replay --strict
+          docker run --rm --network none harness-factory:local smoke --models scripted/replay --strict --exclude-tag needs-retry
           docker run --rm --entrypoint sh harness-factory:local -c 'test "$(id -u)" != 0 && test ! -e /app/.env'
 
       - name: Compose (Docker sandboxes from inside the factory container)
@@ -166,9 +172,9 @@ jobs:
           docker compose config -q
           mkdir -p var
           export HF_UID=$(id -u) HF_GID=$(id -g) DOCKER_GID=$(stat -c %g /var/run/docker.sock)
-          docker compose run --rm --pull never factory smoke --recipe v2-base --models scripted/replay --strict
+          docker compose run --rm --pull never factory smoke --recipe v2-base --models scripted/replay --strict --exclude-tag needs-retry
           docker compose run --rm --pull never factory-docker \
-            smoke --recipe v2-base,v3-staged --models scripted/replay --strict --exclude-tag long
+            smoke --recipe v2-base,v3-staged --models scripted/replay --strict --exclude-tag long,needs-retry
           test -z "$(docker ps -aq --filter label=hf.sandbox=1)"      # every sandbox container removed
           test -z "$(ls -A var/sandboxes)"                             # and every sandbox directory
 
