@@ -1,5 +1,5 @@
 id: sql-04
-version: 2
+version: 3
 domain: data
 instruction: How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled
   orders and test accounts (customers whose email ends in @example.test). Answer with the number.
@@ -30,6 +30,9 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - orders
+    - customers
   - id: data_unchanged
     kind: sql_rows
     weight: 0

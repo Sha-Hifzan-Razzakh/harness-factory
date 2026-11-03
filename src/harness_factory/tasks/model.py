@@ -42,7 +42,7 @@ Normalization = Literal["whitespace", "case"]
 # Check fields added after the first tasks were written: left out of the task hash while unset, so adding them
 # kept every existing task hash (like _HASH_OMIT_WHEN_NONE for recipes).
 _CHECK_HASH_OMIT_WHEN_NONE = ("ref", "sheet", "cell", "expected", "tolerance", "style",
-                              "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric")
+                              "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches")
 
 _SCALAR = (str, int, float, bool, type(None))
 
@@ -107,6 +107,9 @@ class WeightedCheck(BaseModel):
                                                    # "case" ignores case; ends are always trimmed
     rubric: Rubric | None = None     # rubric: what the judge scores; the subject is the file at `path`, or the
                                      # final answer when there is no path (grading/judge.py, ADR 0014)
+    touches: list[str] | None = Field(default=None, min_length=1)   # tool_called: the matching call must touch
+                                     # the task's data: a SQL table its statement names, a workspace path or glob
+                                     # its path argument matches, or `arg=value` for other tools (grading/touches.py)
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -155,6 +158,9 @@ class WeightedCheck(BaseModel):
         for name in ("sheet", "cell", "expected", "tolerance"):
             if getattr(self, name) is not None and self.kind != "xlsx_cell":
                 raise ValueError(f"check {self.id}: {name} is for xlsx_cell checks")
+        if self.touches is not None and (self.kind != "tool_called" or not all(t.strip() for t in self.touches)):
+            raise ValueError(f"check {self.id}: touches is for tool_called checks: tables, paths or arg=value, "
+                             f"none empty")
         if self.style is not None and self.kind != "docx_paragraph_regex":
             raise ValueError(f"check {self.id}: style is for docx_paragraph_regex checks")
         if self.pattern is not None and self.kind in ("file_regex", "output_regex", "git_log_contains",

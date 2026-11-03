@@ -1,5 +1,5 @@
 id: sql-08
-version: 2
+version: 3
 domain: data
 instruction: What was the average value of paid orders placed in the third quarter of 2026 (July to September)?
   An order's value is the sum of quantity times unit price over its items, before refunds. Exclude test accounts
@@ -31,6 +31,10 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - orders
+    - order_items
+    - customers
   - id: data_unchanged
     kind: sql_rows
     weight: 0
