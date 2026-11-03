@@ -55,6 +55,17 @@ class GradingPipeline:
     def __init__(self, graders: dict[str, Grader]) -> None:
         self.graders = graders
 
+    def unknown(self, task) -> list[str]:
+        """Grader ids the task asks for that this pipeline doesn't have."""
+        return [g for g in task.grader_ids if g not in self.graders]
+
+    def check(self, task) -> None:
+        """Fail before a run starts (and before any model call) when a task names a grader that doesn't exist."""
+        unknown = self.unknown(task)
+        if unknown:
+            raise ValueError(f"task {task.key()} asks for unknown grader(s) {', '.join(map(repr, unknown))}; "
+                             f"known: {', '.join(sorted(self.graders))}")
+
     def run(self, ctx: GradeContext) -> list[Grade]:
         out = []
         for gid in ctx.task.grader_ids:
