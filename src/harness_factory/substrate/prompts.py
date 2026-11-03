@@ -10,7 +10,13 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from harness_factory import settings
 from harness_factory.hashing import content_hash
 from harness_factory.recipes.model import HarnessRecipe
-from harness_factory.tasks.model import Task
+from harness_factory.tasks.model import Oracle, Task
+
+
+def agent_view(task: Task) -> Task:
+    """The task as the agent's prompts may see it: everything but the oracle. Its checks (expected answers,
+    guards, a rubric) are the grader's; a template that reaches for task.oracle gets an empty one."""
+    return task.model_copy(update={"oracle": Oracle.model_construct(checks=[], pass_threshold=1.0)})
 
 
 class PromptRegistry:
@@ -45,7 +51,7 @@ class PromptAssembler:
         if recipe.skills.loading != "none" and recipe.skills.skill_ids:
             chosen = [self.skills[s] for s in recipe.skills.skill_ids]
             system += "\n\n" + self.registry.render(f"skills/{recipe.skills.loading}", skills=chosen)
-        user = self.registry.render(recipe.prompts.task, task=task)
+        user = self.registry.render(recipe.prompts.task, task=agent_view(task))
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
     def stage_prompts(self, recipe: HarnessRecipe, task: Task, tool_names: list[str]) -> dict[str, str]:
@@ -56,7 +62,7 @@ class PromptAssembler:
         out = {}
         for st in recipe.workflow.stages:
             offered = [n for n in tool_names if st.allows(n.replace("__", ".", 1))]
-            out[st.id] = self.registry.render(st.prompt, task=task, stage=st, tools=offered)
+            out[st.id] = self.registry.render(st.prompt, task=agent_view(task), stage=st, tools=offered)
         return out
 
     @staticmethod
