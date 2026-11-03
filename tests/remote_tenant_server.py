@@ -17,7 +17,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 TENANTS: dict[str, dict] = {}
-app = MCPServer("orders", instructions="The order desk. Look orders up and refund them.")
+app = MCPServer("orders", version="1.0", instructions="The order desk. Look orders up and refund them.")
 
 
 def tenant(ctx: Context) -> dict:

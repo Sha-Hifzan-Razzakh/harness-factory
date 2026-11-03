@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 
 from harness_factory import settings
@@ -34,6 +35,12 @@ def _get_otel_tracer():
     _otel_tracer = trace.get_tracer("harness_factory")
     return _otel_tracer
 
+
+# The open spans of the current asyncio task, innermost last, as (trace_id, span_id). A context variable, not a
+# list on the Tracer: concurrent tool calls and V5 workers of one run each run in their own task (which copies the
+# context), so each nests its spans under its own parent instead of under whichever sibling opened last. Context-local,
+# so no run writes state another run (or task) can see.
+_OPEN: ContextVar[tuple[tuple[str, str], ...]] = ContextVar("hf_open_spans", default=())
 
 _OPENINFERENCE_KIND = {SpanKind.run: "AGENT", SpanKind.model_call: "LLM", SpanKind.tool_call: "TOOL",
                        SpanKind.retrieval: "RETRIEVER", SpanKind.grade: "EVALUATOR"}
@@ -70,14 +77,15 @@ class Tracer:
         self.run_key = run_key
         self.trace_id = uuid.uuid4().hex
         self.spans: list[Span] = []
-        self._stack: list[str] = []
+
+    def _parent(self) -> str | None:
+        return next((sid for tid, sid in reversed(_OPEN.get()) if tid == self.trace_id), None)
 
     @contextmanager
     def span(self, kind: SpanKind, name: str, **attributes) -> Iterator[Span]:
-        s = Span(trace_id=self.trace_id, span_id=uuid.uuid4().hex[:16],
-                 parent_id=self._stack[-1] if self._stack else None, kind=kind, name=name,
-                 run_key=self.run_key, start_ns=time.time_ns(), attributes=dict(attributes))
-        self._stack.append(s.span_id)
+        s = Span(trace_id=self.trace_id, span_id=uuid.uuid4().hex[:16], parent_id=self._parent(), kind=kind,
+                 name=name, run_key=self.run_key, start_ns=time.time_ns(), attributes=dict(attributes))
+        token = _OPEN.set((*_OPEN.get(), (self.trace_id, s.span_id)))
         otel_tracer = _get_otel_tracer()
         # The OTel span is opened live and made current, so nested spans (ours, and the MCP SDK's own
         # "MCP send tools/call" spans) share one trace tree per run in Phoenix and Langfuse.
@@ -92,7 +100,10 @@ class Tracer:
                 raise
             finally:
                 s.end_ns = time.time_ns()
-                self._stack.pop()
+                try:
+                    _OPEN.reset(token)
+                except ValueError:          # closed in another context than it was opened in: drop just this one
+                    _OPEN.set(tuple(o for o in _OPEN.get() if o[1] != s.span_id))
                 self.spans.append(s)
                 if otel is not None:
                     _annotate(otel, s)

@@ -5,7 +5,9 @@ invalid  a tool call that returned an error (bad arguments, refused, tool failur
          and a reply the provider rejected as malformed (MODEL_PARSE), e.g. a call to a tool that doesn't exist:
          it is an attempted call that never ran, whether or not the harness then recovered
 wasted   - a read repeated (same tool, same arguments) since the world last changed, within the same scope;
-         - a write repeated identically: it has no new effect, so it never counts as a change.
+         - a write repeated identically: it has no new effect, so it never counts as a change;
+         - a tool that `observes` (running the tests) repeated identically with nothing changed since: like a read.
+           Such a call may change files itself, so the reads before it are stale afterwards.
          The world changes on a write the run has not made before. A new V3 stage is a new scope: its built-in
          re-check is the shape working as designed, and its extra cost is already charged through C.
 loop     the same call three or more times in a row -> violation (not critical)
@@ -50,6 +52,10 @@ class TrajectoryGrader:
             if streak[key] == LOOP_REPEATS:
                 violations.append(Violation(kind="loop", detail=f"{s.name} x{LOOP_REPEATS}"))
             if s.status == "error":
+                continue
+            if s.attributes.get("observes"):
+                wasted += key in reads                     # same run, nothing changed since: same answer
+                reads = {key}                              # it may have changed files: earlier reads are stale
                 continue
             if s.attributes.get("side_effect") in ("REVERSIBLE", "IRREVERSIBLE"):
                 if key in writes:

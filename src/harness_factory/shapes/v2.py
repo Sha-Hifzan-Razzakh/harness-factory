@@ -33,7 +33,7 @@ class ToolLoopShape:
 
         async def call_model(state: LoopState) -> dict:
             turn = await model_turn(inst, slot, state["messages"], tools)
-            msgs = state["messages"] + turn.added
+            msgs = turn.apply(state["messages"])
             if turn.stop:
                 return {"messages": msgs, "stop": turn.stop, "error": turn.error}
             msg = turn.message

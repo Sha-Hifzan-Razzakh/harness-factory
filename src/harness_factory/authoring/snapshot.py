@@ -23,6 +23,7 @@ LAYER_VARS: dict[str, set[str]] = {
     "task": {"task"},
     "stage": {"task", "stage", "tools"},
     "skills": {"skills"},
+    "compaction": set(),
 }
 
 
@@ -40,6 +41,7 @@ def take() -> dict[str, Any]:
     from harness_factory import settings
     from harness_factory.env.faults import load_fault_profiles
     from harness_factory.env.mcp.servers import load_tool_catalog
+    from harness_factory.grading.base import default_pipeline
     from harness_factory.hashing import content_hash
     from harness_factory.recipes.model import default_prompt_sources, load_recipes
     from harness_factory.recipes.validate import validate_recipe
@@ -97,11 +99,20 @@ def take() -> dict[str, Any]:
                 "transport": s.transport, "module": s.module, "url": s.url, "version": s.version,
                 "auth_env": s.auth_env, "tenant": s.tenant is not None,
                 "tools": [{"name": t.name, "side_effect": t.side_effect.value, "risk": t.risk,
-                           "schema_hash": t.schema_hash, "granted_by": t.granted_by, "agent": t.agent is not None}
+                           "schema_hash": t.schema_hash, "description_hash": t.description_hash,
+                           "granted_by": t.granted_by, "agent": t.agent is not None}
                           for t in s.tools],
                 "env": content_hash({t.ref(s.id): t.hashed() for t in s.tools}, 12),
-                "unhashed": [t.ref(s.id) for t in s.tools if not t.schema_hash],
+                "unhashed": [t.ref(s.id) for t in s.tools if not t.schema_hash or not t.description_hash],
             }
+
+    # Providers: validation checks reply budgets against context_len, as `hfx validate` does (ADR 0015).
+    from harness_factory.providers.catalog import load_provider_catalog
+    providers = None
+    try:
+        providers = load_provider_catalog(settings.PROVIDERS_FILE)
+    except Exception as e:  # noqa: BLE001  (a finding, not a crash)
+        err("providers", "providers.yaml", str(e))
 
     # Recipes: raw files (paths, bases) and the resolved, validated recipes.
     raw: dict[str, dict[str, Any]] = {}
@@ -122,7 +133,7 @@ def take() -> dict[str, Any]:
         issues = []
         if declared is not None:
             try:
-                issues = [i.model_dump() for i in validate_recipe(r, declared)]
+                issues = [i.model_dump() for i in validate_recipe(r, declared, providers=providers)]
             except Exception as e:  # noqa: BLE001  (a finding, not a crash)
                 issues = [{"rule": "validator_crashed", "detail": f"{type(e).__name__}: {e}"}]
         out["recipes"][rid] = {
@@ -139,8 +150,13 @@ def take() -> dict[str, Any]:
         err("fault", "*", str(e))
 
     try:
-        out["tasks"] = {t.id: {"allowed_tools": list(t.allowed_tools), "split": t.split.value}
-                        for t in TaskRegistry().all(include_held_out=True)}
+        tasks = TaskRegistry().all(include_held_out=True)
+        out["tasks"] = {t.id: {"allowed_tools": list(t.allowed_tools), "split": t.split.value} for t in tasks}
+        graders = default_pipeline()
+        for t in tasks:                      # same rule as `hfx validate` and plan(): no unknown grader ids
+            unknown = graders.unknown(t)
+            if unknown:
+                err("task", t.id, f"unknown grader(s) {', '.join(unknown)}; known: {', '.join(sorted(graders.graders))}")
     except Exception as e:  # noqa: BLE001  (a finding, not a crash)
         err("task", "*", str(e))
 
