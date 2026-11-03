@@ -152,6 +152,20 @@ async def test_mcp_servers_run_inside_the_container(factory, sandbox):
         assert hostname.is_error                                     # absolute paths are outside /work too
 
 
+async def test_fsx_server_runs_inside_the_container(factory, sandbox):
+    async with MCPSessionPool(factory.declared, ["fsx"], sandbox.env(), sandbox.launch) as pool:
+        edit = await pool.call("fsx.edit", {"path": "config/app.ini", "old": "port = 8080", "new": "port = 9090"})
+        assert not edit.is_error, edit.text
+        moved = await pool.call("fsx.move", {"src": "notes/README.txt", "dst": "notes/old/README.txt"})
+        assert not moved.is_error, moved.text
+        assert "port = 9090" in (sandbox.workspace / "config/app.ini").read_text()
+        assert (sandbox.workspace / "notes/old/README.txt").is_file()        # on the host, through the mount
+        tree = await pool.call("fsx.tree", {"depth": 3})
+        assert "    README.txt" in tree.text
+        escape = await pool.call("fsx.append", {"path": "../state/task.sqlite", "text": "x"})
+        assert escape.is_error and "escapes" in escape.text
+
+
 def test_failed_start_leaves_no_container(factory, docker_required):
     sb = DockerSandbox("dk-fail")
     sb.run_args = lambda: ["run", "-d", "--name", sb.container, "--label", "hf.sandbox=1", sb.image, "/nonexistent"]
@@ -170,3 +184,42 @@ async def test_skills_on_demand_inside_the_container(factory, docker_required, m
                         "scripted/replay", "scripted", backend=ScriptedBackend(script))
     tool = next(m for m in rec.messages if m["role"] == "tool")
     assert "List the tables and describe" in tool["content"]
+
+
+async def test_code_and_git_tasks_inside_the_container(factory, docker_required, monkeypatch):
+    """ADR 0012: the code and git servers, the git seed and the tests_pass / git_log_contains probes all work in
+    the container, and the agent's code runs there (the container's Python, no network), not on the host."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    for task_id in ("code-02", "code-03"):
+        rec = await run_one(factory, factory.tasks.get(task_id), factory.recipes["v2-code"], "scripted/replay",
+                            "scripted")
+        assert rec.status.value == "SUCCESS", rec.grades
+        assert next(g for g in rec.grades if g["grader_id"] == "state_diff")["snapshot"]["sandbox"] == "docker"
+    sb = DockerSandbox("dk-code")
+    try:
+        sb.reset(factory.tasks.get("code-02"))
+        (sb.workspace / "where.py").write_text(
+            "import socket, sys\nprint(sys.executable)\ntry:\n    socket.create_connection(('1.1.1.1', 53), "
+            "timeout=3); print('CONNECTED')\nexcept OSError:\n    print('offline')\n")
+        async with MCPSessionPool(factory.declared, ["code", "git"], sb.env(), sb.launch) as pool:
+            out = json.loads((await pool.call("code.run_python", {"path": "where.py"})).text)["output"]
+            assert out.split() == ["/usr/local/bin/python", "offline"]
+            tests = json.loads((await pool.call("code.run_tests", {"path": "tests"})).text)
+            assert tests["exit_code"] == 1 and tests["counts"]["failed"] == 2
+            assert (await pool.call("git.status", {})).text.splitlines()[0] == "## main"
+        answer = sb.probe({"op": "pytest", "targets": ["tests/test_discount.py"]}, 60)
+        assert answer["exit_code"] == 1 and answer["counts"]["failed"] == 1
+        assert sb.probe({"op": "git_commits", "ref": "main", "since": sb.git_seed}, 30) == {"commits": []}
+    finally:
+        sb.teardown()
+
+
+async def test_business_state_inside_the_container(factory, docker_required, monkeypatch):
+    """The biz server runs in the container and writes the business state in /state (the only writable mount
+    next to /work); graders read the host side of the same file."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    rec = await run_one(factory, factory.tasks.get("biz-01"), factory.recipes["v2-biz"], "scripted/replay",
+                        "scripted")
+    assert rec.status.value == "SUCCESS", rec.grades
+    state = next(g for g in rec.grades if g["grader_id"] == "state_diff")
+    assert state["snapshot"]["sandbox"] == "docker" and "+biz credit_notes/CN-0004" in state["detail"]

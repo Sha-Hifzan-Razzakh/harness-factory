@@ -14,8 +14,10 @@ reset, and stable across restarts). A provider that resets differently is still 
 marks it spent (`mark_exhausted`).
 
 Persistence: with `state_path`, usage is saved after every change (atomic write) and loaded on start, so a
-campaign resumed after a restart knows what today has already spent. One process at a time; sharing across
-machines (Redis) is the next step once campaigns run on more than one host.
+campaign resumed after a restart knows what today has already spent. Several `hfx` processes on one machine can
+share the file: every check-and-change re-reads it and writes it back under a lock (`state_path` + ".lock",
+fcntl on POSIX, msvcrt on Windows), so concurrent commands add up instead of overwriting each other. Sharing
+across machines (Redis) is the next step once campaigns run on more than one host.
 """
 
 from __future__ import annotations
@@ -26,7 +28,8 @@ import os
 import random
 import time
 from collections import defaultdict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -35,6 +38,50 @@ from harness_factory.substrate.errors import ErrorKind, HarnessError
 
 MINUTE = 60.0
 DAY = 86_400.0
+LOCK_TIMEOUT_S = 30.0          # the lock is held for a read and a write; waiting this long means something is wrong
+
+if os.name == "nt":
+    import msvcrt
+
+    def _try_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)          # raises OSError when another process holds it
+
+    def _unlock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _try_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)   # raises OSError (BlockingIOError) when held
+
+    def _unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextmanager
+def file_lock(path: Path, timeout_s: float = LOCK_TIMEOUT_S) -> Iterator[None]:
+    """An exclusive lock between processes on one machine. The OS releases it if the holder dies, so there is no
+    stale lock to clean up. Held only for short synchronous sections, so a brief blocking wait is fine."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                _try_lock(fd)
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"quota ledger lock {path} held for more than {timeout_s:.0f}s") from None
+                time.sleep(0.005)
+        try:
+            yield
+        finally:
+            _unlock(fd)
+    finally:
+        os.close(fd)
 
 
 @dataclass
@@ -84,7 +131,26 @@ class QuotaLedger:
             if st.get("spent_until"):
                 self._spent_until[provider] = float(st["spent_until"])
 
+    @contextmanager
+    def _synced(self) -> Iterator[None]:
+        """A check-and-change against the shared file: lock, re-read what other processes booked, change, write
+        back. Without a state file it is just the in-memory change."""
+        if self.state_path is None:
+            yield
+            return
+        path = Path(self.state_path)
+        with file_lock(path.with_name(path.name + ".lock")):
+            if path.is_file():
+                self._load()
+            yield
+            self._write()
+
     def save(self) -> None:
+        """Write the current usage (merged with what other processes booked since the last change)."""
+        with self._synced():
+            pass
+
+    def _write(self) -> None:
         if self.state_path is None:
             return
         providers = set(self._day) | set(self._minute) | set(self._spent_until)
@@ -124,19 +190,19 @@ class QuotaLedger:
         Returns the seconds this caller waited (the shared `waits` total mixes all workers)."""
         waited = 0.0
         while True:
-            if self.exhausted(provider):
-                raise HarnessError(ErrorKind.QUOTA_EXHAUSTED, f"{provider}: daily quota spent")
-            left = self.remaining(provider)
-            tpm_short = left["tpm"] is not None and left["tpm"] < min(tokens, self._tpm(provider))
-            minute_full = (left["rpm"] is not None and left["rpm"] <= 0) or tpm_short or \
-                (left["tpm"] is not None and left["tpm"] <= 0)
-            if not minute_full:
-                for w in (self._minute[provider], self._day[provider]):
-                    w.requests += 1
-                    w.tokens += tokens
-                self._totals[provider] += 1
-                self.save()
-                return waited
+            with self._synced():
+                if self.exhausted(provider):
+                    raise HarnessError(ErrorKind.QUOTA_EXHAUSTED, f"{provider}: daily quota spent")
+                left = self.remaining(provider)
+                tpm_short = left["tpm"] is not None and left["tpm"] < min(tokens, self._tpm(provider))
+                minute_full = (left["rpm"] is not None and left["rpm"] <= 0) or tpm_short or \
+                    (left["tpm"] is not None and left["tpm"] <= 0)
+                if not minute_full:
+                    for w in (self._minute[provider], self._day[provider]):
+                        w.requests += 1
+                        w.tokens += tokens
+                    self._totals[provider] += 1
+                    return waited
             wait = max(0.05, self._minute[provider].start + MINUTE - self.clock())
             if self.jitter_s:
                 wait += random.uniform(0, self.jitter_s)
@@ -147,17 +213,17 @@ class QuotaLedger:
     def mark_exhausted(self, provider: str) -> None:
         """The provider itself said today's quota is spent: stop every worker calling it until the day rolls."""
         lim = self.catalog.limits(provider)
-        d = self._roll(self._day, provider, DAY)
-        d.requests = max(d.requests, lim.rpd if lim.rpd is not None else d.requests)
-        self._spent_until[provider] = d.start + DAY                   # next UTC midnight
-        self.save()
+        with self._synced():
+            d = self._roll(self._day, provider, DAY)
+            d.requests = max(d.requests, lim.rpd if lim.rpd is not None else d.requests)
+            self._spent_until[provider] = d.start + DAY               # next UTC midnight
 
     def record_tokens(self, provider: str, tokens: int, reserved: int = 0) -> None:
         """Book actual usage, releasing what acquire() reserved for this call."""
-        for store, length in ((self._minute, MINUTE), (self._day, DAY)):
-            w = self._roll(store, provider, length)
-            w.tokens = max(0, w.tokens + tokens - reserved)
-        self.save()
+        with self._synced():
+            for store, length in ((self._minute, MINUTE), (self._day, DAY)):
+                w = self._roll(store, provider, length)
+                w.tokens = max(0, w.tokens + tokens - reserved)
 
     def _tpm(self, provider: str) -> int:
         lim = self.catalog.limits(provider).tpm
@@ -165,9 +231,9 @@ class QuotaLedger:
 
     def charge(self, provider: str, requests: int = 1, tokens: int = 0) -> None:
         """Synchronous bookkeeping (no pacing), for callers outside the gateway."""
-        for store, length in ((self._minute, MINUTE), (self._day, DAY)):
-            w = self._roll(store, provider, length)
-            w.requests += requests
-            w.tokens += tokens
-        self._totals[provider] += requests
-        self.save()
+        with self._synced():
+            for store, length in ((self._minute, MINUTE), (self._day, DAY)):
+                w = self._roll(store, provider, length)
+                w.requests += requests
+                w.tokens += tokens
+            self._totals[provider] += requests

@@ -1,0 +1,7 @@
+# Matrix (config): v2-base with one change, context compaction (ADR 0015). Before a model call whose estimated
+# prompt passes 75% of the model's context_len, the older turns are replaced by a summary the model writes; the
+# last two turns stay verbatim with their tool results. The summary call is charged to the run like any call.
+id: v2-compact
+version: 1
+base: v2-base
+config: {compaction: {at: 0.75, keep_last_turns: 2, prompt: compaction/summary}}

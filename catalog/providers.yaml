@@ -13,6 +13,14 @@ providers:
       - {canonical: scripted/invent, provider_model_id: invent}   # first call names a tool that doesn't exist
       - {canonical: scripted/delegate, provider_model_id: delegate}   # hands the task to a helper when it can
 
+  # The offline rubric judge (grading/judge.ScriptedJudgeBackend, ADR 0014): deterministic, never calibrated.
+  # Its own provider, so a smoke over the scripted provider's models never runs it as an agent.
+  - id: scripted-judge
+    kind: scripted
+    data_terms: local
+    models:
+      - {canonical: scripted/judge, provider_model_id: judge}
+
   - id: groq
     kind: litellm
     litellm_prefix: groq
