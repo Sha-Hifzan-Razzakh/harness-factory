@@ -19,6 +19,7 @@ from harness_factory.env.mcp.servers import MCPServerSpec, SideEffect, TenantSpe
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.recipes.model import ToolSlice
 from harness_factory.runner.runner import run_one
+from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import ScriptedBackend
 from harness_factory.tasks.model import Task
 
@@ -63,9 +64,9 @@ def desk_spec(url: str, hashes: dict | None = None) -> MCPServerSpec:
     hashes = hashes or {}
     return MCPServerSpec(id="orders", transport="streamable_http", url=url, version="1.0", tenant=TenantSpec(), tools=[
         ToolSpec(name="get_order", side_effect=SideEffect.READ, risk="R0", timeout_s=10,
-                 schema_hash=hashes.get("orders.get_order")),
+                 **hashes.get("orders.get_order", {})),
         ToolSpec(name="refund_order", side_effect=SideEffect.REVERSIBLE, risk="R1", timeout_s=10,
-                 schema_hash=hashes.get("orders.refund_order"))])
+                 **hashes.get("orders.refund_order", {}))])
 
 
 def refund_task() -> Task:
@@ -85,7 +86,8 @@ async def setup(factory, url, monkeypatch):
     monkeypatch.setenv("HF_ALLOW_REMOTE", "1")
     probe = factory.declared.model_copy(update={"servers": [desk_spec(url)]})
     async with MCPSessionPool(probe, ["orders"], {}) as pool:                      # discovery only: no tenant
-        hashes = {r: pool.catalog.schema_hash(r) for r in ("orders.get_order", "orders.refund_order")}
+        hashes = {r: {"schema_hash": pool.catalog.schema_hash(r), "description_hash": pool.catalog.description_hash(r)}
+                  for r in ("orders.get_order", "orders.refund_order")}
         assert sorted(pool.catalog.tools) == ["orders.get_order", "orders.refund_order"]   # admin tools hidden
     declared = factory.declared.model_copy(update={"servers": [*factory.declared.servers, desk_spec(url, hashes)]})
     f = dataclasses.replace(factory, declared=declared)
@@ -195,6 +197,28 @@ def recorded(factory, desk, monkeypatch, tmp_path):
         monkeypatch.setenv("HF_REMOTE_MODE", "replay")
         return f, recipe, task, live
     return make
+
+
+async def test_two_tasks_making_the_same_calls_never_share_recorded_answers(factory, desk, monkeypatch, tmp_path):
+    """O-04: recordings are keyed by task, seed and tenant seed too. Record task A (ord-7 paid), then task B (ord-7
+    cancelled) with the same calls; replaying A must get A's answers, not the last recording's."""
+    monkeypatch.setenv("HF_REMOTE_RECORDINGS", str(tmp_path / "rec"))
+    f, recipe, task_a = await setup(factory, desk["url"], monkeypatch)
+    cancelled = {"orders": {**SEED["orders"], "ord-7": {"status": "cancelled", "amount": 120}}}
+    task_b = task_a.model_copy(update={"id": "orders-02", "env_seed": task_a.env_seed.model_copy(
+        update={"mock_api_state": {"orders": cancelled}})})
+    script = [GET7, DONE]
+    monkeypatch.setenv("HF_REMOTE_MODE", "record")
+    assert tool_texts(await run(f, recipe, task_a, script)) == ["ord-7: paid, 120 AED"]
+    assert tool_texts(await run(f, recipe, task_b, script)) == ["ord-7: cancelled, 120 AED"]
+    desk["proc"].kill()
+    desk["proc"].wait()
+    monkeypatch.delenv("HF_ALLOW_REMOTE")
+    monkeypatch.setenv("HF_REMOTE_MODE", "replay")
+    assert tool_texts(await run(f, recipe, task_a, script)) == ["ord-7: paid, 120 AED"]
+    assert tool_texts(await run(f, recipe, task_b, script)) == ["ord-7: cancelled, 120 AED"]
+    with pytest.raises(HarnessError, match="could not reset its test tenant.*not in the recording"):
+        await run_one(f, task_a, recipe, "scripted/replay", "scripted", seed=1, backend=ScriptedBackend(script))
 
 
 async def test_a_recorded_run_replays_with_repeats_answered_in_order(recorded):

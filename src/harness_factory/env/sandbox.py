@@ -7,21 +7,29 @@ DockerSandbox  same directories, bind-mounted into a locked-down container; MCP 
                no privilege escalation, pid/memory/cpu limits, runs as the host user. Use for real models.
 
 Both expose the same interface. Graders read the host-side directories, so grading is identical either way.
+Checks that run code or git after the run (tests_pass, git_log_contains) go through `probe()`, which runs them
+where the agent's code ran: a local subprocess, or `docker exec` in the run's container (ADR 0012).
 Choose with HF_SANDBOX=local|docker.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Protocol
 
 from harness_factory import settings
+from harness_factory.env.mcp import deps
+from harness_factory.env.mcp.impl import proc
 from harness_factory.env.mcp.servers import MCPServerSpec
+from harness_factory.env.state import BIZ_FILE
+from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.tasks.model import Task
 
 Launch = tuple[str, list[str], dict[str, str]]       # command, args, extra environment for that process
@@ -29,6 +37,10 @@ Launch = tuple[str, list[str], dict[str, str]]       # command, args, extra envi
 WORKSPACE_IN_CONTAINER = "/work"
 DB_IN_CONTAINER = "/state/task.sqlite"
 SKILLS_IN_CONTAINER = "/state/skills"   # installed by the provisioner next to the database, outside the workspace
+GIT_DIR_IN_CONTAINER = "/state/git"     # a git-seeded task's repository, outside the workspace (ADR 0012)
+PROBE_MODULE = "harness_factory.env.mcp.impl.proc"
+PROBE_SLACK_S = 60                      # on top of the probe's own limit, before it counts as an infrastructure fault
+BIZ_IN_CONTAINER = f"/state/{BIZ_FILE}"  # the biz server's business state, next to the database (env_seed.biz_state)
 
 
 class Sandbox(Protocol):
@@ -38,6 +50,7 @@ class Sandbox(Protocol):
 
     def reset(self, task: Task) -> None: ...
     def env(self) -> dict[str, str]: ...
+    def probe(self, request: dict, timeout_s: float) -> dict: ...
     def launch(self, spec: MCPServerSpec) -> Launch: ...
     def describe(self) -> dict[str, str]: ...
     def teardown(self) -> None: ...
@@ -54,6 +67,7 @@ class LocalSandbox:
         self.db_path = self.root / "state" / "task.sqlite"
         self.workspace.mkdir(parents=True)
         self.db_path.parent.mkdir(parents=True)
+        self.git_seed: str | None = None      # the seed commit of a git-seeded task
 
     def reset(self, task: Task) -> None:
         """Restore the task's seed in place: the directories themselves are kept, so bind mounts stay valid."""
@@ -70,19 +84,69 @@ class LocalSandbox:
             if sql:
                 c.executescript(sql.read_text())
             c.commit()
+        self.git_seed = None
+        if task.env_seed.git:
+            try:
+                self.git_seed = proc.init_seed_repo(self.git_dir, self.workspace)
+            except proc.ProcError as e:
+                raise HarnessError(ErrorKind.SANDBOX, f"{task.key()} needs a git repository: {e}") from e
+
+        biz = task.env_seed.biz_seed(task.source_dir)
+        if biz is not None:                                # a fresh copy per run: the seed itself is never written
+            try:
+                if not isinstance(json.loads(biz.read_text()), dict):
+                    raise ValueError("not a JSON object")
+            except ValueError as e:
+                raise ValueError(f"{task.key()}: biz_state seed {biz} is not a JSON object: {e}") from e
+            shutil.copyfile(biz, self.biz_path)
+
+    @property
+    def git_dir(self) -> Path:
+        return self.db_path.parent / "git"
 
     def env(self) -> dict[str, str]:
-        return {"HF_WORKSPACE": str(self.workspace), "HF_DB": str(self.db_path), "HF_SKILLS": str(self.skills_dir)}
+        return {"HF_WORKSPACE": str(self.workspace), "HF_DB": str(self.db_path), "HF_SKILLS": str(self.skills_dir),
+                "HF_GIT_DIR": str(self.git_dir), "HF_BIZ": str(self.biz_path)}
 
     @property
     def skills_dir(self) -> Path:
         return self.db_path.parent / "skills"
 
+    @property
+    def biz_path(self) -> Path:
+        return self.db_path.parent / BIZ_FILE
+
     def launch(self, spec: MCPServerSpec) -> Launch:
+        # The server runs with the factory's own Python, so a server with libraries beyond mcp (ADR 0013) needs
+        # them installed here; say so now rather than let the process die during the MCP handshake.
+        deps.require_server(spec.module, spec.id)
         return sys.executable, ["-m", spec.module], self.env()
 
     def describe(self) -> dict[str, str]:
         return {"sandbox": self.kind}
+
+    def probe_command(self) -> tuple[list[str], dict[str, str]]:
+        from harness_factory.mcp.client import process_env
+        return [sys.executable, "-P", "-m", PROBE_MODULE], process_env(self.env())
+
+    def probe(self, request: dict, timeout_s: float) -> dict:
+        """Ask proc.probe a grading question inside the sandbox (tests_pass, git_log_contains). A probe that can't
+        answer is the environment's fault, never the agent's: it raises HarnessError(SANDBOX)."""
+        argv, env = self.probe_command()
+        try:
+            done = subprocess.run(argv, input=json.dumps(request), capture_output=True, text=True, env=env,
+                                  cwd=self.workspace, timeout=timeout_s + PROBE_SLACK_S, check=False)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise HarnessError(ErrorKind.SANDBOX, f"grading probe {request.get('op')} failed: {e}") from e
+        lines = done.stdout.strip().splitlines()
+        try:
+            answer = json.loads(lines[-1]) if lines else None
+        except ValueError:
+            answer = None
+        if not isinstance(answer, dict) or "error" in answer:
+            why = answer["error"] if isinstance(answer, dict) else (done.stderr or done.stdout).strip()[-500:]
+            raise HarnessError(ErrorKind.SANDBOX, f"grading probe {request.get('op')} failed: {why}")
+        return answer
 
     def teardown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
@@ -137,11 +201,19 @@ class DockerSandbox(LocalSandbox):
         docker(*self.run_args(), timeout=60)
 
     def env(self) -> dict[str, str]:
-        return {"HF_WORKSPACE": WORKSPACE_IN_CONTAINER, "HF_DB": DB_IN_CONTAINER, "HF_SKILLS": SKILLS_IN_CONTAINER}
+        return {"HF_WORKSPACE": WORKSPACE_IN_CONTAINER, "HF_DB": DB_IN_CONTAINER, "HF_SKILLS": SKILLS_IN_CONTAINER,
+                "HF_GIT_DIR": GIT_DIR_IN_CONTAINER,
+                "HF_BIZ": BIZ_IN_CONTAINER}
 
     def launch(self, spec: MCPServerSpec) -> Launch:
         env_flags = [x for k, v in self.env().items() for x in ("-e", f"{k}={v}")]
         return settings.DOCKER_BIN, ["exec", "-i", *env_flags, self.container, "python", "-m", spec.module], {}
+
+    def probe_command(self) -> tuple[list[str], dict[str, str]]:
+        from harness_factory.mcp.client import process_env
+        env_flags = [x for k, v in self.env().items() for x in ("-e", f"{k}={v}")]
+        return ([settings.DOCKER_BIN, "exec", "-i", "-w", WORKSPACE_IN_CONTAINER, *env_flags, self.container,
+                 "python", "-P", "-m", PROBE_MODULE], process_env({}))
 
     def describe(self) -> dict[str, str]:
         return {"sandbox": self.kind, "sandbox_image": self.image}

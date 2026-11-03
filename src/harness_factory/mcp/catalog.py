@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 from pydantic import BaseModel
 
 from harness_factory.env.mcp.servers import ToolCatalogFile, ToolSpec
@@ -9,9 +11,15 @@ from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import DiscoveredTool
 
 
+def description_hash_of(text: str | None) -> str:
+    """Hash of a tool description as the model reads it, independent of how Python stored the docstring:
+    3.13 strips docstring indentation at compile time and 3.12 doesn't, so the text is normalised first."""
+    return content_hash(inspect.cleandoc(text or ""))
+
+
 class DriftIssue(BaseModel):
     tool_ref: str
-    problem: str                 # undeclared | missing | schema_changed
+    problem: str                 # undeclared | missing | schema_changed | description_changed
 
 
 class ToolCatalog(BaseModel):
@@ -27,8 +35,13 @@ class ToolCatalog(BaseModel):
     def schema_hash(self, ref: str) -> str:
         return content_hash(self.tools[ref].input_schema)
 
+    def description_hash(self, ref: str) -> str:
+        """The description is what the model reads to decide what a tool does: changing it changes behaviour."""
+        return description_hash_of(self.tools[ref].description)
+
     def catalog_hash(self) -> str:
-        return content_hash({ref: self.schema_hash(ref) for ref in sorted(self.tools)})
+        return content_hash({ref: {"schema": self.schema_hash(ref), "description": self.description_hash(ref)}
+                             for ref in sorted(self.tools)})
 
     def drift(self) -> list[DriftIssue]:
         issues = [DriftIssue(tool_ref=r, problem="undeclared") for r in self.tools if r not in self.specs]
@@ -36,4 +49,6 @@ class ToolCatalog(BaseModel):
         for ref, spec in self.specs.items():
             if ref in self.tools and spec.schema_hash and spec.schema_hash != self.schema_hash(ref):
                 issues.append(DriftIssue(tool_ref=ref, problem="schema_changed"))
+            if ref in self.tools and spec.description_hash and spec.description_hash != self.description_hash(ref):
+                issues.append(DriftIssue(tool_ref=ref, problem="description_changed"))
         return issues

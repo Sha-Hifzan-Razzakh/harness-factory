@@ -109,18 +109,25 @@ def approx_tokens(obj: Any) -> int:
 
 
 class ScriptedBackend:
-    """Turns are {"tool_calls": [{"name": ..., "arguments": {...}}]}, {"content": "..."}, or {"reject": "..."}: the
-    provider refuses the reply as malformed (MODEL_PARSE), as Groq does with tool_use_failed."""
+    """Turns are {"tool_calls": [{"name": ..., "arguments": {...}}]}, {"content": "..."}, {"reject": "..."}: the
+    provider refuses the reply as malformed (MODEL_PARSE), as Groq does with tool_use_failed, or {"fail": "<ErrorKind>"}:
+    the call fails as already classified (e.g. PROVIDER_ERROR, which the gateway retries, or CONFIG, which it doesn't)."""
 
     def __init__(self, turns: list[dict[str, Any]]) -> None:
         self.turns = list(turns)
         self.i = 0
 
     async def complete(self, messages, tools, slot, provider, served) -> Completion:
+        if getattr(slot, "role", None) == "compactor":                  # ADR 0015: answered outside the script
+            from harness_factory.substrate.context import scripted_summary
+            msg = {"role": "assistant", "content": scripted_summary(messages)}
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         turn = self.turns[self.i] if self.i < len(self.turns) else {"content": "done"}
         self.i += 1
         if "reject" in turn:
             raise HarnessError(ErrorKind.MODEL_PARSE, turn["reject"])
+        if "fail" in turn:
+            raise HarnessError(ErrorKind(turn["fail"]), f"scripted {turn['fail']}")
         if "tool_calls" in turn:
             calls = [{"id": f"call_{self.i}_{k}", "type": "function",
                       "function": {"name": c["name"], "arguments": json.dumps(c["arguments"])}}
@@ -132,10 +139,13 @@ class ScriptedBackend:
 
 
 class LiteLLMBackend:
+    accepts_response_format = True       # ModelGateway passes JSON mode only to backends that say so
+
     def __init__(self, timeout_s: float | None = None) -> None:
         self.timeout_s = timeout_s
 
-    async def complete(self, messages, tools, slot, provider, served) -> Completion:
+    async def complete(self, messages, tools, slot, provider, served,
+                       response_format: dict[str, Any] | None = None) -> Completion:
         import litellm
 
         timeout_s = self.timeout_s
@@ -147,6 +157,8 @@ class LiteLLMBackend:
         )
         if tools:
             kwargs["tools"] = tools
+        if response_format:
+            kwargs["response_format"] = response_format
         if provider.base_url:
             kwargs["api_base"] = provider.base_url
         if provider.auth_env:
@@ -196,12 +208,22 @@ class ModelGateway:
         self.infra_wait_s = 0.0          # quota waits, retry backoff, failed attempts: not the harness's time
         self.successful_calls = 0
 
-    async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict]) -> Completion:
+    async def complete(self, slot: ModelSlot, messages: list[dict], tools: list[dict],
+                       attributes: dict[str, Any] | None = None,
+                       response_format: dict[str, Any] | None = None) -> Completion:
         """One model call: take a quota slot, call with a hard timeout, classify failures, retry the transient
-        ones (honouring Retry-After). Spans of failed attempts stay in the trace with status error."""
+        ones (honouring Retry-After). Spans of failed attempts stay in the trace with status error.
+        attributes: extra attributes for the model_call span (the caller's token estimate, ADR 0015).
+
+        response_format (e.g. {"type": "json_object"}) asks for JSON mode. It is sent only when the model's caps
+        declare structured output and the backend takes it; otherwise the prompt alone asks for JSON (scripted
+        backends read the prompt). The span records which (`response_format`: the type, or "prompt_only")."""
         if not slot.canonical_model:
             raise HarnessError(ErrorKind.PROVISION, f"model slot {slot.role} has no canonical model")
         served = self.catalog.served(self.provider.id, slot.canonical_model)
+        extra: dict[str, Any] = {}
+        if response_format and served.caps.structured_output and getattr(self.backend, "accepts_response_format", False):
+            extra["response_format"] = response_format
         bucket = self.catalog.bucket(self.provider.id, slot.canonical_model)   # provider, or provider|model
         attempt = 0
         while True:
@@ -209,17 +231,27 @@ class ModelGateway:
             waited = await self.ledger.acquire(bucket, reserve)    # paces to the bucket's limits; may raise
             self.infra_wait_s += waited
             with self.tracer.span(SpanKind.model_call, slot.canonical_model, provider=self.provider.id,
-                                  provider_model_id=served.provider_model_id, attempt=attempt) as span:
+                                  provider_model_id=served.provider_model_id, attempt=attempt,
+                                  **(attributes or {})) as span:
                 if waited:
                     span.attributes["quota_wait_s"] = round(waited, 3)
+                if response_format:
+                    span.attributes["response_format"] = response_format.get("type") if extra else "prompt_only"
                 t_call = time.monotonic()
                 try:
                     if self.timeout_s:
                         # Backstop above the provider timeout: a hung backend can never hold a worker forever.
                         with anyio.fail_after(self.timeout_s + min(5.0, self.timeout_s)):
-                            comp = await self.backend.complete(messages, tools, slot, self.provider, served)
+                            comp = await self.backend.complete(messages, tools, slot, self.provider, served, **extra)
                     else:
-                        comp = await self.backend.complete(messages, tools, slot, self.provider, served)
+                        comp = await self.backend.complete(messages, tools, slot, self.provider, served, **extra)
+                except asyncio.CancelledError:
+                    # Ctrl-C or a cancelled campaign: the call never finished, so give back the tokens it reserved
+                    # (otherwise the persisted ledger over-counts tpm/tpd until the window rolls). Not a provider
+                    # error, so nothing to classify; the cancellation goes on.
+                    span.status, span.error = "error", "cancelled"
+                    self.ledger.record_tokens(bucket, 0, reserve)
+                    raise
                 except Exception as raw:  # classified below; nothing escapes untyped
                     e = raw if isinstance(raw, HarnessError) else classify_provider_error(
                         raw, mid_run=self.successful_calls > 0)

@@ -1,0 +1,7 @@
+# Matrix (retrieval): v2-base with one change, the retrieve.search tool over the task's corpus with BM25 (LlamaIndex
+# BM25Retriever), 5 passages per call (KNW-02, ADR 0017). Offered only on tasks whose seed has a corpus/ folder;
+# on every other task this recipe runs exactly like v2-base.
+id: v2-retrieval-bm25
+version: 1
+base: v2-base
+retrieval: {mode: bm25, top_k: 5, rerank: false}

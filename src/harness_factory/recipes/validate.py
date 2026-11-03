@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from harness_factory.env.mcp.servers import RISK_TO_TIER, TIER_ORDER, ToolCatalogFile
 from harness_factory.providers.catalog import ProviderCatalog
 from harness_factory.recipes.model import (
+    STRUCTURED_PLAN_PROMPTS,
     HarnessRecipe,
     MemoryProfile,
     RuntimeConfig,
@@ -31,12 +32,8 @@ def inert_fields(recipe: HarnessRecipe) -> list[str]:
     out = []
     if recipe.memory != MemoryProfile():
         out.append("memory")
-    if recipe.retrieval is not None and recipe.retrieval.mode != "none":
-        out.append("retrieval")
     if recipe.config.compaction_at != d_cfg.compaction_at:
         out.append("config.compaction_at")
-    if recipe.config.parallel_tool_calls != d_cfg.parallel_tool_calls:
-        out.append("config.parallel_tool_calls")
     for f in ("deferred", "defer_above_tokens", "binding"):
         if getattr(recipe.tools, f) != getattr(d_tools, f):
             out.append(f"tools.{f}")
@@ -50,8 +47,12 @@ def inert_fields(recipe: HarnessRecipe) -> list[str]:
 
 
 def reachable_tools(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[str]:
-    """Tools the recipe allows on its servers, minus those its policy denies outright."""
+    """Tools the recipe allows on its servers, minus those its policy denies outright, plus the retrieval tool when
+    the recipe retrieves (offered only on tasks with a corpus, ADR 0017)."""
+    from harness_factory.retrieval import tool as retrieval
     out = []
+    if retrieval.active(recipe) and recipe.policies.permission_mode.get(retrieval.RETRIEVE_SPEC.side_effect.value) != "DENY":
+        out.append(retrieval.RETRIEVE_REF)
     for sid in recipe.tools.mcp_servers:
         try:
             server = declared.server(sid)
@@ -80,6 +81,30 @@ def _skill_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[Vali
     return out
 
 
+def _retrieval_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[ValidationIssue]:
+    """ADR 0017. A task without a corpus simply doesn't get the tool, so nothing here depends on tasks."""
+    from harness_factory.retrieval import tool as retrieval
+    r = recipe.retrieval
+    if r is None:
+        return []
+    if r.mode == "none":
+        return [ValidationIssue(rule="retrieval_unused", detail="retrieval.rerank is set but mode is none")] \
+            if r.rerank else []
+    out = []
+    if not retrieval.installed():
+        out.append(ValidationIssue(rule="retrieval_installed",
+                                   detail=f"retrieval mode {r.mode} needs the retrieval extra (uv sync --extra retrieval)"))
+    if retrieval.RETRIEVE_SERVER in {s.id for s in declared.servers}:
+        out.append(ValidationIssue(rule="retrieval_namespace",
+                                   detail=f"tools.yaml declares a server {retrieval.RETRIEVE_SERVER!r}, the retrieval "
+                                          f"tool's namespace"))
+    if recipe.policies.permission_mode.get(retrieval.RETRIEVE_SPEC.side_effect.value) == "DENY":
+        out.append(ValidationIssue(rule="retrieval_unused", detail="retrieval is set but the policy denies READ tools"))
+    if recipe.variant == Variant.V1_SINGLE_CALL:
+        out.append(ValidationIssue(rule="retrieval_unused", detail="V1_SINGLE_CALL ignores the retrieval tool"))
+    return out
+
+
 def _delegation_issues(recipe: HarnessRecipe) -> list[ValidationIssue]:
     """EXT-09/11: the child must exist, and open no server its parent doesn't (it runs on the parent's sessions)."""
     d = recipe.delegation
@@ -92,6 +117,66 @@ def _delegation_issues(recipe: HarnessRecipe) -> list[ValidationIssue]:
         return [ValidationIssue(rule="delegate_servers",
                                 detail=f"{d.child.id} opens {', '.join(extra)}, which {recipe.id} does not")]
     return []
+
+
+def _context_issues(recipe: HarnessRecipe, prompts: PromptRegistry, providers: ProviderCatalog | None,
+                    provider_id: str | None) -> list[ValidationIssue]:
+    """RCP-05 (context part, ADR 0015). The compaction prompt exists and its slot is unpinned; with a provider
+    catalog, every slot's reply budget leaves room for a prompt in the model's context_len. At provisioning that is
+    the run's model; in `hfx validate` (no model yet) every model the catalog serves."""
+    out: list[ValidationIssue] = []
+    spec = recipe.config.compaction
+    if spec is not None and not prompts.exists(spec.prompt):
+        out.append(ValidationIssue(rule="prompt_exists", detail=f"compaction: prompt {spec.prompt!r}"))
+    slot = recipe.model_slots.get("compactor")
+    if slot is not None and slot.canonical_model is not None:
+        out.append(ValidationIssue(rule="compactor_model_unpinned",
+                                   detail="the compactor slot uses the run's model; leave canonical_model empty"))
+    if providers is None:
+        return out
+    if provider_id:
+        served = []
+        for s in recipe.model_slots.values():
+            if s.canonical_model:
+                try:
+                    served.append(providers.served(provider_id, s.canonical_model))
+                except KeyError:
+                    pass                                   # reported as model_served
+    else:
+        served = [m for p in providers.providers if p.status == "active" for m in p.models]
+    exec_slot = recipe.model_slots.get("executor")
+    for m in served:
+        for s in recipe.model_slots.values():
+            if s.max_output_tokens >= m.caps.context_len:
+                out.append(ValidationIssue(rule="context_fits_reply",
+                                           detail=f"{s.role} max_output_tokens {s.max_output_tokens} leaves no room "
+                                                  f"for a prompt in {m.canonical}'s context_len {m.caps.context_len}"))
+        if spec is not None and exec_slot is not None and spec.keep_last_turns * exec_slot.max_output_tokens \
+                >= m.caps.context_len - exec_slot.max_output_tokens:
+            out.append(ValidationIssue(rule="compaction_fits_context",
+                                       detail=f"keep_last_turns {spec.keep_last_turns} replies of up to "
+                                              f"{exec_slot.max_output_tokens} tokens fill {m.canonical}'s "
+                                              f"context_len {m.caps.context_len}: compacting could not make room"))
+    return sorted({(i.rule, i.detail): i for i in out}.values(), key=lambda i: (i.rule, i.detail))
+
+
+def _structured_issues(recipe: HarnessRecipe, prompts: PromptRegistry) -> list[ValidationIssue]:
+    """Structured plans (SUB-08): max_parallel and plan_retries mean something only with JSON plans, and concurrent
+    steps only in V5 (V4's steps share one executor conversation)."""
+    pl, out = recipe.planning, []
+    if not pl.structured:
+        for f in ("max_parallel", "plan_retries"):
+            if getattr(pl, f) is not None:
+                out.append(ValidationIssue(rule="structured_plan_required",
+                                           detail=f"planning.{f} needs planning.structured: true"))
+        return out
+    if pl.max_parallel is not None and recipe.variant != Variant.V5_ORCHESTRATOR:
+        out.append(ValidationIssue(rule="max_parallel_v5_only",
+                                   detail="only V5 runs steps concurrently (V4's steps share one conversation)"))
+    for ref in STRUCTURED_PLAN_PROMPTS:
+        if not prompts.exists(ref):
+            out.append(ValidationIssue(rule="prompt_exists", detail=f"planning (structured): prompt {ref!r}"))
+    return out
 
 
 def _runtime_issues(recipe: HarnessRecipe, provisioning: bool = False) -> list[ValidationIssue]:
@@ -138,8 +223,15 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
 
     for f in inert_fields(recipe):
         issues.append(ValidationIssue(rule="field_implemented", detail=f"{f} is declared but not implemented yet"))
+    for role, slot in recipe.model_slots.items():
+        if slot.seed is not None:   # a campaign axis (RunKey): left out of the recipe hash, so it can't live here
+            issues.append(ValidationIssue(rule="seed_is_campaign_axis",
+                                          detail=f"model slot {role!r} sets seed {slot.seed}: seeds are chosen per "
+                                                 f"run (`--seeds`), never in a recipe"))
     issues += _skill_issues(recipe, declared)
     issues += _delegation_issues(recipe)
+    issues += _context_issues(recipe, prompts, providers, provider_id)
+    issues += _retrieval_issues(recipe, declared)
     issues += _runtime_issues(recipe, provisioning=bool(providers and provider_id))
 
     if recipe.variant not in ShapeRegistry.variants():
@@ -195,6 +287,7 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
         for ref in (pl.planner_prompt, pl.step_prompt, pl.replan_prompt, *([pl.worker_prompt] if pl.worker_prompt else [])):
             if not prompts.exists(ref):
                 issues.append(ValidationIssue(rule="prompt_exists", detail=f"planning: prompt {ref!r}"))
+        issues += _structured_issues(recipe, prompts)
         planner = recipe.model_slots.get("planner")
         if planner is not None and planner.canonical_model is not None:
             # The model is a campaign axis and only the executor's is in the RunKey: a pinned planner model would
@@ -209,7 +302,8 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
     unhashed = [r for r in declared.unhashed_tools() if r.split(".")[0] in recipe.tools.mcp_servers]
     if unhashed:
         issues.append(ValidationIssue(rule="tool_schema_hashed",
-                                      detail=f"no schema_hash in tools.yaml for {', '.join(unhashed)}; "
+                                      detail=f"no schema_hash or description_hash in tools.yaml for "
+                                             f"{', '.join(unhashed)}; "
                                              f"run `hfx tools freeze`"))
 
     known = {s.id for s in declared.servers}
@@ -226,9 +320,17 @@ def validate_recipe(recipe: HarnessRecipe, declared: ToolCatalogFile, prompts: P
 
     needed = "T1"
     for ref in reachable_tools(recipe, declared):
-        tier = RISK_TO_TIER[declared.spec(ref).risk]
-        if TIER_ORDER.index(tier) > TIER_ORDER.index(needed):
-            needed = tier
+        if ref.split(".")[0] not in known:            # a harness-side tool (retrieval: READ, R0)
+            continue
+        spec = declared.spec(ref)
+        risks = [spec.risk]
+        esc = spec.escalation                       # calls the policy lets through with a stronger side effect
+        if esc is not None and recipe.policies.permission_mode.get(esc.side_effect.value) != "DENY":
+            risks.append(esc.risk)
+        for risk in risks:
+            tier = RISK_TO_TIER[risk]
+            if TIER_ORDER.index(tier) > TIER_ORDER.index(needed):
+                needed = tier
     if TIER_ORDER.index(recipe.tier) < TIER_ORDER.index(needed):
         issues.append(ValidationIssue(rule="tier_covers_risk",
                                       detail=f"tier {recipe.tier} is below {needed} required by reachable tools"))

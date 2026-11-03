@@ -1,0 +1,10 @@
+# Matrix (tools): v2-base with one change, the fsx server (exact-string edit, append, move, mkdir, tree) added to
+# the tool slice. fs can only rewrite a whole file. Tasks get fsx tools without any task edit (granted_by in
+# tools.yaml): only where they already allow the fs tools each one combines, so a write tool is offered only
+# where the task allows file writes, and the permission policy applies by side effect as for fs.
+id: v2-fsx
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "fsx.*"]
+  mcp_servers: [fs, sql, fsx]
