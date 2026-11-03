@@ -201,3 +201,79 @@ servers:
     timeout_s: 30
     schema_hash: 30d195c0c1cff4d9
     description_hash: 921530a6bc8fa208
+- id: biz
+  transport: stdio
+  module: harness_factory.env.mcp.impl.biz_server
+  tools:
+  - name: crm_search_contacts
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: ff8813b26b7a402a
+    description_hash: e8e896293a3e4b07
+  - name: crm_get_contact
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: edf0aa9923ccaffa
+    description_hash: cf448f34e5335eb4
+  - name: crm_update_contact
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 13fba45406a89663
+    description_hash: 481af04acadf02a3
+  - name: inv_list_invoices
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: adc18de7c219c5e2
+    description_hash: af4cc12c8bda96a0
+  - name: inv_get_invoice
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: d7d8efcce1e02cc1
+    description_hash: f685a130d476a597
+  - name: inv_create_credit_note
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 10
+    schema_hash: cc61ecfbb34c9591
+    description_hash: 729a29a4e09e1424
+  - name: inv_void_credit_note
+    side_effect: REVERSIBLE
+    risk: R2
+    timeout_s: 10
+    schema_hash: 2cc87b3f36663b25
+    description_hash: 885d2c317d745f76
+  - name: inv_mark_paid
+    side_effect: IRREVERSIBLE
+    risk: R3
+    timeout_s: 10
+    schema_hash: fd0185ab0fa99d7d
+    description_hash: 0a353ec2dcb020e0
+  - name: tkt_list
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: dd08be833cd0dc71
+    description_hash: ab60f61e5d2f1bac
+  - name: tkt_get
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: 78aff0787405faa7
+    description_hash: 4d1ced059b43535c
+  - name: tkt_comment
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 4aad2416265e829c
+    description_hash: fc4a75baa33cc3df
+  - name: tkt_close
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 875d099f4e51e27a
+    description_hash: ab70d4b644a3db1e

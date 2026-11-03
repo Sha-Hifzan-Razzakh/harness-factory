@@ -280,6 +280,9 @@ def test_adding_code_and_git_moved_no_existing_identity(factory):
     def before_this_pr(t):                    # the task hash formula as it was: no `git`, no `ref`
         data = t.model_dump(mode="json", exclude={"status", "split", "tags"})
         data["env_seed"].pop("git")
+        for k in ("biz_state",):              # added by a later PR (#46), also omitted when unset
+            if data["env_seed"].get(k) is None:
+                data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
             c.pop("ref")
         data["seed_hash"] = t.env_seed.data_hash(t.source_dir)
@@ -386,8 +389,9 @@ def test_campaigns_plan_only_recipes_that_reach_the_task_tools(factory):
     base = {s.task_id for s in plan(factory, "v2-base", "scripted", ["scripted/replay"])}
     code = {s.task_id for s in plan(factory, "v2-code", "scripted", ["scripted/replay"])}
     visible = {t.id for t in factory.tasks.all()}
-    assert {"code-02", "code-03"} <= code == visible
-    assert base == visible - {"code-02", "code-03"}                      # every other task, as before
+    biz = {t.id for t in factory.tasks.all() if any(p.startswith("biz.") for p in t.allowed_tools)}
+    assert {"code-02", "code-03"} <= code == visible - biz              # v2-code doesn't open biz (#46)
+    assert base == visible - {"code-02", "code-03"} - biz                # every other task, as before
 
 
 async def test_real_models_need_docker_or_an_opt_in_to_run_code_locally(factory, monkeypatch):

@@ -120,6 +120,8 @@ class StateDiffGrader:
             return self._tests_pass(c, ctx)
         if c.kind == "git_log_contains":
             return self._git_log(c, ctx)
+        if c.kind in ("biz_equals", "biz_count"):
+            return _biz_check(c, ctx.after.biz)
         return False, f"unknown check kind {c.kind}"
 
     @staticmethod
@@ -165,3 +167,45 @@ class StateDiffGrader:
         score = round(sum(ch.weight for ch in checks if ch.passed), 6)
         return Grade(grader_id=self.id, score=score, passed=score >= ctx.task.oracle.pass_threshold and not violations,
                      checks=checks, violations=violations, detail=ctx.diff.summary())
+
+
+# ------------------------------------------------------------------ business state (the biz server)
+
+def _biz_eq(a, b) -> bool:
+    """JSON equality, strict on type: booleans are not numbers (True == 1 in Python) and strings are not numbers.
+    Integers and floats compare by value (JSON has one number type)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_biz_eq(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_biz_eq(x, y) for x, y in zip(a, b, strict=True))
+    if isinstance(a, (dict, list, str)) or isinstance(b, (dict, list, str)):
+        return type(a) is type(b) and a == b
+    return a == b
+
+
+def _biz_expected(text: str):
+    """The expected value: JSON when it parses, else the text itself as a string."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+def _biz_check(c: WeightedCheck, doc) -> tuple[bool, str]:
+    if doc is None:
+        return False, "no business state (the task seeds none, or it was removed)"
+    actual = _pointer(doc, c.path or "")
+    shown = "missing" if actual is _MISSING else json.dumps(actual, default=str)[:120]
+    if c.kind == "biz_equals":
+        found = actual is not _MISSING and _biz_eq(actual, _biz_expected(c.text or ""))
+        ok = (not found) if c.negate else found
+        return ok, ("equal" if found else f"got {shown}") + (" (negated)" if c.negate else "")
+    if actual is _MISSING or not isinstance(actual, (dict, list)):
+        return False, f"{c.path} is not a collection (got {shown})"
+    records = list(actual.values()) if isinstance(actual, dict) else actual
+    where = json.loads(c.query) if c.query else {}
+    n = sum(1 for r in records if isinstance(r, dict) and all(k in r and _biz_eq(r[k], v) for k, v in where.items()))
+    want = int(c.text or "0")
+    return n == want, f"{n} matching" + ("" if n == want else f", expected {want}")

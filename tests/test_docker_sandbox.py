@@ -212,3 +212,14 @@ async def test_code_and_git_tasks_inside_the_container(factory, docker_required,
         assert sb.probe({"op": "git_commits", "ref": "main", "since": sb.git_seed}, 30) == {"commits": []}
     finally:
         sb.teardown()
+
+
+async def test_business_state_inside_the_container(factory, docker_required, monkeypatch):
+    """The biz server runs in the container and writes the business state in /state (the only writable mount
+    next to /work); graders read the host side of the same file."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    rec = await run_one(factory, factory.tasks.get("biz-01"), factory.recipes["v2-biz"], "scripted/replay",
+                        "scripted")
+    assert rec.status.value == "SUCCESS", rec.grades
+    state = next(g for g in rec.grades if g["grader_id"] == "state_diff")
+    assert state["snapshot"]["sandbox"] == "docker" and "+biz credit_notes/CN-0004" in state["detail"]
