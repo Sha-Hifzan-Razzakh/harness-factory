@@ -980,6 +980,35 @@ Offline, `first-call-fails` separates exactly what it should:
 | `v2-base` | `scripted/retry` | 1.00 | 0.948 |
 | `v1-base` | either (one response, cannot retry) | 0.00 | 0.168 |
 
+### Slow tools and malformed results (ENV-03)
+
+Two more kinds, and a profile for each:
+
+| Profile | What happens |
+|---|---|
+| `slow-tools` | About 25% of calls take 0.2–2 s longer; about 3% stall for 40 s, past most tools' `timeout_s` |
+| `malformed-results` | About 30% of reads succeed but come back wrong in shape, while still parsing |
+
+- **`latency`** (`delay_s: 1.5`, or `delay_s: [0.2, 2.0]` drawn per call from the run seed and the call number,
+  never from the clock). The tool still runs and succeeds, after a real `asyncio.sleep`. The delay counts toward
+  the run's wall time like any slow tool: it is not infra wait, so it is never excluded from `wall_time_s`, and
+  a slow tool can end a run on its wall-time budget. A delay that reaches the tool's `timeout_s` is a real
+  timeout: the call waits `timeout_s` and fails with the same message as a tool that never answered, and the
+  tool doesn't run. Cancelling a run during a delay stops it at once.
+- **`timeout` stays immediate.** A real wait of `timeout_s` would slow every `transient` run and change what that
+  profile measures, so `latency` is the slow-tool kind.
+- **`malformed`** fires only on calls that only read (a write's acknowledgement isn't data the model uses), and
+  only reshapes a successful result. Per result type: a JSON object gets a key renamed (snake_case to camelCase)
+  or dropped, or is wrapped as `{"data": ...}`; a JSON array is wrapped as `{"items": [...], "count": n}` or has
+  a key renamed in every element; CSV-like rows keep their header and shift every row's fields right by one;
+  `key = value` / `key: value` lines (ini files, grep's `path:line: text`) shift their values down one key;
+  other lines rotate by one; one line swaps its first two words. The variant is picked from the run seed, the
+  tool and the call number. `env/faults.py` (`malform`) has the full table.
+- **Spans** record `fault` (the kind), `fault_delay_s` and `malformed` (how the result was reshaped). The model
+  sees none of it. When the call fails by itself under one of these kinds (the model's bad arguments, say), the
+  kind is recorded as `fault_inert` instead, and Q counts that error as the model's like any other.
+- CI runs `slow-tools` in the fault gate. Clean runs gate the build; faulted runs feed R.
+
 ## How a run ends
 
 Every run ends in one of three ways, and only the first is scored:

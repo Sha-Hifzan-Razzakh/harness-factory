@@ -94,7 +94,7 @@ jobs:
         run: uv run --no-sync hfx smoke --recipe v2-langgraph-prebuilt,v2-llamaindex-agent --models scripted/replay --strict -j 8 --exclude-tag long
            
       - name: Fault injection (clean runs gate; faulted runs feed R)
-        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict -j 8
+        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails,slow-tools --strict -j 8
 
       - name: Inspect AI adapter (factory runs as an Inspect eval)
         run: |

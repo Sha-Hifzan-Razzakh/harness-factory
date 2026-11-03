@@ -1,0 +1,8 @@
+# Results that succeed and still parse, but come back wrong in shape: a JSON key renamed or dropped, a list wrapped
+# in an object, CSV columns or key-value values shifted (env/faults.py lists every form). Silent failures again:
+# only a harness that checks what it got survives them. Fires on calls that only read, on the task's own tools
+# (not skills or harness-side tools).
+id: malformed-results
+description: ~30% of reads come back misshapen (renamed/dropped keys, wrapped lists, shifted columns).
+rules:
+  - {tools: ["fs.*", "fsx.*", "sql.*", "search.*", "git.*", "biz.*", "docs.*"], kind: malformed, rate: 0.3}
