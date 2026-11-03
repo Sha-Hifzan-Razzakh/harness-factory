@@ -586,8 +586,11 @@ task("rag-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "The knowledge base is in corpus/. Under the customer refund policy that is in effect now, what is the "
      "largest refund a support agent may approve without a manager's sign-off? Answer with the amount in AED and "
      "the id of the document you took it from (kb-NNN).",
-     [chk("answer", "output_regex", 0.7, pattern=r"(?<![\d,.])750(?![\d,])"),
-      chk("source", "output_regex", 0.3, pattern=rf"\b{KB_ID['refunds-2026']}\b"),
+     # The wrong limits: the superseded 2024 policy (500), the unapproved draft (1,000), the wholesale desk (2,000).
+     [chk("answer", "output_regex", 0.7,
+          pattern=r"(?s)\A(?!.*(?<![\d,.])(?:500|1,?000|2,?000)(?![\d,]))(?=.*(?<![\d,.])750(?![\d,]))"),
+      chk("source", "output_regex", 0.3, pattern=one_of(
+          KB_ID["refunds-2026"], [KB_ID["refunds-2024"], KB_ID["refunds-2027-draft"], KB_ID["refunds-wholesale"]])),
       kb_guard("refunds-2026")],
      [rt("refund approval limit for a support agent without a manager"), rd(kb("refunds-2026"))],
      f"750 AED, from the refund policy version 3 in effect since 1 March 2026 ({KB_ID['refunds-2026']}).",
@@ -596,26 +599,28 @@ task("rag-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
 task("rag-02", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "The knowledge base is in corpus/. Which TCP port does the payments-gateway service listen on in production "
      "today? Answer with the port number and the id of the document that establishes it (kb-NNN).",
-     [chk("answer", "output_regex", 0.7, pattern=r"(?<![\d,.])9443(?!\d)"),
-      chk("source", "output_regex", 0.3, pattern=rf"\b{KB_ID['cn-2026-014']}\b"),
+     # The wrong ports: the stale catalog entry (8443) and the cancelled later move (10443).
+     [chk("answer", "output_regex", 0.7, pattern=r"(?s)\A(?!.*(?<![\d,.])(?:8443|10443)(?!\d))(?=.*(?<![\d,.])9443(?!\d))"),
+      chk("source", "output_regex", 0.3,
+          pattern=one_of(KB_ID["cn-2026-014"], [KB_ID["svc-payments-gateway"], KB_ID["cn-2026-022"]])),
       kb_guard("cn-2026-014")],
      [rt("payments-gateway production port change"), rd(kb("svc-payments-gateway")), rd(kb("cn-2026-014"))],
-     f"9443: the catalog entry ({KB_ID['svc-payments-gateway']}) still says 8443, but change notice CN-2026-014 "
-     f"({KB_ID['cn-2026-014']}) moved it to 9443 on 2 March 2026; the later move to 10443 was cancelled.",
+     f"9443, set by change notice CN-2026-014 ({KB_ID['cn-2026-014']}) on 2 March 2026.",
      seed=KB, tags=["retrieval", "research", "multi-hop", "distractors", "trap"])
 
 task("rag-03", "research", "UNKNOWN_PATH", "R0", "HELD_OUT", FS_READ,
      "The knowledge base is in corpus/. What was the root cause of incident INC-2291, and which team owns the "
      "component that has to be fixed? Answer with the root cause in a few words, the team name, and the id of the "
      "incident review (kb-NNN).",
-     [chk("cause", "output_regex", 0.4, pattern=r"(?i)\b(spool|disk)"),
-      chk("team", "output_regex", 0.4, pattern=r"(?i)\bwarehouse systems\b"),
-      chk("source", "output_regex", 0.2, pattern=rf"\b{KB_ID['inc-2291']}\b"),
+     # The wrong answers: the stale owner (Fulfilment Apps) and INC-2219's cause and team (TLS, Web Platform).
+     [chk("cause", "output_regex", 0.4, pattern=r"(?is)\A(?!.*\b(?:TLS|certificate)\b)(?=.*\b(?:spool|disk))"),
+      chk("team", "output_regex", 0.4, pattern=one_of("Warehouse Systems", ["Fulfilment Apps", "Web Platform"])),
+      chk("source", "output_regex", 0.2, pattern=one_of(KB_ID["inc-2291"], [KB_ID["inc-2219"]])),
       kb_guard("inc-2291"), kb_guard("org-changes-2026")],
      [rt("INC-2291 root cause"), rd(kb("inc-2291")), rt("label-printer service owner"),
       rd(kb("svc-label-printer")), rd(kb("org-changes-2026"))],
      f"Root cause: label-printer's spool files were never rotated and filled the disk ({KB_ID['inc-2291']}). "
-     f"label-printer moved from Fulfilment Apps to Warehouse Systems on 15 January 2026 "
+     f"label-printer moved to Warehouse Systems on 15 January 2026 "
      f"({KB_ID['org-changes-2026']}), so Warehouse Systems owns the fix.",
      seed=KB, tags=["retrieval", "research", "multi-hop", "distractors", "trap"])
 

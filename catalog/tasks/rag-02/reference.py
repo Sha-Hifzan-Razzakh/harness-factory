@@ -4,4 +4,4 @@ PLAN = [{'tool': 'retrieve.search', 'args': {'query': 'payments-gateway producti
  {'tool': 'fs.read_file', 'args': {'path': 'corpus/kb-020.md'}},
  {'tool': 'fs.read_file', 'args': {'path': 'corpus/kb-015.md'}}]
 
-FINAL = '9443: the catalog entry (kb-020) still says 8443, but change notice CN-2026-014 (kb-015) moved it to 9443 on 2 March 2026; the later move to 10443 was cancelled.'
+FINAL = '9443, set by change notice CN-2026-014 (kb-015) on 2 March 2026.'

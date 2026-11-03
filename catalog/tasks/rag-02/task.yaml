@@ -24,11 +24,11 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.7
-    pattern: (?<![\d,.])9443(?!\d)
+    pattern: (?s)\A(?!.*(?<![\d,.])(?:8443|10443)(?!\d))(?=.*(?<![\d,.])9443(?!\d))
   - id: source
     kind: output_regex
     weight: 0.3
-    pattern: \bkb-015\b
+    pattern: (?is)\A(?!.*(?<!\w)(?:kb\-020|kb\-026)(?!\w))(?=.*(?<!\w)kb\-015(?!\w))
   - id: kb-015_untouched
     kind: file_equals
     weight: 0

@@ -6,4 +6,4 @@ PLAN = [{'tool': 'retrieve.search', 'args': {'query': 'INC-2291 root cause'}, 'o
  {'tool': 'fs.read_file', 'args': {'path': 'corpus/kb-006.md'}},
  {'tool': 'fs.read_file', 'args': {'path': 'corpus/kb-052.md'}}]
 
-FINAL = "Root cause: label-printer's spool files were never rotated and filled the disk (kb-049). label-printer moved from Fulfilment Apps to Warehouse Systems on 15 January 2026 (kb-052), so Warehouse Systems owns the fix."
+FINAL = "Root cause: label-printer's spool files were never rotated and filled the disk (kb-049). label-printer moved to Warehouse Systems on 15 January 2026 (kb-052), so Warehouse Systems owns the fix."

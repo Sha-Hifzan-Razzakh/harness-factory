@@ -25,15 +25,15 @@ oracle:
   - id: cause
     kind: output_regex
     weight: 0.4
-    pattern: (?i)\b(spool|disk)
+    pattern: (?is)\A(?!.*\b(?:TLS|certificate)\b)(?=.*\b(?:spool|disk))
   - id: team
     kind: output_regex
     weight: 0.4
-    pattern: (?i)\bwarehouse systems\b
+    pattern: (?is)\A(?!.*(?<!\w)(?:Fulfilment Apps|Web Platform)(?!\w))(?=.*(?<!\w)Warehouse Systems(?!\w))
   - id: source
     kind: output_regex
     weight: 0.2
-    pattern: \bkb-049\b
+    pattern: (?is)\A(?!.*(?<!\w)(?:kb\-023)(?!\w))(?=.*(?<!\w)kb\-049(?!\w))
   - id: kb-049_untouched
     kind: file_equals
     weight: 0
