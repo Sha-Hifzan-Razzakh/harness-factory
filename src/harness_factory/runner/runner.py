@@ -110,7 +110,7 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
 # PARTIAL. Without it, a harness that solves early and then keeps calling until a cap scores like a clean run
 # (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
 OVERRUN_OUTCOME_FACTOR = 0.5
-OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"})
+OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "step_cap", "context_overflow", "malformed_output"})
 
 
 def overran(result: RunResult) -> bool:
@@ -225,6 +225,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             fault=fault,
             endstate_path=endstate_path,
             judge_usage=judge_usage(ctx.judgements, wall_s=judge_s),
+            tools_hash=f.declared.env_hash(recipe.tools.mcp_servers, "*"),
+            served_id=f.providers.served(provider_id, canonical_model).provider_model_id,
         )
     if f.store:
         f.store.add(rec)

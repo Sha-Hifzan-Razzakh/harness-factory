@@ -549,15 +549,23 @@ def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option
 def report(out: str | None = typer.Option(None, "--out", help="write markdown here (default: print)"),
            models: str | None = typer.Option(None, "--models", help="comma-separated models (default: all)"),
            baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id"),
-           title: str = typer.Option("Campaign report", "--title")) -> None:
-    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, selector picks,
-    failures and unscored runs."""
+           title: str = typer.Option("Campaign report", "--title"),
+           compare: str | None = typer.Option(None, "--compare",
+                                              help="recipe pairs base:variant, comma-separated, e.g. "
+                                                   "v2-base:v3-staged,v2-base:v4-planner")) -> None:
+    """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, any recipe pairs
+    asked for with --compare, selector picks, failures and unscored runs."""
     from pathlib import Path
 
     from harness_factory.results.report import build_report
+    from harness_factory.runner.bench import parse_compare
+    try:
+        pairs = parse_compare(compare) if compare else None
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="--compare") from None
     f = _factory()
     rows, b = _evidence(f, baseline)
-    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None)
+    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None, compare=pairs)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(text + "\n")
@@ -570,6 +578,11 @@ from harness_factory.cli.authoring import register as _register_authoring  # hfx
 
 _register_authoring(app)
 
+from harness_factory.cli.calibration import calibration_app
+
+app.add_typer(calibration_app, name="calibration")
+
+from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
 from harness_factory.cli.regrade import register as _register_regrade  # hfx regrade
 
 _register_regrade(app)

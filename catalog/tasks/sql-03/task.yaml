@@ -1,5 +1,5 @@
 id: sql-03
-version: 1
+version: 2
 domain: data
 instruction: Which customer brought in the most revenue from paid orders placed in 2026, after subtracting refunds?
   Answer with the customer's name.
@@ -25,7 +25,9 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.75
-    pattern: Harbor Logistics
+    pattern: (?is)\A(?!.*(?<!\w)(?:Al Noor Trading|Falcon Systems|Oasis Foods|Creek Analytics|Desert Rose Interiors|Marina
+      Fitness|Palm Pharmacy|Gulf Print House|Sandstone Cafe|QA Test Account|Load Test Bot)(?!\w))(?=.*(?<!\w)Harbor
+      Logistics(?!\w))
   - id: grounded
     kind: tool_called
     weight: 0.25
