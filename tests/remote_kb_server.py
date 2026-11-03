@@ -19,7 +19,7 @@ GLOSSARY = {
     "test account": "A customer whose email ends in @example.test; excluded from reporting.",
 }
 
-app = MCPServer("kb", instructions="Company glossary. Look up a term before relying on its meaning.")
+app = MCPServer("kb", version="1.0", instructions="Company glossary. Look up a term before relying on its meaning.")
 
 
 @app.tool()
