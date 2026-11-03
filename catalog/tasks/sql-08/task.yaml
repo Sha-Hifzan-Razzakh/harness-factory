@@ -1,5 +1,5 @@
 id: sql-08
-version: 1
+version: 2
 domain: data
 instruction: What was the average value of paid orders placed in the third quarter of 2026 (July to September)?
   An order's value is the sum of quantity times unit price over its items, before refunds. Exclude test accounts
@@ -26,7 +26,7 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.75
-    pattern: 1,?696\.11
+    pattern: (?s)\A(?!.*(?<![\w.,])(?!(?:1,?696\.11|2|2026)(?![\d]|[.,]\d))\d(?:[\d,]*\d)?(?:\.\d+)?)(?=.*(?<![\d.,])(?:1,?696\.11)(?![\d]|[.,]\d))
   - id: grounded
     kind: tool_called
     weight: 0.25

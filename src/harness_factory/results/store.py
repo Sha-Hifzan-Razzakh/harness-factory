@@ -62,6 +62,16 @@ runs = Table(
     Column("fault", String),                                 # fault profile id; NULL = clean run
     Column("grader_versions", JSON),                         # grader id -> version; NULL = before versions
     Column("endstate_path", String),                         # end-state bundle (runner/endstate.py), if kept
+    Column("tools_hash", String),                            # env without the provider model id (pooling, P2)
+    Column("served_id", String),                             # provider model id that served the run
+)
+
+equivalences = Table(
+    "equivalences", metadata,                                # cross-provider calibrations (P2), frozen
+    Column("id", String(12), primary_key=True),              # content hash of what was compared and found
+    Column("canonical_model", String, nullable=False, index=True),
+    Column("record", JSON, nullable=False),                  # results.calibration.Equivalence
+    Column("created_at", DateTime, nullable=False),
 )
 
 # Re-grades (hfx regrade): the current graders over a stored run's end state. A row here never changes the run's
@@ -111,6 +121,7 @@ def record_row(rec: EffectivenessRecord) -> dict:
         grades=json.loads(json.dumps(rec.grades, default=str)), trace_path=rec.trace_path,
         created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path, fault=rec.fault,
         grader_versions=grader_versions(rec.grades), endstate_path=rec.endstate_path,
+        tools_hash=rec.tools_hash, served_id=rec.served_id,
     )
 
 
@@ -166,7 +177,12 @@ class CellResult(BaseModel):
 UNSCORED = UNSCORED_STATUSES
 
 
-def _cell_key(r: dict) -> tuple[str, str, str, str, str]:
+def _cell_key(r: dict, pools: dict | None = None) -> tuple[str, str, str, str, str]:
+    """pools: (canonical model, provider, served id) -> pool label, for providers calibrated as equivalent
+    (results.calibration.pools). A pooled run's cell is the pool and its provider-neutral tool environment."""
+    label = (pools or {}).get((r["canonical_model"], r.get("provider", ""), r.get("served_id")))
+    if label is not None and r.get("tools_hash"):
+        return (r["task_class"], r["recipe_hash"], r["canonical_model"], label, f"tools:{r['tools_hash']}")
     return (r["task_class"], r["recipe_hash"], r["canonical_model"], r.get("provider", ""), env_of(r))
 
 
@@ -193,11 +209,11 @@ def _e0_with_r(r: dict, rob: float | None) -> float:
                              critical)
 
 
-def _groups(rows: list[dict]) -> tuple[dict, dict]:
+def _groups(rows: list[dict], pools: dict | None = None) -> tuple[dict, dict]:
     clean_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     faulted_groups: dict[tuple[str, str, str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
-        (clean_groups if is_clean(r) else faulted_groups)[_cell_key(r)].append(r)
+        (clean_groups if is_clean(r) else faulted_groups)[_cell_key(r, pools)].append(r)
     return clean_groups, faulted_groups
 
 
@@ -217,9 +233,10 @@ def e0_by_run(rows: list[dict]) -> dict[str, float]:
     return out
 
 
-def aggregate_rows(rows: list[dict], baseline: CostBaseline) -> list[CellResult]:
-    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged."""
-    clean_groups, faulted_groups = _groups(rows)
+def aggregate_rows(rows: list[dict], baseline: CostBaseline, pools: dict | None = None) -> list[CellResult]:
+    """Cells from clean runs; each cell's faulted runs only feed its R. Unscored runs are counted, never averaged.
+    pools: see _cell_key; C stays per provider (each run against its own provider's median) before pooling."""
+    clean_groups, faulted_groups = _groups(rows, pools)
     out = []
     for key, all_rs in sorted(clean_groups.items(),
                               key=lambda kv: (kv[0][0], kv[1][0]["recipe_id"], kv[0][2], kv[0][3], kv[0][4])):
@@ -260,7 +277,7 @@ class ResultsStore:
 
     def _migrate(self) -> None:
         """Additive only: add nullable columns that newer code defines and an older store lacks."""
-        for table in (runs, cost_baselines):
+        for table in (runs, cost_baselines, equivalences):
             existing = {c["name"] for c in inspect(self.engine).get_columns(table.name)}
             with self.engine.begin() as c:
                 for col in table.columns:
@@ -351,11 +368,27 @@ class ResultsStore:
         return {t: len(h) for t, h in sorted(hashes.items()) if len(h) > 1}
 
     def aggregate(self, baseline: CostBaseline | None = None,
+                  pools: dict | None = None,
                   task_hashes: dict[str, str] | None = None) -> tuple[CostBaseline, list[CellResult]]:
         """Per cell (task class x recipe x model), cost-adjusted. Without a baseline, the live one is used.
+        pools: pool calibrated-equivalent providers (results.calibration.pools).
         task_hashes (task_version -> current task hash) leaves out rows of edited task definitions."""
         rows = self.rows()
         if task_hashes is not None:
             rows = current_task_rows(rows, task_hashes)
         baseline = baseline or CostBaseline.from_rows(rows, note="live")
-        return baseline, aggregate_rows(rows, baseline)
+        return baseline, aggregate_rows(rows, baseline, pools)
+
+    def save_equivalence(self, eq) -> str:
+        """Freeze a calibration (results.calibration.Equivalence). Idempotent: the id is a content hash."""
+        with self.engine.begin() as c:
+            if c.execute(select(equivalences.c.id).where(equivalences.c.id == eq.id)).first() is None:
+                c.execute(insert(equivalences).values(id=eq.id, canonical_model=eq.canonical_model,
+                                                      record=eq.model_dump(mode="json"), created_at=eq.created_at))
+        return eq.id
+
+    def equivalences(self) -> list[dict]:
+        """Saved calibrations as dicts, oldest first (results.calibration.Equivalence.model_validate reads them)."""
+        with self.engine.connect() as c:
+            rs = c.execute(select(equivalences.c.record).order_by(equivalences.c.created_at)).all()
+        return [r[0] for r in rs]

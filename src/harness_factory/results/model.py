@@ -78,6 +78,10 @@ class EffectivenessRecord(BaseModel):
     transcript_path: str | None = None                              # full conversation, next to the trace
     fault: str | None = None                                        # fault profile id; None = clean run
     endstate_path: str | None = None                                # end-state bundle for re-grading
+    # For pooling providers (P2, results/calibration.py): the tool environment without the provider model id,
+    # and the provider model id that served the run. RunKey.env_hash mixes the two.
+    tools_hash: str | None = None
+    served_id: str | None = None
     messages: list[dict] = Field(default_factory=list, repr=False)  # full transcript; not written to the store
 
 
