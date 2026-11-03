@@ -124,9 +124,11 @@ already match. The campaign runner stays our own by decision (ADR 0001).
 
 ## 5. Open items
 
-- **`hfx bench <file>`** (planned): run a benchmark described like `benchmark.example.yaml` instead of long CLI
-  flags, and record the file with the campaign.
-- **Pairing any two recipes** in the report (e.g. shapes against each other), not only matrix recipe against base.
+- **`hfx bench <file>`** (done, PR #61): runs a benchmark described like `benchmark.example.yaml` instead of long
+  CLI flags and stores the file with the campaign (`var/bench/<name>-<sha256[:12]>/`). Still open: the runner axis
+  (only `native` is accepted) and running calibration from the file.
+- **Pairing any two recipes** in the report (done, PR #61): `hfx report --compare base:variant,...` or the bench
+  file's `judge.compare`.
 - **Selector on pooled cells** once providers are calibrated (ADR 0010, follow-up).
 - **Allocation planner** (P2): which provider serves each cell. A claim commit for it exists on branch
   `feat/allocation-planner`; check the session ledger before starting it.

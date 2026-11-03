@@ -4,8 +4,8 @@
 #  Read it top to bottom: WHAT to test, WITH WHICH harnesses, ON WHICH models,
 #  HOW MANY times, UNDER WHAT conditions, and HOW to judge the result.
 #
-#  [today]   works now, through the hfx commands at the bottom of this file
-#  [planned] the runner axis and this file itself; neither is built yet (see test-matrix.md)
+#  [today]   works now: `hfx bench <this file>` runs it all (see the bottom of this file)
+#  [planned] the runner axis (see test-matrix.md); hfx bench refuses planned values
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: phase-2-first-look
@@ -30,7 +30,7 @@ models:                        # [today] canonical model + the provider that ser
   - {model: gpt-oss-20b,  provider: groq}
 
 # 4. RUN ENGINE ────────────────────────────────────────────────────────────────
-runners:                       # [planned] the framework that runs each harness
+runners:                       # [planned] the framework that runs each harness (hfx bench refuses all but native)
   - native                     # the factory's own runtime (the only one today)
   # - langgraph-prebuilt       # LangGraph's ready-made agent, its own prompts
   # - llamaindex-agent         # LlamaIndex agent
@@ -56,11 +56,13 @@ judge:
   freeze_cost_baseline: true   # [today] `hfx baseline save`: later runs don't shift old scores
   report: true                 # [today] `hfx report`: status, cells, selector picks, and each
                                #   matrix recipe paired against the recipe it extends (95% intervals)
-  compare:                     # [planned] pair any recipes, e.g. different shapes, the same way
+  compare:                     # [today] pair any recipes, e.g. different shapes, the same way
+                               #   (`hfx report --compare v2-base:v3-staged,v2-base:v4-planner`)
     base: v2-base
     against: [v3-staged, v4-planner]
 
-calibration:                   # [today, PR #35] may two providers share a cell?
+calibration:                   # [today, PR #35] may two providers share a cell? Run on its own:
+                               #   hfx bench refuses enabled: true
   enabled: false
   model: gpt-oss-120b
   providers: [groq, openrouter]
@@ -68,15 +70,23 @@ calibration:                   # [today, PR #35] may two providers share a cell?
   min_pairs: 20
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HOW TO RUN THIS TODAY (one model at a time; resume after a quota reset)
+#  HOW TO RUN (one provider at a time; resume after a quota reset)
 # ─────────────────────────────────────────────────────────────────────────────
+#  hfx bench docs/design/benchmark.example.yaml --dry-run   # plan + projection, nothing runs
+#  hfx bench docs/design/benchmark.example.yaml             # run, freeze the baseline, write the report
+#  hfx bench docs/design/benchmark.example.yaml --resume    # same file again after 00:00 UTC
+#
+#  This file is copied to var/bench/<name>-<sha256[:12]>/benchmark.yaml with a manifest.json (its sha256 and
+#  every RunKey it planned) and report.md, so a result can be traced to the file that produced it.
+#  Offline variant: tests/fixtures/benchmark.scripted.yaml (scripted models, seconds).
+#
+#  The same thing in flags, still available:
 #  hfx smoke --provider groq --recipe v2-base,v3-staged,v4-planner \
 #            --models gpt-oss-120b,gpt-oss-20b --seeds 2 \
 #            --faults none,first-call-fails -j 8 --budget-usd 5 --deadline-days 3
-#  hfx smoke ... --resume            # same command again after 00:00 UTC
 #  hfx baseline save                 # freeze the cost medians
 #  hfx results --cells               # one row per task class × recipe × model
-#  hfx report --out var/report.md    # the campaign report
+#  hfx report --out var/report.md --compare v2-base:v3-staged,v2-base:v4-planner
 #
 #  Calibration (PR #35):
 #  hfx calibration run gpt-oss-120b --providers groq,openrouter --run --seeds 2
