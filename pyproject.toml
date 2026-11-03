@@ -35,7 +35,8 @@ retrieval = [
     "llama-index-vector-stores-qdrant>=0.10.4,<0.11",
     "qdrant-client>=1.20.0,<2",
 ]
-dev = ["harness-factory[retrieval]", "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15"]
+analysis = ["polars>=1.20", "scipy>=1.15"]  # hfx analyze: shape x model tables, bootstrap CIs (ANL-01)
+dev = ["harness-factory[analysis,retrieval]", "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15"]
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

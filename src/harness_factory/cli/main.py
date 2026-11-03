@@ -601,7 +601,6 @@ from harness_factory.cli.calibration import calibration_app
 app.add_typer(calibration_app, name="calibration")
 
 from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
-from harness_factory.cli import bench as _bench  # noqa: F401  (registers hfx bench <file>)
 from harness_factory.cli.allocation import allocate_app
 
 app.add_typer(allocate_app, name="allocate")
@@ -613,6 +612,10 @@ _register_regrade(app)
 from harness_factory.cli.judge import register as _register_judge  # hfx judge status / calibrate
 
 _register_judge(app)
+
+from harness_factory.cli.analysis import register as _register_analysis  # hfx analyze
+
+_register_analysis(app)
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":
