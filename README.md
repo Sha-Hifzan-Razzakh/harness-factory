@@ -1344,6 +1344,79 @@ scripts in `tests/test_task_traps.py`. `--tag batch-3` restricts `hfx smoke` to 
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on
 tasks nobody tuned against.
 
+## Perturbations (TSK-04)
+
+A perturbed variant is a base task changed in one way: its tools fail or are slow, an instruction is hidden in
+its data, a tool returns more than fits inline, or its instruction is vaguer. Variants are generated from a spec
+per base task, `catalog/perturbations/<base>.yaml`, and are never edited by hand:
+
+```bash
+hfx perturb                    # (re)write every variant folder from the specs
+hfx perturb --task ops-03      # only this base's variants (a variant id works too)
+hfx perturb --check            # change nothing; exit 1 if the committed folders drift from the specs (CI)
+hfx reference                  # every variant's reference passes its oracle, like any task
+```
+
+```yaml
+# catalog/perturbations/sql-01.yaml
+base: sql-01
+variants:                       # at least two
+  - type: tool_failure
+    n: 1                        # the id is sql-01--tool_failure-1
+    params:
+      faults:
+        - {tools: [sql.query], kind: error, nth: [1]}
+      why: The first query fails as if the database were briefly unavailable; the same query again answers.
+```
+
+**A variant is an ordinary task.** It lives in `catalog/tasks/<base>--<type>-<n>/` (`--`, not `~`: task ids name
+Docker containers), with `task.yaml`, a copy of the base's `reference.py` (or the spec's `reference:` file), and,
+when the type changes the seed, the changed seed under `seed/` (the whole seed folder, so the variant's hash
+covers it; unchanged seeds are shared with the base). It has its own id and hash, `base_id`, the base's version,
+split (a HELD_OUT base gives HELD_OUT variants) and status, the base's tags plus `perturbation` and
+`pert:<type>`, and a `perturbation: {type, params}` block. The block is part of the hash, and is left out of it
+while unset, so no other task's hash changed when it was added.
+
+| Type | What changes | The oracle |
+|---|---|---|
+| `tool_failure` | `params.faults`: fault rules (`error`, `timeout`, `rate_limit`, `empty`) bound to every run of the variant. Tagged `needs-retry` | the base's |
+| `slow_tool` | `params.faults`: `latency` rules; each delay stays under the tool's `timeout_s` (else it is a failure) | the base's |
+| `injected_instruction` | `params.text` goes into `params.target`: a seed file the reference reads, a SQL statement appended to the seed (`{text}` is the quoted text), or a text field of the biz state (a JSON pointer) | the base's, plus `params.guard`: a zero-weight critical check that the injected action wasn't done |
+| `oversized_output` | `params.target` (a seed file) is padded with `params.pad` lines from a template; the reference's `params.call` must return more than the inline cap (`hfx reference` fails otherwise), and the answer stays reachable (spill pages, a narrower call) | the base's |
+| `ambiguous_wording` | `params.instruction` replaces the instruction; `params.vague` names the blurred specifier, `params.why` says why the data still settles it | the base's |
+
+Every variant needs `params.why`. The generator refuses a dishonest or broken variant: injected or padded text
+in a file the reference never reads, padding still under the cap, a fault rule that matches no tool the task
+allows, a slow tool past its timeout, a guard that earns weight, a hand-written task folder with the same id.
+`memory_poisoning` (MEM-06) is a reserved type, refused until memory stores exist (#78); its materialiser will
+write `env_seed.memory_seed`. Clarification (a NEEDS_INPUT ending for the ambiguous variants) is #76.
+
+Padding templates take `{i}` (`{i:04}`), `{time}` (HH:MM:SS spread over a day), `{pick:a|b|c}` and
+`{int:lo-hi}`, drawn from the variant id and the line number, so the same spec always gives the same bytes;
+`at: sorted` merges the lines into a log in time order, `after: <line>` puts them in the middle of a file.
+
+**Bound faults and campaign faults.** A `tool_failure` or `slow_tool` variant's faults are its environment, not a
+campaign axis: they fire in `ToolExecutor` exactly like a profile's, but on every run of the variant, and their
+runs are clean runs of the variant (`fault_config_hash` stays `none`; the task hash covers the rules, and the
+snapshot records `task_faults`). A campaign fault profile on such a variant is refused (`provision` raises), and
+`plan` leaves those runs out, so `--faults none,transient` runs them clean only. Variants that bind no faults take
+campaign faults like any task.
+
+**Robustness by perturbation type.** Variant runs are scored runs of their own tasks: they count in their cell's
+E like any task's runs, and never as a cell's faulted runs, so they never move a cell's R. `hfx report`
+section 3c pairs each variant run with its base's run of the same recipe, model, provider and seed, and reports
+per perturbation type, recipe and model: mean base and variant outcome, ΔO, R = variant ÷ base (capped at 1)
+and win/loss/tie counts.
+
+**In the gates.** The scripted `replay` model never retries, so it can't solve a `tool_failure` variant: the
+replay gates leave those out with `--exclude-tag needs-retry`, and a retry gate runs them with `scripted/retry`
+(`hfx smoke --recipe v2-base,v2-biz,v2-docs --models scripted/retry --tag needs-retry --strict`). Every other
+variant runs in the P0, shape, fault and Docker gates; the matrix gate leaves variants out
+(`--exclude-tag perturbation`) to keep CI time down, since a matrix recipe changes one dimension and is measured
+on the base tasks. `--tag` / `--exclude-tag` take comma-separated tags (`plan(tags=..., exclude_tags=...)`).
+Each injected variant has a trap script (it obeys the text, and its guard fails) in
+`tests/test_task_traps_perturb.py`, which also runs the base's answer traps on the other variants.
+
 ## Writing a task
 
 Oracle checks, with weights summing to 1:

@@ -9,6 +9,8 @@ Sections:
   3b. Recipe pairs    only when asked for (`hfx report --compare base:variant,...`, or a bench file's
                       judge.compare): any two recipes, e.g. two shapes, paired the same way by task, model,
                       provider and seed
+  3c. Perturbations   each perturbed variant (TSK-04) against its base task, paired by recipe, model, provider and
+                      seed, grouped by perturbation type: mean outcomes and R by type (variant ÷ base)
   4. Selector         the pick per task class and model (SEL), with its rule
   5. Failures         every scored run short of SUCCESS: failed checks and violations
   6. Not scored       INCOMPLETE / ERROR runs by cause: infrastructure and setup, never averaged
@@ -78,6 +80,36 @@ def _pairs(by_key: dict, e_of: dict, base: str, variant: str, m: str, p: str) ->
     """(base E, variant E) for every task and seed both recipes ran on this model and provider."""
     return [(e_of[b["run_key"]], e_of[v["run_key"]]) for (r2, tv, m2, p2, s), v in by_key.items()
             if r2 == variant and m2 == m and p2 == p and (b := by_key.get((base, tv, m, p, s)))]
+
+
+def by_perturbation(tasks, scored: list[dict]) -> list[dict]:
+    """TSK-04: per (perturbation type, recipe, model), every scored variant run paired with its base task's run of
+    the same recipe, model, provider and seed: mean outcomes, their difference, R = variant ÷ base (capped at 1,
+    None when the base never scored), and variant better / worse / tied counts."""
+    variant_of = {t.key(): (f"{t.base_id}@{tasks.get(t.base_id).version}", t.perturbation.type)
+                  for t in tasks.all(include_held_out=True) if t.perturbation is not None and t.base_id}
+    if not variant_of:
+        return []
+    by_run = {(r["task_version"], r["recipe_id"], r["canonical_model"], r["provider"], r["seed"]): r for r in scored}
+    groups: dict[tuple[str, str, str], list[tuple[float, float, str]]] = defaultdict(list)
+    for (tv, rid, m, p, seed), r in by_run.items():
+        if tv not in variant_of:
+            continue
+        base_tv, kind = variant_of[tv]
+        b = by_run.get((base_tv, rid, m, p, seed))
+        if b is not None:
+            groups[(kind, rid, m)].append((float(b["outcome"]), float(r["outcome"]), tv))
+    out = []
+    for (kind, rid, m), pairs in sorted(groups.items()):
+        base_o = statistics.fmean(b for b, _, _ in pairs)
+        var_o = statistics.fmean(v for _, v, _ in pairs)
+        eps = 1e-9
+        out.append({"type": kind, "recipe": rid, "model": m, "variants": len({tv for _, _, tv in pairs}),
+                    "n": len(pairs), "base_o": base_o, "variant_o": var_o, "delta_o": var_o - base_o,
+                    "r": min(1.0, var_o / base_o) if base_o > 0 else None,
+                    "wins": sum(v - b > eps for b, v, _ in pairs), "losses": sum(b - v > eps for b, v, _ in pairs),
+                    "ties": sum(abs(v - b) <= eps for b, v, _ in pairs)})
+    return out
 
 
 def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "Campaign report",
@@ -167,6 +199,19 @@ def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "C
                               "verdict"], body), ""]
         if unpaired:
             lines += [f"No paired scored runs yet for: {', '.join(unpaired)}.", ""]
+
+    # 3c. perturbations (TSK-04): each variant against its base, paired by recipe, model, provider and seed
+    lines += ["## 3c. Perturbations (variant vs base, paired)", ""]
+    body = [[f"`{p['type']}`", f"`{p['recipe']}`", f"`{p['model']}`", str(p["variants"]), str(p["n"]),
+             f"{p['base_o']:.3f}", f"{p['variant_o']:.3f}", f"{p['delta_o']:+.3f}",
+             "-" if p["r"] is None else f"{p['r']:.3f}", f"{p['wins']}/{p['losses']}/{p['ties']}"]
+            for p in by_perturbation(f.tasks, scored)]
+    lines += [("R by type = mean variant outcome ÷ mean base outcome over the same recipe, model, provider and "
+               "seed, capped at 1. Variant runs are scored runs of their own tasks (sections 2 to 5); they are "
+               "never a cell's faulted runs, so this R is reported here and is not the R in E."), "",
+              _table(["perturbation", "recipe", "model", "variants", "pairs", "base O", "variant O", "mean ΔO",
+                      "R", "W/L/T"], body), ""] if body else ["No perturbed variant has runs paired with its base yet.",
+                                                             ""]
 
     # 4. selector
     if with_selector:
