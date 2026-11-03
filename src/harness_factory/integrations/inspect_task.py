@@ -35,7 +35,6 @@ from inspect_ai.tool import ToolCall
 
 from harness_factory.provision.provisioner import reaches, task_class
 from harness_factory.results.store import UNSCORED
-
 from harness_factory.runner.runner import Factory, run_one
 from harness_factory.substrate.tools import tool_ref
 
