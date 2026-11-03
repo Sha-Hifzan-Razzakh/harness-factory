@@ -414,3 +414,23 @@ two sections, *Runners* and *Campaign runner*, so the campaign ones are written 
   - MCP resources, sampling and binding (MCP-04, 07, 09).
   - Analysis follow-ups (ANL-03, 04), next to #63.
 - **After the first full campaigns:** the improvement loop (IMP).
+
+**Wave 5 progress (2026-11-03): #69 → #70 → #71 ready for review, CI green, stacked in that order.**
+
+- **#69:** grounding counts only a call that touched the task's data (`touches`); 7 tasks re-versioned.
+- **#70:** fault kinds `latency` (real, charged to wall time) and `malformed`; profiles `slow-tools`,
+  `malformed-results`.
+- **#71:** `hfx perturb`, 29 variants over 13 base tasks, all five types; fault-bound variants refuse campaign
+  faults; report §3c groups by type.
+
+#71's variants of sql-01, ops-03, res-01 and biz-02 are regenerated on #69, so they inherit its grounding.
+
+On the stack:
+
+- references 62/62;
+- gates P0 38/38, shapes 114/114, matrix 374/374, faults 109/109, needs-retry 18/18;
+- full suite 1059 passed.
+
+**Still open:** 29 of the 120+ variants v1 asks for; #52 still open, with the same `--tag` / `--exclude-tag`
+code as #71.
+

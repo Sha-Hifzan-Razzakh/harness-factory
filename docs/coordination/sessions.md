@@ -55,9 +55,9 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | ready for review (CI green) | new optional recipe field |
 | #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | ready for review, stacked on #50 | new optional recipe fields |
 | #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | ready for review (CI green), stacked on #47 | new tasks only |
-| #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | draft, reserved (wave 5) | yes (scoring; tasks whose check gains a field) |
-| #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | draft, reserved (wave 5) | new fault profiles only |
-| #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | draft, reserved (wave 5) | new tasks only |
+| #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | ready for review (CI green) | yes (scoring; tasks whose check gains a field) |
+| #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | ready for review (CI green), stacked on #69 | new fault profiles only |
+| #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | ready for review (CI green), stacked on #70 | new tasks only |
 | #72 | `feat/env-web-corpus` | `…KhAFMPUEPRU3mK2t2` | Web search and fetch over a recorded, versioned corpus (ENV-01, KNW-01; ADR 0018) | draft, reserved (wave 5) | new server; corpus id in env_hash |
 | #73 | `feat/env-outbox-calendar` | `…KhAFMPUEPRU3mK2t2` | Email/notification outbox and calendar servers (ENV-01) | draft, reserved (wave 5) | new servers only |
 | #74 | `feat/mcp-conformance` | `…KhAFMPUEPRU3mK2t2` | MCP conformance suite in CI and server health before runs (MCP-11, ENV-06) | draft, reserved (wave 5) | no |
