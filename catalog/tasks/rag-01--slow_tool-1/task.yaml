@@ -32,8 +32,8 @@ perturbation:
       kind: latency
       delay_s:
       - 0.5
-      - 2.0
-    why: Every document read waits half a second to two seconds.
+      - 1.5
+    why: Every document read waits half a second to a second and a half.
 oracle:
   pass_threshold: 1.0
   checks:

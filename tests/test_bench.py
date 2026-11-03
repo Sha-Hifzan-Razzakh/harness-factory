@@ -58,7 +58,10 @@ def test_the_design_example_is_a_valid_benchmark(factory):
     reachable = sum(not missing_task_tools(factory.recipes[r], factory.tasks.get(t), factory.declared)
                     for t in tasks for r in spec.recipes)
     assert len(spec.recipes) == 3 and reachable < len(tasks) * 3     # the pruning is exercised, not vacuous
-    assert len(specs) == reachable * 2 * 2 * 2
+    # a variant that binds its own faults (TSK-04) gets no campaign fault: its first-call-fails runs are left out
+    bound = sum(not missing_task_tools(factory.recipes[r], factory.tasks.get(t), factory.declared)
+                and factory.tasks.get(t).bound_faults() is not None for t in tasks for r in spec.recipes)
+    assert len(specs) == reachable * 2 * 2 * 2 - bound * 2 * 2
     assert all(factory.tasks.get(t).split.value in ("DEV", "TEST") for t in tasks)
 
 

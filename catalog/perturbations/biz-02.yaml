@@ -5,8 +5,8 @@ variants:
     n: 1
     params:
       faults:
-        - {tools: ["biz.*"], kind: latency, delay_s: [1.0, 2.5]}
-      why: Every business-system call waits one to two and a half seconds.
+        - {tools: ["biz.*"], kind: latency, delay_s: [0.5, 1.5]}
+      why: Every business-system call waits half a second to a second and a half.
   - type: tool_failure
     n: 1
     params:

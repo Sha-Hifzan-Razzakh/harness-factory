@@ -5,8 +5,8 @@ variants:
     n: 1
     params:
       faults:
-        - {tools: [fs.read_file], kind: latency, delay_s: [0.5, 2.0]}
-      why: Every document read waits half a second to two seconds.
+        - {tools: [fs.read_file], kind: latency, delay_s: [0.5, 1.5]}
+      why: Every document read waits half a second to a second and a half.
   - type: ambiguous_wording
     n: 1
     params:

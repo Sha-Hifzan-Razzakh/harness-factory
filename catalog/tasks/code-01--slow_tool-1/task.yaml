@@ -29,8 +29,8 @@ perturbation:
     - tools:
       - fs.write_file
       kind: latency
-      delay_s: 1.5
-    why: Every write takes a second and a half.
+      delay_s: 1.0
+    why: Every write takes a second.
 oracle:
   pass_threshold: 1.0
   checks:
