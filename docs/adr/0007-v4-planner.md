@@ -44,3 +44,18 @@ flow.
 - The scripted models plan from the reference when called in the planner slot and run one plan step per V4 step
   (`tasks/reference.py`), so every scripted style exercises V4 without a real model.
 - V5 reuses the planner (`shapes.v4.Planner`): an orchestrator is a planner whose steps are delegate calls (ADR 0008).
+
+## Later: structured plans (PR #51)
+
+`planning.structured: true` replaces the numbered lines with JSON (`prompts/plan/planner_structured.j2`): steps with
+`id`, `instruction`, `tools` (hints, from the tools the planner was shown), `depends_on` and `done_when`, validated
+with Pydantic (`shapes/plans.py`). Nothing is repaired silently: a reply that isn't valid JSON, has too many steps,
+a duplicate id, an unknown tool or dependency, or a cycle, is a malformed output. Its model call is marked
+`MODEL_PARSE` (an invalid call in Q; its tokens still count in C), it is recorded as `plan_invalid`, and the planner
+is asked again with the reason (`plan/fix_structured.j2`), at most `planning.plan_retries` times per run (default
+1). Then the run stops as `malformed_output`, a harness stop. JSON mode (`response_format: json_object`) is sent when
+the model's caps declare `structured_output` and the backend takes it (LiteLLM); otherwise the prompt alone asks for
+JSON, which is how the scripted models get it. V4 runs the steps one after another in dependency order (the first
+ready step in the planner's order); the step text leads with its id (`[s2] ...`). The worst-case rule counts the
+re-asks, so `v4-structured` sets `max_steps: 51`. The fields are omitted from the hash when unset (and `false` /
+`1` / the default are stored as unset), so no existing hash changed.

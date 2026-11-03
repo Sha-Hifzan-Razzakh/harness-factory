@@ -15,6 +15,14 @@ providers:
       # No native tool calling: writes its calls as JSON text, which tool-call emulation (instructor) parses (SUB-02)
       - {canonical: scripted/emulated, provider_model_id: emulated, caps: {tool_calling: emulated}}
 
+  # The offline rubric judge (grading/judge.ScriptedJudgeBackend, ADR 0014): deterministic, never calibrated.
+  # Its own provider, so a smoke over the scripted provider's models never runs it as an agent.
+  - id: scripted-judge
+    kind: scripted
+    data_terms: local
+    models:
+      - {canonical: scripted/judge, provider_model_id: judge}
+
   - id: groq
     kind: litellm
     litellm_prefix: groq

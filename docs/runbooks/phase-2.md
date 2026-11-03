@@ -56,3 +56,8 @@ The report is generated from the store. Add your own notes under it, as in `phas
   on held-out tasks. With only 3 held-out tasks, treat one Phase 2 result as a direction, not a verdict.
 - **Not scored (§6).** INCOMPLETE runs (quota, provider) are finished by `--resume`; ERROR runs are setup
   problems worth a look before resuming.
+
+## 4. Before designing the matrix
+
+Read `docs/design/test-matrix.md`: what the numbers cover (the native runtime only, for now), the planned runner
+axis, a checklist of matrix axes, and `docs/design/benchmark.example.yaml`, one benchmark in one readable file.

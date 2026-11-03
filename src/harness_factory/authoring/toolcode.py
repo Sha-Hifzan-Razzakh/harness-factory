@@ -126,7 +126,7 @@ def stub(server_id: str, instructions: str, tools: list[ToolDef]) -> str:
     return "\n".join(lines)
 
 
-async def _discover(module_file: Path, server_id: str) -> dict[str, dict]:
+async def _discover(module_file: Path, server_id: str) -> list:
     from harness_factory.env.mcp.servers import MCPServerSpec
     from harness_factory.mcp.client import MCPClient
 
@@ -138,11 +138,15 @@ async def _discover(module_file: Path, server_id: str) -> dict[str, dict]:
         spec = MCPServerSpec(id=server_id, module=module_name(server_id))
         launcher = lambda _spec: (sys.executable, ["-I", str(module_file)], env)
         async with MCPClient(spec, env, launcher=launcher) as client:
-            tools = await asyncio.wait_for(client.list_tools(), timeout=30)
-    return {t.name: t.input_schema for t in tools}
+            return await asyncio.wait_for(client.list_tools(), timeout=30)
+
+
+def discover_tools(module_file: Path, server_id: str) -> dict:
+    """Start the module as the sandbox would (a stdio server in a scratch workspace) and list its tools:
+    name -> DiscoveredTool (schema and description). Raises on a module that doesn't start or answer."""
+    return {t.name: t for t in asyncio.run(_discover(module_file, server_id))}
 
 
 def discover(module_file: Path, server_id: str) -> dict[str, dict]:
-    """Start the module as the sandbox would (a stdio server in a scratch workspace) and list its tools:
-    name -> input schema. Raises on a module that doesn't start or answer."""
-    return asyncio.run(_discover(module_file, server_id))
+    """Like discover_tools, but name -> input schema only."""
+    return {name: t.input_schema for name, t in discover_tools(module_file, server_id).items()}

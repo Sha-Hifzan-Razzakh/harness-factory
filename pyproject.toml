@@ -16,14 +16,29 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.30",
     "typer>=0.15",
     "rich>=13",
+    "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
+    "jsonschema>=4.20",           # json_schema checks (grading/state.py); was only transitive (mcp, litellm)
 ]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
 mlops = ["mlflow>=2.14"]
 inspect = ["inspect-ai>=0.3.285,<0.4"]        # optional outer shell; see docs/adr/0001-inspect-ai.md
-dev = ["pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "harness-factory[emulation]"]
+# The docs MCP server's libraries (docx, xlsx, pdf), pinned exactly: they are the allow-list in
+# src/harness_factory/env/mcp/deps.py and go into the sandbox image (docs/adr/0013-server-dependencies.md).
+docs = ["python-docx==1.2.0", "openpyxl==3.1.5", "pypdf==6.20.1"]
+# Retrieval dimension (ADR 0017): LlamaIndex's own documents, splitters, retrievers and fusion; Qdrant in local
+# (in-memory) mode for the dense index. Runs in the factory process, never in the sandbox.
+retrieval = [
+    "llama-index-core>=0.14.25,<0.15",
+    "llama-index-retrievers-bm25>=0.8.0,<0.9",
+    "llama-index-vector-stores-qdrant>=0.10.4,<0.11",
+    "qdrant-client>=1.20.0,<2",
+]
+analysis = ["polars>=1.20", "scipy>=1.15"]  # hfx analyze: shape x model tables, bootstrap CIs (ANL-01)
 emulation = ["instructor>=1.17,<2"]               # tool-call emulation for models without native tool calling
+dev = ["harness-factory[analysis,emulation,retrieval]", "pytest>=8", "pytest-asyncio>=1.0",
+       "pytest-xdist>=3.6", "ruff>=0.15"]
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"
