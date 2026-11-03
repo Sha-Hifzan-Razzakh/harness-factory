@@ -99,7 +99,7 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
 # PARTIAL. Without it, a harness that solves early and then keeps calling until a cap scores like a clean run
 # (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
 OVERRUN_OUTCOME_FACTOR = 0.5
-OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"})
+OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "step_cap", "context_overflow", "malformed_output"})
 
 
 def overran(result: RunResult) -> bool:
