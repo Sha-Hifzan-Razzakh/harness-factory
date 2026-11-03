@@ -101,7 +101,7 @@ jobs:
           grep -q '^equivalent:' transfer.txt
 
       - name: Fault injection (clean runs gate; faulted runs feed R)
-        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict -j 8
+        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails,slow-tools --strict -j 8
 
       - name: Tool-call emulation gate (a model without native tool calling solves the visible tasks offline)
         run: uv run --no-sync hfx smoke --models scripted/emulated --strict -j 8

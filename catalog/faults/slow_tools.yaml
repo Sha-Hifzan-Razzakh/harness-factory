@@ -1,0 +1,8 @@
+# Slow tools: calls really take longer, and the run's wall clock keeps running (it is not infra wait). About 1 in 4
+# calls is slow; a rare stall outlasts the tool's timeout_s and fails as a real timeout after timeout_s (nothing
+# ran). Delays are drawn per call from the run seed, so a RunKey always sees the same ones.
+id: slow-tools
+description: ~25% of tool calls are slow (0.2-2 s); ~3% stall past the tool's timeout.
+rules:
+  - {tools: ["*"], kind: latency, rate: 0.25, delay_s: [0.2, 2.0]}
+  - {tools: ["*"], kind: latency, rate: 0.03, delay_s: 40}

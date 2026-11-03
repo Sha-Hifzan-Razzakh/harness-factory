@@ -10,6 +10,7 @@ policy, faults, the span or the budget.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ from typing import Any
 
 import anyio
 
-from harness_factory.env.faults import FaultInjector
+from harness_factory.env.faults import PASS_THROUGH, FaultInjector
 from harness_factory.env.mcp.servers import USAGE_META, AgentTool, SideEffect, ToolCatalogFile, ToolSpec
 from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import ToolResult
@@ -159,9 +160,12 @@ class ToolExecutor:
         if side_effect != SideEffect.READ:
             span.attributes["idempotency_key"] = self.idempotency_key(ref, args)
         # Faults fire only on calls that passed every check above, so a refused call is never a "fault".
-        fault = self.faults.decide(ref) if self.faults else None
-        if fault is not None:
+        injected = self.faults.fire(ref, reads=side_effect == SideEffect.READ) if self.faults else None
+        fault = injected.kind if injected else None
+        if injected is not None:
             span.attributes["fault"] = fault                 # environment, not the model: excluded from Q
+            if injected.delay_s is not None:
+                span.attributes["fault_delay_s"] = injected.delay_s
         if fault in ("error", "timeout", "rate_limit"):
             span.error = ErrorKind.TOOL_ERROR.value
             return ToolResult(text=FaultInjector.message(fault, ref), is_error=True)
@@ -172,6 +176,10 @@ class ToolExecutor:
             span.attributes["agent_call"] = self.agent_calls[ref]
         try:
             with anyio.fail_after(spec.timeout_s):
+                if injected is not None and injected.delay_s:
+                    # A slow service: the run's wall clock keeps running (this is not infra wait, so it is never
+                    # excluded from wall_time_s), and a delay that reaches timeout_s is a real timeout.
+                    await asyncio.sleep(injected.delay_s)
                 result = await (local.call(args) if local else self.pool.call(ref, args))
         except TimeoutError:
             span.error = ErrorKind.TOOL_TIMEOUT.value
@@ -189,6 +197,17 @@ class ToolExecutor:
             result = self._meter(ref, spec.agent, result, span)
         if fault == "garbled":                               # it really ran; the answer came back cut off
             result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
+        elif fault in PASS_THROUGH:
+            reshaped = None
+            if fault == "malformed" and not (result.is_error or result.infra):
+                reshaped = self.faults.malform(injected, result.text)
+            if reshaped is not None:                         # it ran and succeeded; the answer came back misshapen
+                result = result.model_copy(update={"text": reshaped[0], "structured": None})
+                span.attributes["malformed"] = reshaped[1]
+            elif result.is_error or result.infra or fault == "malformed":
+                # The call's own outcome stands (e.g. its own error for the model's arguments, or nothing to
+                # reshape): recorded for analysis, but not as the environment's doing, so Q counts the error.
+                span.attributes["fault_inert"] = span.attributes.pop("fault")
         if self.spill is not None:
             return result.model_copy(update={"text": self.spill.shrink(result.text, span)})
         if len(result.text) > MAX_INLINE_CHARS:
