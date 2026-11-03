@@ -92,3 +92,52 @@ servers:
     granted_by: []
     schema_hash: 69385cf2f1024c2c
     description_hash: 1dd2d197ce7ae22a
+- id: fsx
+  transport: stdio
+  module: harness_factory.env.mcp.impl.fsx_server
+  tools:
+  - name: edit
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    granted_by:
+    - fs.read_file
+    - fs.write_file
+    schema_hash: 8b50424ff01781b6
+    description_hash: 176845b4deee4f8c
+  - name: append
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    - fs.write_file
+    schema_hash: 52535c113f0db6a7
+    description_hash: ae4628f9223012f0
+  - name: move
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    granted_by:
+    - fs.read_file
+    - fs.write_file
+    - fs.delete_file
+    schema_hash: 13978ce4f50d3cc9
+    description_hash: 02a180ad8fbc4e0e
+  - name: mkdir
+    side_effect: REVERSIBLE
+    risk: R0
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    - fs.write_file
+    schema_hash: 44e7d8ef3bb73351
+    description_hash: 5caeb2d494e6b146
+  - name: tree
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    granted_by:
+    - fs.list_dir
+    schema_hash: f72161dd0b23361e
+    description_hash: 936294f362dc0a83

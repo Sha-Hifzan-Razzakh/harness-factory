@@ -18,6 +18,8 @@ class SideEffect(str, Enum):
 
 
 RISK_TO_TIER = {"R0": "T1", "R1": "T2", "R2": "T2", "R3": "T3"}
+RISK_ORDER = ["R0", "R1", "R2", "R3"]
+SIDE_EFFECT_ORDER = [SideEffect.READ, SideEffect.REVERSIBLE, SideEffect.IRREVERSIBLE]
 TIER_ORDER = ["T1", "T2", "T3", "T4"]
 USAGE_META = "harness-factory/usage"    # the `_meta` key an agent tool reports its usage under (EXT-10)
 
@@ -80,6 +82,8 @@ class ToolSpec(BaseModel):
     # A READ tool that reveals nothing beyond these tools: a task allowing all of them allows this one too, so a
     # new capability (e.g. search) needs no edit to every task's allowance (and no task hash change). [] = every
     # task: the tool reads only harness material, nothing from the task's world (e.g. skills.load).
+    # A tool with side effects may declare it too when it does nothing these tools together can't (fsx.edit =
+    # fs.read_file + fs.write_file); it is granted only under ToolCatalogFile.grantable's stricter rule.
     granted_by: list[str] | None = None
     agent: AgentTool | None = None   # set when the tool is another agent (EXT-10)
 
@@ -155,6 +159,24 @@ class MCPServerSpec(BaseModel):
 class ToolCatalogFile(BaseModel):
     servers: list[MCPServerSpec]
 
+    @model_validator(mode="after")
+    def _grants_resolve(self) -> ToolCatalogFile:
+        """A granted_by that names an undeclared tool, or that could never grant its tool with side effects, is a
+        declaration mistake: it would silently grant nothing."""
+        refs = set(self.all_refs())
+        for s in self.servers:
+            for t in s.tools:
+                if t.granted_by is None or (t.side_effect == SideEffect.READ and t.escalation is None):
+                    continue                     # READ grants keep their original, looser checks
+                ref = t.ref(s.id)
+                unknown = [g for g in t.granted_by if g not in refs]
+                if unknown:
+                    raise ValueError(f"{ref}: granted_by names undeclared tools: {', '.join(unknown)}")
+                if not self.grantable(ref):
+                    raise ValueError(f"{ref}: granted_by must include a tool at least as strong as {ref} in side "
+                                     f"effect and risk ({t.side_effect.value}, {t.risk}), or it can never be granted")
+        return self
+
     def server(self, server_id: str) -> MCPServerSpec:
         for s in self.servers:
             if s.id == server_id:
@@ -170,6 +192,25 @@ class ToolCatalogFile(BaseModel):
 
     def all_refs(self) -> list[str]:
         return [t.ref(s.id) for s in self.servers for t in s.tools]
+
+    def grantable(self, ref: str) -> bool:
+        """Whether `ref`'s granted_by may grant it at all (the grantors must also all be allowed by the task).
+
+        A READ tool always may. A tool with side effects may only when its grantors include one at least as strong,
+        in side effect and in risk, as its strongest call (escalation included): it does nothing its grantors
+        together can't, so a task's allowance, its task class and the permission rule its calls fall under stay
+        what they were. `granted_by: []` grants READ tools only."""
+        spec = self.spec(ref)
+        if spec.side_effect == SideEffect.READ and spec.escalation is None:
+            return True
+        grantors = [self.spec(g) for g in spec.granted_by or [] if g in self.all_refs()]
+        if not grantors:
+            return False
+        esc = [spec.escalation] if spec.escalation else []
+        effect = max(SIDE_EFFECT_ORDER.index(e.side_effect) for e in [spec, *esc])
+        risk = max(RISK_ORDER.index(e.risk) for e in [spec, *esc])
+        return (effect <= max(SIDE_EFFECT_ORDER.index(g.side_effect) for g in grantors)
+                and risk <= max(RISK_ORDER.index(g.risk) for g in grantors))
 
     def env_hash(self, server_ids: list[str], provider_model_id: str) -> str:
         """Identity of the tool environment a run sees, plus the concrete provider model. Part of RunKey."""
