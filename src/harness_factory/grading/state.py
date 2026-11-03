@@ -36,14 +36,33 @@ def _pointer(doc, pointer: str):
     return doc
 
 
+def _strict_eq(a, b) -> bool:
+    """JSON equality where booleans are not numbers: Python's True == 1 and False == 0 would let an expected
+    1 match true (and "0" match false). Integers and floats still compare by value (JSON has one number type)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_strict_eq(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_strict_eq(x, y) for x, y in zip(a, b, strict=True))
+    if isinstance(a, (dict, list)) or isinstance(b, (dict, list)):
+        return False
+    return type(a) is type(b) and a == b if isinstance(a, str) or isinstance(b, str) else a == b
+
+
 def _same(actual, expected: str) -> bool:
     if isinstance(actual, str) and actual == expected:
         return True
     try:
-        return json.loads(expected) == actual
+        return _strict_eq(json.loads(expected), actual)
     except ValueError:
         return False
 
+
+def output_matches(pattern: str, output: str) -> bool:
+    """How an output_regex check reads the final answer: re.search with MULTILINE, so ^ and $ match at every line.
+    An answer pattern that must see the whole reply (no other candidate anywhere) anchors on \\A, not ^."""
+    return re.search(pattern, output, re.MULTILINE) is not None
 
 class StateDiffGrader:
     id = "state_diff"
@@ -82,7 +101,7 @@ class StateDiffGrader:
             return ok, "rows match" if ok else f"got {rows[:5]}"
         if c.kind == "output_regex":
             out = ctx.result.output if isinstance(ctx.result.output, str) else str(ctx.result.output or "")
-            ok = re.search(c.pattern or "", out, re.MULTILINE) is not None
+            ok = output_matches(c.pattern or "", out)
             return ok, "matched" if ok else f"output {out[:120]!r}"
         if c.kind == "tool_called":
             called = [s.name for s in ctx.spans if s.kind == SpanKind.tool_call and s.status != "error"]
