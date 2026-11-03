@@ -81,8 +81,8 @@ jobs:
       - name: P0 gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8
 
-      - name: V3, V4 and V5 shape gate (offline, scripted model)
-        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8
+      - name: V3, V4 and V5 shape gate (offline, scripted model; `long` tasks exceed V3's stage caps and V4/V5's plan length)
+        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8 --exclude-tag long
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
         run: uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs --models scripted/replay --strict -j 8
@@ -124,7 +124,8 @@ jobs:
       - name: References and smoke inside containers
         run: |
           uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v3-staged,v2-docs --models scripted/replay --strict -j 8
+          uv run --no-sync hfx smoke --recipe v2-base,v2-docs --models scripted/replay --strict -j 8
+          uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long
           uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8
 
       - name: Upload traces on failure
@@ -161,6 +162,6 @@ jobs:
           export HF_UID=$(id -u) HF_GID=$(id -g) DOCKER_GID=$(stat -c %g /var/run/docker.sock)
           docker compose run --rm --pull never factory smoke --recipe v2-base --models scripted/replay --strict
           docker compose run --rm --pull never factory-docker \
-            smoke --recipe v2-base,v3-staged --models scripted/replay --strict
+            smoke --recipe v2-base,v3-staged --models scripted/replay --strict --exclude-tag long
           test -z "$(docker ps -aq --filter label=hf.sandbox=1)"      # every sandbox container removed
           test -z "$(ls -A var/sandboxes)"                             # and every sandbox directory

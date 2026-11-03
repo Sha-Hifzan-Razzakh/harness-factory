@@ -195,7 +195,10 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
                                                    help="refuse if the projection needs more days than this"),
           budget_usd: float | None = typer.Option(None, "--budget-usd",
                                                   help="refuse if the projected list-price cost exceeds this"),
-          strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)")) -> None:
+          strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)"),
+          tag: str | None = typer.Option(None, "--tag", help="only tasks with one of these tags (comma-separated)"),
+          exclude_tag: str | None = typer.Option(None, "--exclude-tag",
+                                                 help="leave out tasks with any of these tags, e.g. long")) -> None:
     """Every task x recipe x model x seed on one provider, run in parallel and paced to the provider's limits.
     One recipe is the P0 gate; several compare shapes. Interrupted (Ctrl-C, quota)? Run it again with --resume."""
     from harness_factory.provision.provisioner import run_key_for
@@ -203,7 +206,8 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
     f = _factory()
     _print_sinks(f)
     specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds,
-                 faults=[None if x == "none" else x for x in faults.split(",")] if faults else None)
+                 faults=[None if x == "none" else x for x in faults.split(",")] if faults else None,
+                 tags=tag.split(",") if tag else None, exclude_tags=exclude_tag.split(",") if exclude_tag else None)
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
     from harness_factory.runner.runner import skipped_pairs

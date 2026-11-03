@@ -395,8 +395,9 @@ def test_campaigns_plan_only_recipes_that_reach_the_task_tools(factory):
     # tasks on servers v2-code doesn't open (biz from #46, docs from #47)
     other = {t.id for t in factory.tasks.all() if any(p.split(".")[0] not in {"fs", "sql", "code", "git"}
                                                       for p in t.allowed_tools)}
-    assert {"code-02", "code-03"} <= code == visible - other
-    assert base == visible - {"code-02", "code-03"} - other              # every other task, as before
+    code_git = {t.id for t in factory.tasks.all() if any(p.split(".")[0] in {"code", "git"} for p in t.allowed_tools)}
+    assert {"code-02", "code-03"} <= code_git <= code == visible - other
+    assert base == visible - code_git - other                            # every other task, as before
 
 
 async def test_real_models_need_docker_or_an_opt_in_to_run_code_locally(factory, monkeypatch):

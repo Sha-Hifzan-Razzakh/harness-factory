@@ -15,7 +15,8 @@ from harness_factory.substrate.gateway import ScriptedBackend
 _F = Factory.load(store=False)
 TASK_IDS = [t.id for t in _F.tasks.all()]
 # V3's stages narrow fs and sql only: a task that needs another server (code, git) is never planned with v3-staged.
-V3_TASK_IDS = [t.id for t in _F.tasks.all() if not missing_task_tools(_F.recipes["v3-staged"], t, _F.declared)]
+V3_TASK_IDS = [t.id for t in _F.tasks.all() if not missing_task_tools(_F.recipes["v3-staged"], t, _F.declared)
+               and "long" not in t.tags]               # long tasks exceed the stage caps by design (as the CI gate)
 
 
 def _spans(rec, kind):
