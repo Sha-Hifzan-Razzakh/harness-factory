@@ -66,6 +66,14 @@ class PlanBackend:
     plan. Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
     step ("Step i of n: ...") or a V5 worker's part ("Your part: ..."), it makes the next plan call and then closes
     the step, so one plan step runs per V4 step or V5 worker.
+
+    Structured plans (the planner prompt asks for JSON with "depends_on"): it replies with one JSON step per
+    reference call, id `s<k>`. A call that only reads depends on the last earlier call that changes something; a
+    call that changes something depends on that one and on every read since, so reads between two writes may run
+    concurrently and the world each call sees is the reference's. Steps are then driven by their id ("[s3] ..." in
+    the step or worker prompt), not by a position in the plan, so concurrent V5 workers sharing this backend each do
+    their own step: the step's call, again after an error under `retry` (or first with missing arguments under
+    `noisy`), then a one-line close, the final answer for the plan's last step.
     """
 
     INVENTED_TOOL = "fs__search_file"
@@ -76,6 +84,7 @@ class PlanBackend:
     STAGE_DONE = "Stage complete."
     STEP_DONE = "Step complete."
     _STEP = re.compile(r"(?:^|\n)(?:Step \d+ of \d+:|Your part:)")
+    _STRUCTURED_STEP = re.compile(r"(?:^|\n)(?:Step \d+ of \d+:|Your part:) \[(s\d+)\] ")
 
     def __init__(self, ref: Reference, style: str = "replay") -> None:
         if style not in ("replay", "noisy", "lazy", "retry", "invent", "delegate"):
@@ -92,6 +101,8 @@ class PlanBackend:
         self.calls = 0
         self.step_marker: str | None = None   # the V4 step / V5 part prompt being worked on
         self.step_start = 0                   # plan index when it started
+        self.started: set[str] = set()        # structured: step ids whose call was made
+        self._reads: dict[str, bool] = {}     # structured: tool ref -> its declared side effect is READ
 
     @staticmethod
     def _last_tool_failed(messages: list[dict]) -> bool:
@@ -118,6 +129,10 @@ class PlanBackend:
             from harness_factory.substrate.context import scripted_summary
             msg = {"role": "assistant", "content": scripted_summary(messages)}
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
+        if getattr(slot, "role", None) == "planner" and self._wants_json(messages):
+            shown = "\n".join(m.get("content") or "" for m in messages)     # the planner prompt lists its tools
+            msg = self._msg(content=json.dumps({"steps": self._structured_plan(shown)}))
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if getattr(slot, "role", None) == "planner":
             lines = [f"{n}. Call {s['tool']} with {json.dumps(s['args'])}"
                      for n, s in enumerate(self.plan[self.i:], 1)] or ["1. Give the final answer."]
@@ -137,6 +152,10 @@ class PlanBackend:
                 and self.retries < self.MAX_RETRIES and model_name(self.last_step["tool"]) in offered:
             self.retries += 1
             msg = self._msg(model_name(self.last_step["tool"]), self.last_step["args"])
+            return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
+        sid = self._structured_marker(messages)
+        if sid is not None:
+            msg = self._structured_turn(sid, messages, offered)
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         self.retries = 0
         while self.i < len(self.plan) and self.plan[self.i].get("optional") \
@@ -162,3 +181,74 @@ class PlanBackend:
         else:
             msg = self._msg(content=self.STAGE_DONE)
         return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
+
+    # ------------------------------------------------------------------ structured plans (planning.structured)
+
+    @staticmethod
+    def _wants_json(messages: list[dict]) -> bool:
+        return any(m.get("role") == "system" and '"depends_on"' in (m.get("content") or "") for m in messages)
+
+    def _is_read(self, ref: str) -> bool:
+        if not self._reads:
+            from harness_factory import settings
+            from harness_factory.env.mcp.servers import SideEffect, load_tool_catalog
+            declared = load_tool_catalog(settings.TOOLS_FILE)
+            self._reads = {t.ref(srv.id): t.side_effect == SideEffect.READ for srv in declared.servers for t in srv.tools}
+        return self._reads.get(ref, False)
+
+    def _structured_plan(self, shown: str = "") -> list[dict]:
+        """One step per reference call not yet made (a replan leaves out the ones done). An optional step whose tool
+        the planner wasn't shown is left out, as the unstructured path skips it (ADR 0017); its id stays unused, so
+        s<k> still names plan[k-1]."""
+        steps, last_write, reads = [], None, []
+        for k, call in enumerate(self.plan, 1):
+            sid = f"s{k}"
+            if call.get("optional") and model_name(call["tool"]) not in shown:
+                continue
+            if self._is_read(call["tool"]):
+                deps = [last_write] if last_write else []
+                reads.append(sid)
+            else:
+                deps = ([last_write] if last_write else []) + reads
+                last_write, reads = sid, []
+            if sid in self.started:
+                continue
+            steps.append({"id": sid, "instruction": f"Call {call['tool']} with {json.dumps(call['args'])}",
+                          "tools": [model_name(call["tool"])], "depends_on": deps,
+                          "done_when": f"{call['tool']} has answered"})
+        return steps or [{"id": f"s{len(self.plan) + 1}", "instruction": "Give the final answer.",
+                          "done_when": "the answer is given"}]
+
+    def _structured_marker(self, messages: list[dict]) -> str | None:
+        """The id of the structured step this conversation is on (its latest step or part prompt), or None."""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                found = self._STRUCTURED_STEP.findall(m.get("content") or "")
+                if found:
+                    return found[-1]
+                if self._STEP.search(m.get("content") or ""):
+                    return None
+        return None
+
+    def _structured_turn(self, sid: str, messages: list[dict], offered: set[str]) -> dict:
+        k = int(sid[1:]) - 1
+        call = self.plan[k] if 0 <= k < len(self.plan) else None
+        last = call is None or k == len(self.plan) - 1
+        close = self.final if last else self.STEP_DONE
+        if call is None or model_name(call["tool"]) not in offered:
+            return self._msg(content=close)
+        start = max(i for i, m in enumerate(messages) if m.get("role") == "user"
+                    and f"[{sid}] " in (m.get("content") or ""))
+        name, args = model_name(call["tool"]), call["args"]
+        made = [m for m in messages[start:] if m.get("role") == "assistant"
+                for c in (m.get("tool_calls") or []) if c["function"]["name"] == name
+                and json.loads(c["function"]["arguments"] or "{}") == args]
+        if not made:
+            if self.noisy_pending:
+                self.noisy_pending = False
+                return self._msg(name, {})
+            self.started.add(sid)
+            return self._msg(name, args)
+        if self.style == "retry" and self._last_tool_failed(messages) and len(made) <= self.MAX_RETRIES:
+            return self._msg(name, args)
+        return self._msg(content=close)

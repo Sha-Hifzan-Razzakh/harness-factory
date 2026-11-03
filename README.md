@@ -537,6 +537,16 @@ plan because each worker starts from a short conversation, where V4's executor c
 Offline, the scripted model never loses track, so planning can only cost; whether it pays with real models on longer
 tasks is a Phase 2 question.
 
+**Structured plans, concurrent workers, parallel tool calls.** `planning.structured: true` makes V4 and V5 ask for
+a JSON plan (steps with `id`, `instruction`, tool hints, `depends_on`, `done_when`), validated before anything runs.
+A plan that doesn't validate is re-asked with the reason (`planning.plan_retries`, default 1; each re-ask is an
+invalid call in Q), then the run stops as `malformed_output`. JSON mode is sent when the model's caps declare
+`structured_output`. V4 runs the steps in dependency order; V5 starts each step once its dependencies have finished,
+up to `planning.max_parallel` workers at a time, each with a budget carved from what the team has left, and replans
+only after running workers finish. `config.parallel_tool_calls: true` runs the calls of one reply concurrently when
+all of them are READ; any call with a side effect makes the batch sequential, and results go back in call order.
+Matrix recipes: `v4-structured`, `v5-parallel`, `v2-parallel-tools` (ADR 0007 and 0008, "Later").
+
 ## Recipe matrix
 
 The factory exists to find which harness wins for which task class, across tools, skills, prompts, config and

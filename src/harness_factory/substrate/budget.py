@@ -56,8 +56,24 @@ class BudgetGuard:
         return max(0.0, time.monotonic() - self.started_at - excluded)
 
     def remaining(self) -> dict[str, int]:
+        """What is left for new work: the limits minus what was used and what running helpers hold (reserve)."""
+        steps, tool_calls, tokens = self._reserved
         return {
-            "steps": self.limits.max_steps - self.used_steps,
-            "tool_calls": self.limits.max_tool_calls - self.used_tool_calls,
-            "tokens": self.limits.max_tokens - self.used_tokens,
+            "steps": self.limits.max_steps - self.used_steps - steps,
+            "tool_calls": self.limits.max_tool_calls - self.used_tool_calls - tool_calls,
+            "tokens": self.limits.max_tokens - self.used_tokens - tokens,
         }
+
+    # Budget held by helpers still running (steps, tool calls, tokens): a delegate's whole carved budget is held from
+    # its start until its usage is charged back, so helpers running at the same time (V5 workers) are carved from
+    # what the others don't hold and together can never exceed the run's limits. An immutable default, so the class
+    # holds no shared mutable state.
+    _reserved: tuple[int, int, int] = (0, 0, 0)
+
+    def reserve(self, child: RuntimeConfig, extra_tool_calls: int = 0) -> None:
+        s, t, k = self._reserved
+        self._reserved = (s + child.max_steps, t + child.max_tool_calls + extra_tool_calls, k + child.max_tokens)
+
+    def release(self, child: RuntimeConfig, extra_tool_calls: int = 0) -> None:
+        s, t, k = self._reserved
+        self._reserved = (s - child.max_steps, t - child.max_tool_calls - extra_tool_calls, k - child.max_tokens)

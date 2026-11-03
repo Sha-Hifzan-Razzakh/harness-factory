@@ -1,0 +1,10 @@
+# Matrix (planning): v4-planner with one change, structured plans. The planner replies with JSON (steps with id,
+# instruction, tool hints, depends_on, done_when), validated before any step runs; a plan that doesn't validate is
+# re-asked once with the reason (a model call, and an invalid call in Q), then the run stops as malformed_output.
+# Steps run one after another in dependency order. max_steps follows the worst case, which the one re-ask adds a
+# call to: 2 x (1 plan + 8 steps x 3) + 1.
+id: v4-structured
+version: 1
+base: v4-planner
+planning: {structured: true}
+config: {max_steps: 51}

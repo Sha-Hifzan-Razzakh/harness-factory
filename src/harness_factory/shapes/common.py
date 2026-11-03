@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from harness_factory.recipes.model import ModelSlot
-from harness_factory.shapes import compaction, delegate
+from harness_factory.shapes import batch, compaction, delegate
 from harness_factory.shapes.base import HarnessInstance
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.context import estimate_tokens, window_for
@@ -48,7 +48,7 @@ class Turn:
 
 
 async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict[str, Any]],
-                     tools: list[dict[str, Any]]) -> Turn:
+                     tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None) -> Turn:
     """One model call under the budget.
 
     With `config.recover_malformed`, a reply the provider rejects as malformed (MODEL_PARSE, e.g. a call to a tool
@@ -85,7 +85,8 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
             return turn
         try:
             comp = await inst.gateway.complete(slot, prompt, tools, attributes={
-                "est_tokens_in": est, **({"context_len": window.context_len} if window else {})})
+                "est_tokens_in": est, **({"context_len": window.context_len} if window else {})},
+                **({"response_format": response_format} if response_format else {}))
         except HarnessError as e:
             if e.kind == ErrorKind.MODEL_PARSE and inst.recoveries < (inst.recipe.config.recover_malformed or 0):
                 inst.recoveries += 1
@@ -124,7 +125,10 @@ def offered_tools(inst: HarnessInstance, restrict: Callable[[str], bool] | None 
 async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
                          restrict: Callable[[str], bool] | None = None,
                          scope: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
-    """Execute the tool calls of one assistant message, in order. Returns (tool messages, stop reason)."""
+    """Execute the tool calls of one assistant message, in order. Returns (tool messages, stop reason).
+    With `config.parallel_tool_calls`, a batch of READ calls only runs concurrently (shapes/batch.py)."""
+    if inst.recipe.config.parallel_tool_calls and batch.all_reads(inst, message, restrict):
+        return await batch.run_reads(inst, message, restrict, scope)
     out: list[dict[str, Any]] = []
     for call in message.get("tool_calls") or []:
         limit = inst.budget.exceeded_by(before="tool_call")
