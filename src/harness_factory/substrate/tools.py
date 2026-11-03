@@ -2,18 +2,23 @@
 
 Order per call: name resolves -> tool is allowed -> args parse and validate -> permission policy ->
 MCP call with timeout (through the session pool) -> result shrunk if large. Every step is traced.
+
+A LocalTool is a harness-side tool (it runs in the factory process, e.g. retrieval, ADR 0017). It takes the same
+path, only its last step calls a Python function instead of an MCP server, so it can't escape the allowance, the
+policy, faults, the span or the budget.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import anyio
 
 from harness_factory.env.faults import FaultInjector
-from harness_factory.env.mcp.servers import USAGE_META, AgentTool, SideEffect, ToolCatalogFile
+from harness_factory.env.mcp.servers import USAGE_META, AgentTool, SideEffect, ToolCatalogFile, ToolSpec
 from harness_factory.hashing import content_hash
 from harness_factory.mcp.client import ToolResult
 from harness_factory.mcp.pool import MCPSessionPool
@@ -23,6 +28,7 @@ from harness_factory.recipes.model import PolicySet
 from harness_factory.shapes.result import Violation
 from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind
+from harness_factory.substrate.spill import SPILL_REF, SpillStore
 
 MAX_INLINE_CHARS = 16_000
 PREVIEW_CHARS = 500          # span previews; the full text is in the run's transcript file
@@ -37,13 +43,28 @@ def tool_ref(model_tool_name: str) -> str:
     return model_tool_name.replace("__", ".", 1)
 
 
+@dataclass
+class LocalTool:
+    """A tool the harness serves itself, in the factory process. Its spec (side effect, risk, timeout) is checked
+    exactly like a declared MCP tool's; `call` gets the validated arguments and returns a ToolResult (an input the
+    tool refuses is `is_error=True`; anything it raises is a factory crash, as for a local MCP server)."""
+    spec: ToolSpec
+    description: str
+    input_schema: dict[str, Any]
+    call: Callable[[dict[str, Any]], Awaitable[ToolResult]]
+
+
 class ToolExecutor:
     def __init__(self, pool: MCPSessionPool, declared: ToolCatalogFile, allowed: set[str], policy: PolicySet,
                  budget: BudgetGuard, tracer: Tracer, run_key: str, faults: FaultInjector | None = None,
-                 agent_calls: dict[str, int] | None = None) -> None:
+                 agent_calls: dict[str, int] | None = None, local: dict[str, LocalTool] | None = None,
+                 spill: SpillStore | None = None) -> None:
         """agent_calls: calls made so far to each agent tool. Shared with delegated helpers, so an agent tool's
-        max_calls is per run, not per helper."""
+        max_calls is per run, not per helper. local: harness-side tools by ref; a ref still has to be in `allowed`
+        to be offered or called. spill: where oversized outputs go (ADR 0015); None = cut them."""
+        self.spill = spill
         self.faults = faults
+        self.local = local or {}
         self.agent_calls = agent_calls if agent_calls is not None else {}
         self.pool = pool
         self.declared = declared
@@ -63,7 +84,7 @@ class ToolExecutor:
         assert self.pool.catalog is not None
         out = []
         for ref in sorted(self.narrowed(restrict)):
-            t = self.pool.catalog.tools.get(ref)
+            t = self.local.get(ref) or self.pool.catalog.tools.get(ref)
             if t is None:
                 continue
             out.append({"type": "function", "function": {"name": model_name(ref), "description": t.description,
@@ -79,7 +100,9 @@ class ToolExecutor:
         """restrict/scope narrow the allowance for this call (a V3 stage passes its own tool filter and id)."""
         ref = tool_ref(name)
         with self.tracer.span(SpanKind.tool_call, ref, **({"scope": scope} if scope else {})) as span:
-            if ref in self.allowed and restrict is not None and not restrict(ref):
+            if ref == SPILL_REF and self.spill is not None and self.spill.active:     # harness-side (ADR 0015)
+                result = self.spill.read(raw_args, span)
+            elif ref in self.allowed and restrict is not None and not restrict(ref):
                 span.error = ErrorKind.TOOL_NOT_ALLOWED.value
                 self.violations.append(Violation(kind="tool_not_allowed", detail=f"{ref} (outside {scope})"))
                 result = ToolResult(text=f"Tool {ref} is not available in this stage.", is_error=True)
@@ -105,14 +128,15 @@ class ToolExecutor:
         except (ValueError, TypeError) as e:
             span.error = ErrorKind.TOOL_ARGS.value
             return ToolResult(text=f"Invalid arguments for {ref}: {e}", is_error=True)
-        schema = self.pool.catalog.tools[ref].input_schema if self.pool.catalog else {}
+        local = self.local.get(ref)
+        schema = local.input_schema if local else self.pool.catalog.tools[ref].input_schema if self.pool.catalog else {}
         missing = [k for k in schema.get("required", []) if k not in args]
         if missing:
             span.error = ErrorKind.TOOL_ARGS.value
             return ToolResult(text=f"Missing required arguments for {ref}: {', '.join(missing)}", is_error=True)
         span.attributes["args_hash"] = content_hash(args, 12)
         span.attributes["args"] = json.dumps(args, default=str)[:ARGS_CHARS]
-        spec = self.declared.spec(ref)
+        spec = local.spec if local else self.declared.spec(ref)
         side_effect, risk = spec.effect_for(args)          # a call can be stronger than the tool (env/mcp/effects.py)
         span.attributes["side_effect"] = side_effect.value
         if spec.observes:
@@ -148,12 +172,12 @@ class ToolExecutor:
             span.attributes["agent_call"] = self.agent_calls[ref]
         try:
             with anyio.fail_after(spec.timeout_s):
-                result = await self.pool.call(ref, args)
+                result = await (local.call(args) if local else self.pool.call(ref, args))
         except TimeoutError:
             span.error = ErrorKind.TOOL_TIMEOUT.value
             return ToolResult(text=f"{ref} timed out after {spec.timeout_s}s", is_error=True)
         except Exception as e:
-            if not self.declared.server(ref.split(".")[0]).remote:
+            if local or not self.declared.server(ref.split(".")[0]).remote:
                 raise
             span.error = ErrorKind.TOOL_ERROR.value          # a remote server failing in transit: environment,
             span.attributes["infra"] = type(e).__name__      # not the model, so excluded from Q like a fault
@@ -165,6 +189,8 @@ class ToolExecutor:
             result = self._meter(ref, spec.agent, result, span)
         if fault == "garbled":                               # it really ran; the answer came back cut off
             result = result.model_copy(update={"text": FaultInjector.garble(result.text), "structured": None})
+        if self.spill is not None:
+            return result.model_copy(update={"text": self.spill.shrink(result.text, span)})
         if len(result.text) > MAX_INLINE_CHARS:
             span.attributes["truncated_from"] = len(result.text)
             result = result.model_copy(update={"text": result.text[:MAX_INLINE_CHARS] + "\n[truncated]"})

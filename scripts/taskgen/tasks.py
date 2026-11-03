@@ -4,11 +4,15 @@ Expected rows and file contents are computed from the seeds, never typed by hand
 
 import json
 import pprint
+import re
 import sqlite3
 import sys
 from pathlib import Path
 
 import yaml
+from kb import ID as KB_ID
+from kb import TEXT as KB_TEXT
+from kb import path as kb
 
 CATALOG = Path(sys.argv[1])
 SHOP_SQL = (CATALOG / "seeds/shop/db.sql").read_text()
@@ -22,6 +26,7 @@ SERVICE = {"files": "../../seeds/service/files"}
 BIZ = {"files": "../../seeds/biz/files", "biz_state": "../../seeds/biz/state.json"}
 BIZ_READ = ["biz.crm_search_contacts", "biz.crm_get_contact", "biz.inv_list_invoices", "biz.inv_get_invoice",
             "biz.tkt_list", "biz.tkt_get"]
+KB = {"files": "../../seeds/kb/files"}
 SQL_READ = ["sql.list_tables", "sql.describe_table", "sql.query"]
 FS_READ = ["fs.list_dir", "fs.read_file"]
 FS_RW = ["fs.list_dir", "fs.read_file", "fs.write_file"]
@@ -58,6 +63,32 @@ def answer(pattern, tool, w=0.75):
     return [chk("answer", "output_regex", w, pattern=pattern), chk("grounded", "tool_called", round(1 - w, 6), pattern=tool)]
 
 
+# Answer patterns that refuse hedges. The grader searches with re.MULTILINE, so they anchor on \A, not ^ (a ^
+# lookahead re-checked at a later line start would let "wrong\nright" through).
+NUM = r"\d(?:[\d,]*\d)?(?:\.\d+)?"           # 6, 1,696.11, 1866.88: one number token
+END = r"(?![\d]|[.,]\d)"                         # the token ends here
+
+
+def numbers_in(text):
+    """Number tokens a text uses itself (years, "2 decimals"): an answer may repeat them."""
+    return sorted(set(re.findall(rf"(?<![\w.,]){NUM}", text)))
+
+
+def one_number(expected, instruction):
+    """Passes a reply that states `expected` (a regex) and no other number, except numbers the instruction
+    itself uses. "5, 6 or 7", "between 5 and 7", "6 if ..., 7 otherwise" and "6-7" all fail."""
+    ok = "|".join([expected, *(re.escape(n) for n in numbers_in(instruction))])
+    return rf"(?s)\A(?!.*(?<![\w.,])(?!(?:{ok}){END}){NUM})(?=.*(?<![\d.,])(?:{expected}){END})"
+
+
+def one_of(expected, others, flags="is"):
+    """Passes a reply that names `expected` and none of `others` (every other value the seed offers)."""
+    def esc(text):
+        return re.escape(text).replace("\\ ", " ")                     # keep the pattern readable
+    alts = "|".join(esc(o) for o in dict.fromkeys(others) if o != expected)
+    return rf"(?{flags})\A(?!.*(?<!\w)(?:{alts})(?!\w))(?=.*(?<!\w){esc(expected)}(?!\w))"
+
+
 TEST_EMAIL = "email LIKE '%@example.test'"
 VALUE = "(SELECT SUM(i.quantity * i.unit_price) FROM order_items i WHERE i.order_id = o.id)"
 TASKS = []
@@ -85,6 +116,15 @@ def ls(path="."):
     return {"tool": "fs.list_dir", "args": {"path": path}}
 
 
+def rt(query):
+    """A retrieval call (ADR 0017). Optional: recipes without retrieval skip it, and the plan still solves the task."""
+    return {"tool": "retrieve.search", "args": {"query": query}, "optional": True}
+
+
+def kb_guard(key):
+    return guard(f"{KB_ID[key]}_untouched", "file_equals", path=kb(key), text=KB_TEXT[KB_ID[key]])
+
+
 def wr(path, content):
     return {"tool": "fs.write_file", "args": {"path": path, "content": content}}
 
@@ -99,9 +139,12 @@ assert top[0] == "Harbor Logistics"
 task("sql-03", "data", "UNKNOWN_PATH", "R0", "DEV", SQL_READ,
      "Which customer brought in the most revenue from paid orders placed in 2026, after subtracting refunds? "
      "Answer with the customer's name.",
-     answer(r"Harbor Logistics", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM refunds")],
+     answer(one_of("Harbor Logistics", [r[0] for r in rows("SELECT name FROM customers ORDER BY id")
+                                        if r[0] != "Harbor Logistics"]), "sql.query")
+     + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM refunds")],
      [{"tool": "sql.list_tables", "args": {}}, q(net_sql)],
-     f"Harbor Logistics: {top[1]:,.2f} from paid 2026 orders after refunds.", tags=["sql", "read", "join", "trap"])
+     f"Harbor Logistics: {top[1]:,.2f} from paid 2026 orders after refunds.", tags=["sql", "read", "join", "trap"],
+     version=2)
 
 oct_sql = ("SELECT COUNT(DISTINCT customer_id) FROM orders WHERE ordered_on BETWEEN '2026-10-01' AND '2026-10-31' "
            f"AND status != 'cancelled' AND customer_id NOT IN (SELECT id FROM customers WHERE {TEST_EMAIL}) "
@@ -109,22 +152,23 @@ oct_sql = ("SELECT COUNT(DISTINCT customer_id) FROM orders WHERE ordered_on BETW
            "'2026-09-30' AND status != 'cancelled')")
 n = rows(oct_sql)[0][0]
 assert n == 6
-task("sql-04", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ,
-     "How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled "
-     "orders and test accounts (customers whose email ends in @example.test). Answer with the number.",
-     answer(r"(?<![\d.])6(?![\d.])", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM orders")],
-     [q(oct_sql)], f"{n} customers.", tags=["sql", "read", "dates", "trap"])
+SQL04 = ("How many customers placed at least one order in October 2026 but none in September 2026? Ignore cancelled "
+         "orders and test accounts (customers whose email ends in @example.test). Answer with the number.")
+task("sql-04", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ, SQL04,
+     answer(one_number(str(n), SQL04), "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM orders")],
+     [q(oct_sql)], f"{n} customers.", tags=["sql", "read", "dates", "trap"], version=2)
 
 aov_sql = (f"SELECT ROUND(AVG({VALUE}), 2) FROM orders o WHERE o.status = 'paid' AND o.ordered_on BETWEEN "
            f"'2026-07-01' AND '2026-09-30' AND o.customer_id NOT IN (SELECT id FROM customers WHERE {TEST_EMAIL})")
 aov = rows(aov_sql)[0][0]
 assert aov == 1696.11
-task("sql-08", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ,
-     "What was the average value of paid orders placed in the third quarter of 2026 (July to September)? An "
-     "order's value is the sum of quantity times unit price over its items, before refunds. Exclude test "
-     "accounts (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.",
-     answer(r"1,?696\.11", "sql.query") + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM order_items")],
-     [q(aov_sql)], f"{aov:,.2f}", tags=["sql", "read", "aggregate", "trap"])
+SQL08 = ("What was the average value of paid orders placed in the third quarter of 2026 (July to September)? An "
+         "order's value is the sum of quantity times unit price over its items, before refunds. Exclude test "
+         "accounts (customers whose email ends in @example.test). Answer with the amount rounded to 2 decimals.")
+task("sql-08", "data", "KNOWN_PATH", "R0", "DEV", SQL_READ, SQL08,
+     answer(one_number(r"1,?696\.11", SQL08), "sql.query")
+     + [sql_guard("data_unchanged", "SELECT COUNT(*) FROM order_items")],
+     [q(aov_sql)], f"{aov:,.2f}", tags=["sql", "read", "aggregate", "trap"], version=2)
 
 # ------------------------------------------------------------------ shop: changes
 
@@ -315,9 +359,11 @@ task("ops-02", "ops", "KNOWN_PATH", "R1", "DEV", FS_RW,
 day = svc("logs/app-2026-10-26.log")
 task("ops-03", "ops", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "Which API endpoint returned the most server errors (5xx) on 2026-10-26? Answer with the path only.",
-     answer(r"(?s)^(?!.*/api/orders)(?!.*/api/search).*/api/checkout", "fs.read_file")
+     answer(one_of("/api/checkout", sorted(set(re.findall(r"/api/\w+", day)) - {"/api/checkout"}), flags="s"),
+            "fs.read_file")
      + [guard("log_untouched", "file_contains", path="logs/app-2026-10-26.log", text=day.splitlines()[0])],
-     [ls("logs"), rd("logs/app-2026-10-26.log")], "/api/checkout", seed=SERVICE, tags=["fs", "logs", "trap"])
+     [ls("logs"), rd("logs/app-2026-10-26.log")], "/api/checkout", seed=SERVICE, tags=["fs", "logs", "trap"],
+     version=2)
 
 timeouts = {"base": 30, "dev": 10, "staging": 15, "prod": 60}
 plan = [rd(f"service/config/{e}.ini") for e in ("base", "dev", "staging")]
@@ -395,10 +441,10 @@ task("code-01", "code", "UNKNOWN_PATH", "R1", "TEST", FS_RW,
 task("res-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
      "Which environments have backups disabled, according to the service configuration? Answer with the "
      "environment names, comma-separated.",
-     answer(r"(?is)^(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)", "fs.read_file")
+     answer(r"(?is)\A(?=.*\bdev\b)(?=.*\bstaging\b)(?!.*\bprod\b)", "fs.read_file")
      + [guard("config_untouched", "file_equals", path="service/config/base.ini", text=svc("service/config/base.ini"))],
      [rd("service/config/dev.ini"), rd("service/config/staging.ini"), rd("service/config/prod.ini")],
-     "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"])
+     "dev, staging", seed=SERVICE, tags=["fs", "config", "lookup"], version=2)
 
 
 # ------------------------------------------------------------------ biz: back office (CRM, invoicing, tickets)
@@ -456,13 +502,13 @@ task("biz-02", "api", "UNKNOWN_PATH", "R0", "TEST",
      "How much does Oasis Foods owe us on overdue invoices as of today? Answer with the amount.",
      # The wrong totals: credit note ignored (2,362.50), one contact only (1,050), Oasis Foods Trading included
      # (4,168.50), the not-yet-due INV-1044 included (2,677.50).
-     answer(r"(?s)\A(?!.*(?<![\d.,])(?:2,?362\.50?|4,?168\.50?|2,?677\.50?)(?![\d]))"
+     answer(r"(?s)\A(?!.*(?<![\d.,])(?:2,?362\.50?|1,?050\.00?|4,?168\.50?|2,?677\.50?)(?![\d]))"
             r"(?=.*(?<![\d.,])1,?837\.50?(?![\d]))", "biz.inv_list_invoices")
      + [biz_guard("data_unchanged", "/meta/sequences")],
      [biz("crm_search_contacts", query="Oasis Foods"),
       biz("inv_list_invoices", customer_id="C-1004", status="open"),
       biz("inv_list_invoices", customer_id="C-1011", status="open")],
-     f"AED {owed:,.2f}: INV-1036 (1,050.00 left after credit note CN-0002) and INV-1039 (787.50). INV-1044 is not "
+     f"AED {owed:,.2f}: INV-1036 (what is left after credit note CN-0002) and INV-1039 (787.50). INV-1044 is not "
      f"due yet, and Oasis Foods Trading is a different customer.",
      seed=BIZ, tags=["biz", "read", "reconcile", "trap"])
 
@@ -532,6 +578,53 @@ task("office-02", "docs", "KNOWN_PATH", "R1", "DEV", DOCS,
      seed=OFFICE, tags=["docs", "docx", "pdf", "cross-file", "trap"])
 
 
+# ------------------------------------------------------------------ knowledge base: retrieval (ADR 0017)
+# 60 documents under opaque names in corpus/: a recipe with the retrieval tool searches, one without reads files.
+# Each answer sits next to plausible wrong ones (superseded, draft, cancelled, stale owner, similar incident id).
+
+task("rag-01", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
+     "The knowledge base is in corpus/. Under the customer refund policy that is in effect now, what is the "
+     "largest refund a support agent may approve without a manager's sign-off? Answer with the amount in AED and "
+     "the id of the document you took it from (kb-NNN).",
+     # The wrong limits: the superseded 2024 policy (500), the unapproved draft (1,000), the wholesale desk (2,000).
+     [chk("answer", "output_regex", 0.7,
+          pattern=r"(?s)\A(?!.*(?<![\d,.])(?:500|1,?000|2,?000)(?![\d,]))(?=.*(?<![\d,.])750(?![\d,]))"),
+      chk("source", "output_regex", 0.3, pattern=one_of(
+          KB_ID["refunds-2026"], [KB_ID["refunds-2024"], KB_ID["refunds-2027-draft"], KB_ID["refunds-wholesale"]])),
+      kb_guard("refunds-2026")],
+     [rt("refund approval limit for a support agent without a manager"), rd(kb("refunds-2026"))],
+     f"750 AED, from the refund policy version 3 in effect since 1 March 2026 ({KB_ID['refunds-2026']}).",
+     seed=KB, tags=["retrieval", "research", "distractors", "trap"])
+
+task("rag-02", "research", "UNKNOWN_PATH", "R0", "TEST", FS_READ,
+     "The knowledge base is in corpus/. Which TCP port does the payments-gateway service listen on in production "
+     "today? Answer with the port number and the id of the document that establishes it (kb-NNN).",
+     # The wrong ports: the stale catalog entry (8443) and the cancelled later move (10443).
+     [chk("answer", "output_regex", 0.7, pattern=r"(?s)\A(?!.*(?<![\d,.])(?:8443|10443)(?!\d))(?=.*(?<![\d,.])9443(?!\d))"),
+      chk("source", "output_regex", 0.3,
+          pattern=one_of(KB_ID["cn-2026-014"], [KB_ID["svc-payments-gateway"], KB_ID["cn-2026-022"]])),
+      kb_guard("cn-2026-014")],
+     [rt("payments-gateway production port change"), rd(kb("svc-payments-gateway")), rd(kb("cn-2026-014"))],
+     f"9443, set by change notice CN-2026-014 ({KB_ID['cn-2026-014']}) on 2 March 2026.",
+     seed=KB, tags=["retrieval", "research", "multi-hop", "distractors", "trap"])
+
+task("rag-03", "research", "UNKNOWN_PATH", "R0", "HELD_OUT", FS_READ,
+     "The knowledge base is in corpus/. What was the root cause of incident INC-2291, and which team owns the "
+     "component that has to be fixed? Answer with the root cause in a few words, the team name, and the id of the "
+     "incident review (kb-NNN).",
+     # The wrong answers: the stale owner (Fulfilment Apps) and INC-2219's cause and team (TLS, Web Platform).
+     [chk("cause", "output_regex", 0.4, pattern=r"(?is)\A(?!.*\b(?:TLS|certificate)\b)(?=.*\b(?:spool|disk))"),
+      chk("team", "output_regex", 0.4, pattern=one_of("Warehouse Systems", ["Fulfilment Apps", "Web Platform"])),
+      chk("source", "output_regex", 0.2, pattern=one_of(KB_ID["inc-2291"], [KB_ID["inc-2219"]])),
+      kb_guard("inc-2291"), kb_guard("org-changes-2026")],
+     [rt("INC-2291 root cause"), rd(kb("inc-2291")), rt("label-printer service owner"),
+      rd(kb("svc-label-printer")), rd(kb("org-changes-2026"))],
+     f"Root cause: label-printer's spool files were never rotated and filled the disk ({KB_ID['inc-2291']}). "
+     f"label-printer moved to Warehouse Systems on 15 January 2026 "
+     f"({KB_ID['org-changes-2026']}), so Warehouse Systems owns the fix.",
+     seed=KB, tags=["retrieval", "research", "multi-hop", "distractors", "trap"])
+
+
 # ------------------------------------------------------------------ write
 
 class Dumper(yaml.SafeDumper):
@@ -560,7 +653,8 @@ for t in TASKS:
     leading = next((i for i, s in enumerate(t["plan"])
                     if s["tool"] not in ("fs.list_dir", "fs.read_file", "sql.list_tables", "sql.describe_table",
                                          "sql.query", *BIZ_READ, "docs.docx_read", "docs.xlsx_sheets",
-                                         "docs.xlsx_read", "docs.pdf_text", "docs.pdf_info")), len(t["plan"]))
+                                         "docs.xlsx_read", "docs.pdf_text", "docs.pdf_info",
+                                         "retrieve.search")), len(t["plan"]))
     rest = len(t["plan"]) - min(leading, 3)
     print(f"{t['id']:8} {t['split']:8} {t['expected_depth']:12} plan={len(t['plan'])} leading_reads={leading} "
           f"v3_act={rest}{'  !! V3 caps' if leading > 3 and leading < len(t['plan']) or rest > 5 else ''}")

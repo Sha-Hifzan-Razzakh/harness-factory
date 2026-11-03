@@ -110,9 +110,7 @@ def test_a_recipe_setting_an_unimplemented_field_is_refused(factory):
     from harness_factory.recipes.validate import validate_recipe
     base = factory.recipes["v2-base"]
     assert not validate_recipe(base, factory.declared)
-    from harness_factory.recipes.model import RetrievalConfig
-    retrieval = base.model_copy(update={"retrieval": RetrievalConfig(mode="bm25")})
     memory = base.model_copy(update={"memory": base.memory.model_copy(update={"summary": True})})
-    for r, field in ((retrieval, "retrieval"), (memory, "memory")):
+    for r, field in ((memory, "memory"),):          # retrieval is implemented since ADR 0017 (test_retrieval.py)
         issues = validate_recipe(r, factory.declared)
         assert [i.rule for i in issues] == ["field_implemented"] and field in issues[0].detail

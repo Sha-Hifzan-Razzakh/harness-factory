@@ -285,7 +285,8 @@ def test_adding_code_and_git_moved_no_existing_identity(factory):
                 data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
             c.pop("ref")
-            for k in ("sheet", "cell", "expected", "tolerance", "style"):   # check fields from #47, unset
+            for k in ("sheet", "cell", "expected", "tolerance", "style",     # check fields from #47, unset
+                      "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric"):   # and #48, #49
                 if c.get(k) is None:
                     c.pop(k, None)
         data["seed_hash"] = t.env_seed.data_hash(t.source_dir)

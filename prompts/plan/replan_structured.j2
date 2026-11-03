@@ -1,0 +1,6 @@
+The agent could not finish the plan.
+{% if done %}Done so far:
+{% for d in done %}- {{ d.step }} -> {{ d.result }}
+{% endfor %}{% endif %}{% for b in blocked %}Blocked: {{ b.step }} -> {{ b.result }}
+{% endfor %}Write a new plan for the remaining work only, as one JSON object in the same format, at most {{ max_steps }} steps.
+"depends_on" may name the ids of steps already done; don't reuse those ids. Reply with the JSON only.

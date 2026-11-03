@@ -42,7 +42,7 @@ class Variant(str, Enum):
 
 
 class ModelSlot(BaseModel):
-    role: Literal["planner", "executor", "judge", "profiler"] = "executor"
+    role: Literal["planner", "executor", "judge", "profiler", "compactor"] = "executor"
     canonical_model: str | None = None
     temperature: float = 0.0
     max_output_tokens: int = 4096
@@ -71,6 +71,16 @@ class PromptLayers(BaseModel):
     task: str = "task/default"
 
 
+class CompactionSpec(BaseModel):
+    """Context compaction (MEM-05, ADR 0015): before a model call whose estimated prompt passes `at` x the model's
+    context_len, the older turns are replaced by a summary that the model writes (prompt `prompt`, through the
+    gateway, charged to the run like any call). The last `keep_last_turns` assistant turns stay verbatim, with
+    their tool results; a tool call is never separated from its result."""
+    at: float = Field(0.75, gt=0, lt=1)               # fraction of the model's context_len
+    keep_last_turns: int = Field(2, ge=1)
+    prompt: str = "compaction/summary"
+
+
 class RuntimeConfig(BaseModel):
     max_steps: int = Field(30, gt=0)
     max_tool_calls: int = Field(50, gt=0)
@@ -84,6 +94,7 @@ class RuntimeConfig(BaseModel):
     # After the provider rejects a reply as malformed (e.g. a call to a tool that doesn't exist), re-ask the model
     # with the error and the real tool list, at most this many times per run. None/0 = the run ends there.
     recover_malformed: int | None = Field(None, ge=0)
+    compaction: CompactionSpec | None = None          # summarise old turns near the context limit (ADR 0015)
 
     @field_validator("recover_malformed")
     @classmethod
@@ -108,9 +119,12 @@ class MemoryProfile(BaseModel):
 
 
 class RetrievalConfig(BaseModel):
+    """Retrieval as a recipe axis (KNW-02, ADR 0017): the `retrieve.search` tool over the task's corpus, served by
+    the harness. Offered only on tasks whose seed has a corpus/ folder; elsewhere the recipe runs like its base.
+    Set (mode other than none), the whole config is in the recipe hash; unset recipes keep theirs."""
     mode: Literal["none", "bm25", "dense", "hybrid"] = "none"
-    top_k: int = 8
-    rerank: bool = False
+    top_k: int = Field(8, ge=1, le=50)               # passages per call
+    rerank: bool = False                             # rerank a pool of top_k x 3 candidates down to top_k
 
 
 class WorkflowStage(BaseModel):
@@ -158,15 +172,48 @@ class PlanSpec(BaseModel):
     step_max_steps: int = Field(4, gt=0)              # model calls in one step before it is ended
     max_replans: int = Field(1, ge=0)
     worker_prompt: str | None = None                  # V5: the task each worker gets (required there)
+    # Structured plans (SUB-08, SHP-04): the planner replies with JSON (steps with id, instruction, tool hints,
+    # depends_on, done_when), validated before any step runs. A reply that doesn't validate is re-asked with the
+    # error at most `plan_retries` times per run (default 1); each re-ask is a model call and an invalid call in Q.
+    # All three are omitted from the hash when unset, and the no-op values (false, 1, the default) are stored as
+    # unset, so equal behaviour hashes equal.
+    structured: bool | None = None
+    max_parallel: int | None = Field(None, ge=1)      # V5 + structured: workers whose dependencies are done run
+                                                      # concurrently, at most this many at a time (unset = 1)
+    plan_retries: int | None = Field(None, ge=0)
+
+    @model_validator(mode="after")
+    def _unset_no_ops(self) -> PlanSpec:
+        self.structured = self.structured or None
+        self.max_parallel = None if self.max_parallel == 1 else self.max_parallel
+        self.plan_retries = None if self.plan_retries == DEFAULT_PLAN_RETRIES else self.plan_retries
+        return self
+
+    def retries(self) -> int:
+        """Re-asks a structured plan may have per run (0 for numbered-text plans, which never fail to parse)."""
+        if not self.structured:
+            return 0
+        return DEFAULT_PLAN_RETRIES if self.plan_retries is None else self.plan_retries
+
+    def parallel(self) -> int:
+        return self.max_parallel or 1
 
     def worst_case_calls(self) -> int:
-        """Model calls the shape can make: every plan and replan, and every step of each at its cap."""
-        return (1 + self.max_replans) * (1 + self.max_plan_steps * self.step_max_steps)
+        """Model calls the shape can make: every plan and replan, every step of each at its cap, and the
+        re-asks of a structured plan that didn't validate."""
+        return (1 + self.max_replans) * (1 + self.max_plan_steps * self.step_max_steps) + self.retries()
+
+
+DEFAULT_PLAN_RETRIES = 1
+# Prompt templates of structured plans (prompts/plan/): part of the recipe hash only when `structured` is set.
+STRUCTURED_PLAN_PROMPTS = ("plan/planner_structured", "plan/replan_structured", "plan/fix_structured")
 
 
 # Optional fields added after results were first recorded. When unset they are dropped before hashing, so
 # adding a field never changes the identity of existing recipes (see CLAUDE.md, "Run identity"). Dotted = nested.
 _HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_prompt", "config.call_timeout_s", "config.recover_malformed")
+_HASH_OMIT_WHEN_NONE += ("config.compaction",)                                                  # ADR 0015
+_HASH_OMIT_WHEN_NONE += ("planning.structured", "planning.max_parallel", "planning.plan_retries")
 
 # Planning fields only V4 reads (V5's steps are delegate calls bounded by the worker's own config), so they are not
 # part of a V5 recipe's identity.
@@ -225,6 +272,8 @@ class HarnessRecipe(BaseModel):
         refs = [self.prompts.system, self.prompts.task] + ([self.prompts.operator] if self.prompts.operator else [])
         if self.skills.loading != "none":
             refs.append(f"skills/{self.skills.loading}")
+        if self.planning and self.planning.structured:
+            refs += list(STRUCTURED_PLAN_PROMPTS)
         if self.workflow:
             refs += [st.prompt for st in self.workflow.stages]
         if self.planning:
@@ -233,6 +282,8 @@ class HarnessRecipe(BaseModel):
                 refs.append(self.planning.step_prompt)
             if self.planning.worker_prompt:
                 refs.append(self.planning.worker_prompt)
+        if self.config.compaction:
+            refs.append(self.config.compaction.prompt)
         return refs
 
     def content_hash(self, prompts: PromptSources | None = None, skills: dict | None = None) -> str:

@@ -116,3 +116,40 @@ async def test_scripted_styles_behave_on_v5_as_they_do_on_v2(factory):
     for model, ok in (("scripted/replay", True), ("scripted/noisy", True), ("scripted/lazy", False)):
         rec = await run_one(factory, factory.tasks.get("fs-02"), factory.recipes["v5-orchestrator"], model, "scripted")
         assert (rec.status.value == "SUCCESS") is ok, model
+
+
+# ------------------------------------------------------------------ run endings (R-02, R-10)
+
+async def test_a_workers_infrastructure_failure_ends_the_run_incomplete(factory, monkeypatch):
+    from harness_factory.substrate.gateway import ModelGateway
+
+    async def instant(_s):
+        return None
+    monkeypatch.setattr(ModelGateway, "_sleep", staticmethod(instant))
+    # Worker 1's only call fails three times (two gateway retries); without the fix, the planner replans and the
+    # second worker writes the file, so the run is graded SUCCESS on work the outage cut short.
+    script = [PLAN2, *[{"fail": "PROVIDER_ERROR"}] * 3, {"content": "1. Write notes/todo.txt"}, WRITE,
+              {"content": "done"}]
+    rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v5-orchestrator"], "scripted/replay",
+                        "scripted", backend=ScriptedBackend(script))
+    assert rec.status.value == "INCOMPLETE"
+    assert [p["kind"] for p in snapshot(rec)["plans"]] == ["plan"]                # no replan after the outage
+    assert len(workers(rec)) == 1
+
+
+async def test_no_budget_for_the_next_worker_is_a_budget_stop_whatever_max_replans_says(factory, tmp_path):
+    """Plan two steps; worker 1 writes the file and answers, which spends the run's last step. Worker 2 can't get a
+    budget: the run ends as a budget stop (PARTIAL, outcome halved), the same with or without replans left."""
+    rs = recipes(tmp_path,
+                 none="id: none\nbase: v5-orchestrator\nconfig: {max_steps: 3}\nplanning: {max_replans: 0}\n"
+                      "delegation: {recipe: v2-base, max_calls: 8}\n",
+                 one="id: one\nbase: v5-orchestrator\nconfig: {max_steps: 3}\nplanning: {max_replans: 1}\n"
+                     "delegation: {recipe: v2-base, max_calls: 16}\n")
+    script = [{"content": "1. Write notes/todo.txt\n2. Check notes/todo.txt"}, WRITE, {"content": "wrote it"}]
+    for rid in ("none", "one"):
+        rec = await run_one(factory, factory.tasks.get("fs-01"), rs[rid], "scripted/replay", "scripted",
+                            backend=ScriptedBackend(script))
+        assert rec.status.value == "PARTIAL", rid
+        assert rec.scores.outcome == 0.5, rid
+        assert any(v.kind == "budget_exceeded" for v in rec.violations), rid
+        assert len(workers(rec)) == 1, rid                                     # worker 2 never started

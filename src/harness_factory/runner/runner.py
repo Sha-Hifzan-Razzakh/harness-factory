@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,7 +23,14 @@ from harness_factory.env.faults import NO_FAULTS, FaultConfig, load_fault_profil
 from harness_factory.env.mcp.servers import ToolCatalogFile, load_tool_catalog
 from harness_factory.env.sandbox import make_sandbox
 from harness_factory.env.state import StateInspector
-from harness_factory.grading.base import Grade, GradeContext, GradingPipeline, default_pipeline
+from harness_factory.grading.base import (
+    Grade,
+    GradeContext,
+    GradingPipeline,
+    combine_families,
+    default_pipeline,
+)
+from harness_factory.grading.judge import RubricJudge, apply_judge_failure, judge_usage
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.mlops.tracker import ExperimentTracker
 from harness_factory.observability.span import SpanKind
@@ -33,6 +41,8 @@ from harness_factory.provision.provisioner import provision
 from harness_factory.recipes.model import HarnessRecipe, load_recipes
 from harness_factory.results.model import EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.results.store import UNSCORED, ResultsStore
+from harness_factory.retrieval import tool as retrieval
+from harness_factory.runner.endstate import save_endstate
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import ShapeRegistry
@@ -42,6 +52,8 @@ from harness_factory.substrate.gateway import Backend
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import load_reference
 from harness_factory.tasks.registry import TaskRegistry
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,16 +68,19 @@ class Factory:
     faults: dict[str, FaultConfig] = field(default_factory=dict)
     tracker: ExperimentTracker = field(default_factory=ExperimentTracker)
     graders: GradingPipeline = field(default_factory=default_pipeline)
+    judge: RubricJudge | None = None            # rubric checks (ADR 0014); None = ungraded, weight 0
 
     @staticmethod
     def load(store: bool = True, results_url: str | None = None, quota_state: Path | None = None) -> Factory:
         """quota_state: where provider usage is persisted (default settings.QUOTA_STATE). Tests pass a temp path."""
         providers = load_provider_catalog(settings.PROVIDERS_FILE)
+        ledger = QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE)
+        results = ResultsStore(results_url) if store else None
         return Factory(tasks=TaskRegistry(), recipes=load_recipes(settings.RECIPES_DIR),
-                       declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers,
-                       ledger=QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE),
-                       store=ResultsStore(results_url) if store else None,
-                       faults=load_fault_profiles(settings.FAULTS_DIR))
+                       declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers, ledger=ledger,
+                       store=results, faults=load_fault_profiles(settings.FAULTS_DIR),
+                       judge=RubricJudge.from_catalog(providers, ledger,
+                                                      results.calibrations if results is not None else None))
 
     def fault(self, fault_id: str | None) -> FaultConfig | None:
         if fault_id in (None, NO_FAULTS):
@@ -99,7 +114,7 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
 # PARTIAL. Without it, a harness that solves early and then keeps calling until a cap scores like a clean run
 # (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
 OVERRUN_OUTCOME_FACTOR = 0.5
-OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "context_overflow", "malformed_output"})
+OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "step_cap", "context_overflow", "malformed_output"})
 
 
 def overran(result: RunResult) -> bool:
@@ -107,16 +122,34 @@ def overran(result: RunResult) -> bool:
 
 
 def _finalize_status(result: RunResult, grades: list[Grade], threshold: float) -> RunStatus:
-    """Every scored run gets its status from the environment. Unscored runs keep INCOMPLETE / ERROR."""
+    """Every scored run gets its status from the environment (the outcome family: state_diff, plus any grader
+    registered to feed it). Unscored runs keep INCOMPLETE / ERROR."""
     if not result.scored:
         return result.status
-    state = next((g for g in grades if g.grader_id == "state_diff"), None)
+    outcome = combine_families(grades).outcome
     critical = any(v.critical for g in grades for v in g.violations) or any(v.critical for v in result.violations)
-    if state is None or critical:
+    if outcome is None or critical:
         return RunStatus.FAIL
-    if state.score >= threshold and not overran(result):
+    if outcome >= threshold and not overran(result):
         return RunStatus.SUCCESS
-    return RunStatus.PARTIAL if state.score > 0 else RunStatus.FAIL
+    return RunStatus.PARTIAL if outcome > 0 else RunStatus.FAIL
+
+
+def run_scores(result: RunResult, grades: list[Grade]) -> tuple[FamilyScores, list[Violation], bool]:
+    """FamilyScores, every violation, and whether one is critical: O and Q from the graders feeding them."""
+    fam = combine_families(grades)
+    violations = list(result.violations) + [v for g in grades for v in g.violations]
+    critical = any(v.critical for v in violations)
+    # A critical violation (a guard broken, a forbidden write) fails the run outright: its outcome is 0, not
+    # the share of checks it passed, so it can't lift the cell's robustness R (an average of outcomes).
+    scores = FamilyScores(
+        outcome=(fam.outcome * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
+                 if fam.outcome is not None and result.scored and not critical else 0.0),
+        trajectory=fam.trajectory if fam.trajectory is not None else 1.0,
+        efficiency=0.0,   # normalized against the class median at aggregation time (P2)
+        safety=len(violations),
+    )
+    return scores, violations, critical
 
 
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
@@ -124,6 +157,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                   fault: str | None = None) -> EffectivenessRecord:
     """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end.
     fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run."""
+    f.graders.check(task)          # a grader typo fails here, before any quota is spent (and on every resume)
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
                          ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p:
@@ -159,32 +193,33 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                 inst.snapshot["tenant_state"] = remote
             after = p.inspector.capture()
             diff = StateInspector.diff(p.before, after)
+            ctx = GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
+                               workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
+                               spans=list(inst.tracer.spans), max_steps=recipe.config.max_steps, remote=remote,
+                               sandbox=p.sandbox)
+            judge_s = 0.0
             with inst.tracer.span(SpanKind.grade, "pipeline"):
+                if f.judge is not None and task.oracle.rubric_checks():
+                    # The judge's calls are on its own tracer and its time is not the run's: neither is in C.
+                    t_judge = time.monotonic()
+                    ctx.judgements = await f.judge.judge_checks(ctx)
+                    judge_s = time.monotonic() - t_judge
                 # In a worker thread: a tests_pass check runs pytest for up to minutes, and the other runs of the
                 # campaign share this event loop.
-                ctx = GradeContext(task=task, result=result, before=p.before, after=after, diff=diff,
-                                   workspace=p.sandbox.workspace, db_path=p.sandbox.db_path,
-                                   spans=list(inst.tracer.spans), max_steps=recipe.config.max_steps, remote=remote,
-                                   sandbox=p.sandbox)
                 grades = await asyncio.to_thread(f.graders.run, ctx)
+            pre_judge = apply_judge_failure(result, ctx.judgements)
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
         result.trajectory = list(inst.tracer.spans)
-        result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0)
+        result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0 - judge_s)
         trace_path = inst.tracer.write_jsonl()
         transcript_path = write_transcript(trace_path, inst, result)
+        endstate_path = await asyncio.to_thread(save_endstate, trace_path, ctx, task_class=p.task_class,
+                                                weight_profile=p.weight_profile,
+                                                **({"pre_judge": pre_judge} if pre_judge else {}))
 
-        by_id = {g.grader_id: g for g in grades}
-        violations = list(result.violations) + [v for g in grades for v in g.violations]
-        scores = FamilyScores(
-            outcome=(by_id["state_diff"].score * (OVERRUN_OUTCOME_FACTOR if overran(result) else 1.0)
-                     if "state_diff" in by_id and result.scored else 0.0),
-            trajectory=by_id["trajectory"].score if "trajectory" in by_id else 1.0,
-            efficiency=0.0,   # normalized against the class median at aggregation time (P2)
-            safety=len(violations),
-        )
+        scores, violations, critical = run_scores(result, grades)
         weights = ScoreWeights.for_profile(p.weight_profile)
-        critical = any(v.critical for v in violations)
         rec = EffectivenessRecord(
             run_key=inst.run_key, task_class=p.task_class, recipe_id=recipe.id, status=result.status,
             scores=scores, composite=round(weights.composite(scores, critical), 6), cost=result.cost,
@@ -196,39 +231,93 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             messages=result.messages,
             transcript_path=str(transcript_path),
             fault=fault,
+            endstate_path=endstate_path,
+            judge_usage=judge_usage(ctx.judgements, wall_s=judge_s),
+            tools_hash=f.declared.env_hash(recipe.tools.mcp_servers, "*"),
+            served_id=f.providers.served(provider_id, canonical_model).provider_model_id,
         )
     if f.store:
         f.store.add(rec)
-    f.tracker.log(rec, recipe)
+    await _mirror(f, rec, recipe)
     if flush:
         await asyncio.to_thread(Tracer.flush)
     return rec
 
 
+async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe) -> None:
+    """Mirror a stored run to MLflow. The results store is the source of truth, so a mirror failure is a warning,
+    never a run or campaign error. The MLflow client is synchronous network I/O: it runs in a thread so a slow
+    server can't stall the event loop (and the wall time of every other run on it)."""
+    if not f.tracker.enabled:
+        return
+    try:
+        await asyncio.to_thread(f.tracker.log, rec, recipe)
+    except Exception as e:  # noqa: BLE001  any client or server failure: the run itself is already stored
+        f.tracker.failures = getattr(f.tracker, "failures", 0) + 1
+        log.warning("MLflow mirror failed for %s: %s: %s", rec.run_key.short(), type(e).__name__, str(e)[:300])
+
+
+def _reference_index(task: Task, plan: list[dict]):
+    """A retrieval step in a reference plan (ADR 0017) runs on the task's corpus with REFERENCE_CONFIG."""
+    if not any(step["tool"] == retrieval.RETRIEVE_REF for step in plan):
+        return None
+    return retrieval.build_index(task, retrieval.REFERENCE_CONFIG)
+
+
+def _check_retrieved(task: Task, plan: list[dict], i: int, text: str) -> None:
+    """A reference retrieval step must find every corpus file the plan reads before its next retrieval step."""
+    found = {p["source"] for p in json.loads(text)["passages"]}
+    reads = []
+    for step in plan[i + 1:]:
+        if step["tool"] == retrieval.RETRIEVE_REF:
+            break
+        path = step["args"].get("path", "") if step["tool"] == "fs.read_file" else ""
+        if path.startswith(f"{retrieval.CORPUS_PREFIX}/"):
+            reads.append(path)
+    missing = [p for p in reads if p not in found]
+    if missing:
+        raise RuntimeError(f"{task.key()} reference retrieval {plan[i]['args']} does not return {missing} "
+                           f"(got {sorted(found)})")
+
+
 async def run_reference(f: Factory, task: Task) -> Grade:
-    """TSK-04: the reference plan must pass the task's own oracle."""
+    """TSK-04: the reference plan must pass the task's own oracle. Rubric checks are judged too, and a judged
+    rubric check the reference fails fails the reference (even at weight 0): its rubric or its text is wrong."""
     ref = load_reference(task)
-    servers = sorted({step["tool"].split(".")[0] for step in ref.plan}) or ["fs"]
+    servers = sorted({step["tool"].split(".")[0] for step in ref.plan} - {retrieval.RETRIEVE_SERVER}) or ["fs"]
+    index = await asyncio.to_thread(_reference_index, task, ref.plan)
     with make_sandbox(label=f"ref-{task.id}") as sb:
         sb.reset(task)
         insp = StateInspector(sb.workspace, sb.db_path)
         before = insp.capture()
         tracer = Tracer(f"reference|{task.key()}")
         async with MCPSessionPool(f.declared, servers, sb.env(), sb.launch) as pool:
-            for step in ref.plan:
+            for i, step in enumerate(ref.plan):
                 with tracer.span(SpanKind.tool_call, step["tool"]) as span:
-                    res = await pool.call(step["tool"], step["args"])
+                    if step["tool"] == retrieval.RETRIEVE_REF:
+                        res = await retrieval.local_tool(index, []).call(step["args"])
+                        if not res.is_error:
+                            _check_retrieved(task, ref.plan, i, res.text)
+                    else:
+                        res = await pool.call(step["tool"], step["args"])
                     if res.is_error:
                         span.status = "error"
                         raise RuntimeError(f"{task.key()} reference step {step['tool']} failed: {res.text}")
         after = insp.capture()
         dummy = RunResult(run_key=RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash="ref",
                                          canonical_model="reference", provider="none"),
-                          output=ref.final, finished=True)
+                          output=ref.final, finished=True, scored=True)
         ctx = GradeContext(task=task, result=dummy, before=before, after=after, diff=StateInspector.diff(before, after),
                            workspace=sb.workspace, db_path=sb.db_path, spans=tracer.spans, max_steps=10_000,
                            sandbox=sb)
-        return await asyncio.to_thread(f.graders.graders["state_diff"].grade, ctx)
+        if f.judge is not None and task.oracle.rubric_checks():
+            ctx.judgements = await f.judge.judge_checks(ctx)
+        grade = await asyncio.to_thread(f.graders.graders["state_diff"].grade, ctx)
+        rejected = [v.check_id for v in ctx.judgements.values() if v.available and not v.passed]
+        if rejected:
+            grade.passed = False
+            grade.detail = f"the judge fails the reference on {', '.join(rejected)}; " + grade.detail
+        return grade
 
 
 class RunSpec(BaseModel):
@@ -300,6 +389,10 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
+ 
+
+    for t in tasks:
+        f.graders.check(t)                                   # unknown grader: likewise
     skip = set(skipped_pairs(f, recipe_ids, tasks))
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)

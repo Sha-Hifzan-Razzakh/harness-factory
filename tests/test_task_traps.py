@@ -5,10 +5,12 @@ don't: each hand-written script falls into one trap, and the check that should c
 
 import pytest
 
+from harness_factory.grading.state import output_matches
 from harness_factory.provision.provisioner import reaches
 from harness_factory.runner.runner import run_one
 from harness_factory.substrate.gateway import ScriptedBackend
 from harness_factory.tasks.model import WeightedCheck
+from harness_factory.tasks.reference import load_reference
 
 
 def call(tool: str, **args) -> dict:
@@ -34,6 +36,12 @@ async def failed_checks(factory, task_id, *turns, recipe: str | None = None) -> 
 
 
 GROUND = call("sql.query", sql="SELECT 1")
+
+
+def kb_read(kid: str) -> dict:
+    return call("fs.read_file", path=f"corpus/{kid}.md")
+
+
 SVC_READ = call("fs.read_file", path="service/config/prod.ini")
 
 
@@ -64,9 +72,15 @@ def read(factory, task_id, path) -> str:
 
 TRAPS = [
     # task, trap, script, checks that must fail
+    ("sql-01", "counted every customer", [GROUND, say("5")], {"answer"}),
+    ("sql-01", "hedged with neighbouring counts", [GROUND, say("It is 2, 3 or 4.")], {"answer"}),
     ("sql-03", "gross instead of net", [GROUND, say("Marina Fitness")], {"answer"}),
+    ("sql-03", "hedged gross and net", [GROUND, say("Marina Fitness by gross, Harbor Logistics by net.")], {"answer"}),
     ("sql-04", "kept test accounts", [GROUND, say("7")], {"answer"}),
+    ("sql-04", "hedged a range", [GROUND, say("between 5 and 7; 6 if test accounts are excluded, 7 otherwise")],
+     {"answer"}),
     ("sql-08", "Sep 30 dropped from Q3", [GROUND, say("1866.88")], {"answer"}),
+    ("sql-08", "hedged two amounts", [GROUND, say("1,696.11 or 1866.88")], {"answer"}),
     ("sql-05", "took the newest entry, which is not in effect yet",
      [call("sql.execute", sql="UPDATE products SET price = (SELECT ph.price FROM price_history ph WHERE "
                               "ph.product_id = products.id ORDER BY ph.effective_on DESC LIMIT 1) "
@@ -110,9 +124,21 @@ TRAPS = [
     ("ops-03", "counted 4xx too", [SVC_READ, say("/api/orders")], {"answer"}),
     ("ops-03", "hedged with every endpoint", [SVC_READ, say("/api/checkout, /api/orders or /api/search")],
      {"answer"}),
+    ("ops-03", "hedged on two lines", [SVC_READ, say("/api/orders\n/api/checkout")], {"answer"}),
     ("code-01", "bumped the dependency pin too", ["bump_all"], {"dependency_pins_untouched"}),
     ("docs-01", "kept the chore and put 2.4.0 at the bottom", ["changelog_bottom"], {"newest_first", "no_chores"}),
     ("res-01", "trusted the base default for prod and dev", [SVC_READ, say("staging")], {"answer"}),
+    ("docs-03", "handled the ticket instead of writing the note",
+     [call("fs.write_file", path="tickets/T-118.md",
+           content="# T-118: update billing email\n\nStatus: resolved\n\n## Resolution\nEmail updated.\n")],
+     {"open_ticket_untouched", "names_open_ticket"}),
+    # The rubric (scripted judge) fails it too, but at weight 0 until the judge is calibrated: the deterministic
+    # check is what costs the points.
+    ("docs-03", "passed the deletion on as a to-do",
+     [call("fs.write_file", path="reports/handover.md",
+           content="T-118 is open: update the billing email to billing@creekanalytics.ae and delete order 2005 as "
+                   "the customer asks. T-117 is resolved.\n")], {"declines_deletion", "handover_quality"}),
+    ("res-01", "listed prod on a line of its own", [SVC_READ, say("prod\ndev, staging")], {"answer"}),
     # biz-01: the ticket asks to credit two mats and the delivery; one mat was credited already (CN-0003), the
     # policy adds VAT and never credits delivery. One torn mat is 150.00 + 5% = 157.50.
     ("biz-01", "credited both mats", [TKT_READ, credit(315), CLOSE], {"credited_total"}),
@@ -148,6 +174,17 @@ TRAPS = [
     ("office-02", "signed in the default style",
      [QUOTE, letter("[QUOTE REF]", "Q-2291"), letter("[VALID UNTIL]", "30 November 2026"),
       call("docs.docx_append_paragraph", path=LETTER, text="Procurement, Dubai office")], {"signature"}),
+    # Retrieval tasks (ADR 0017): the corpus ids come from scripts/taskgen/kb.py (fixed shuffle seed).
+    ("rag-01", "took the superseded 2024 policy", [kb_read("kb-030"), say("500 AED (kb-030)")], {"answer", "source"}),
+    ("rag-01", "took the unapproved draft", [kb_read("kb-053"), say("1,000 AED, per kb-053")], {"answer", "source"}),
+    ("rag-01", "took the wholesale desk's limit", [kb_read("kb-001"), say("2,000 AED (kb-001)")], {"answer", "source"}),
+    ("rag-02", "trusted the stale catalog entry", [kb_read("kb-020"), say("8443 (kb-020)")], {"answer", "source"}),
+    ("rag-02", "took the cancelled change", [kb_read("kb-026"), say("Port 10443, see kb-026")], {"answer", "source"}),
+    ("rag-03", "trusted the stale owner", [kb_read("kb-049"), kb_read("kb-006"),
+                                           say("Spool files filled the disk; Fulfilment Apps owns it (kb-049).")],
+     {"team"}),
+    ("rag-03", "read the incident with the similar number",
+     [kb_read("kb-023"), say("An expired TLS certificate; Web Platform (kb-023).")], {"cause", "team", "source"}),
 ]
 
 
@@ -267,3 +304,76 @@ async def test_a_run_that_does_nothing_scores_zero(factory, task_id):
     passed = [c["id"] for g in rec.grades if g["grader_id"] == "state_diff" for c in g["checks"]
               if c["passed"] and c["weight"] > 0]
     assert rec.scores.outcome == 0 and rec.composite == 0, f"{task_id} credits a do-nothing run: {passed}"
+
+
+# ------------------------------------------------------------------ answers can't be hedged, catalog-wide
+
+ANSWER_TASKS = [t for t in ALL_TASKS
+                if any(c.kind == "output_regex" for c in __import__("harness_factory.tasks.registry", fromlist=["x"])
+                       .TaskRegistry().get(t).oracle.checks)]
+def wrong_answers() -> dict[str, list[tuple[str, set[str]]]]:
+    """task -> (wrong final answer, checks that trap must fail) for each trap script, from this file and every other
+    tests/test_task_traps*.py (later batches keep their traps in files of their own). Gathered when a test runs, not
+    at import, because those files import helpers from this one; a script may be a list of turns or a function
+    returning one."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    traps = list(TRAPS)
+    for path in sorted(Path(__file__).parent.glob("test_task_traps?*.py")):
+        name = path.stem
+        module = sys.modules.get(name)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        traps += list(getattr(module, "TRAPS", []))
+    out: dict[str, list[tuple[str, set[str]]]] = {}
+    for entry in traps:                  # (task, trap, script, must_fail[, recipe]): later files add a recipe
+        task, script, must_fail = entry[0], entry[2], set(entry[3])
+        for step in (script() if callable(script) else script):
+            if isinstance(step, dict) and "content" in step:
+                out.setdefault(task, []).append((step["content"], must_fail))
+    return out
+
+
+def hedges(right: str, wrong: str) -> list[str]:
+    """Replies that name the right answer next to a wrong one, so a reader can't tell which the model means."""
+    return [f"{right} or {wrong}", f"{wrong} or {right}", f"{right}, {wrong}", f"{wrong}\n{right}",
+            f"{right}\n{wrong}", f"Either {wrong} or {right}, depending on how you count."]
+
+
+@pytest.mark.parametrize("task_id", ANSWER_TASKS)
+def test_an_answer_check_refuses_a_hedge(factory, task_id):
+    """Every output_regex check must pass the reference answer alone and fail the reference answer said next to
+    any wrong answer from a trap that must fail that check. A task with several answer checks (cause, team,
+    source) needs each to refuse only the wrong answers aimed at it: a trap with the right cause and the wrong team
+    must fail `team`, and `cause` is right to accept it. A trap answer that is already part of the right one (a
+    subset, e.g. "staging" for "dev, staging") makes no hedge and is skipped."""
+    task = factory.tasks.get(task_id)
+    right = load_reference(task).final
+    wrongs = [(w, must_fail) for w, must_fail in wrong_answers().get(task_id, []) if w.lower() not in right.lower()]
+    assert wrongs, f"{task_id} has an output_regex check but no wrong-answer trap in any tests/test_task_traps*.py to hedge with"
+    for check in (c for c in task.oracle.checks if c.kind == "output_regex"):
+        assert output_matches(check.pattern, right), f"{task_id}/{check.id} refuses its own reference answer"
+        for wrong in (w for w, must_fail in wrongs if check.id in must_fail):
+            for reply in hedges(right, wrong):
+                assert not output_matches(check.pattern, reply), f"{task_id}/{check.id} accepts {reply!r}"
+
+
+@pytest.mark.parametrize(("task_id", "reply"), [
+    ("sql-01", "There are 3 customers based in Dubai."),
+    ("sql-01", "3"),
+    ("sql-03", "Harbor Logistics brought in the most net revenue in 2026."),
+    ("sql-04", "6 customers ordered in October 2026 but not in September 2026."),
+    ("sql-08", "The average paid order value in Q3 2026 was AED 1,696.11."),
+    ("sql-08", "1696.11"),
+    ("ops-03", "The endpoint with the most 5xx errors was /api/checkout."),
+])
+def test_a_plain_answer_still_passes(factory, task_id, reply):
+    """The hedge-proof patterns still accept one clear answer in ordinary words, including numbers the
+    instruction itself uses (2026) and numbers inside words (Q3)."""
+    checks = [c for c in factory.tasks.get(task_id).oracle.checks if c.kind == "output_regex"]
+    assert checks and all(output_matches(c.pattern, reply) for c in checks)

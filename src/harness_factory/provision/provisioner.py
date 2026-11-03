@@ -20,6 +20,7 @@ from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.servers import SideEffect, ToolCatalogFile
 from harness_factory.env.sandbox import LocalSandbox, make_sandbox
 from harness_factory.env.state import EnvState, StateInspector
+from harness_factory.hashing import content_hash
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.mcp.recording import recording_scope
 from harness_factory.observability.tracer import Tracer
@@ -27,6 +28,7 @@ from harness_factory.providers.catalog import ProviderCatalog
 from harness_factory.providers.quota import QuotaLedger
 from harness_factory.recipes.model import HarnessRecipe
 from harness_factory.recipes.validate import validate_recipe
+from harness_factory.retrieval import tool as retrieval
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes import delegate as delegation
 from harness_factory.shapes.base import HarnessInstance
@@ -34,7 +36,8 @@ from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.substrate.gateway import Backend, ModelGateway
 from harness_factory.substrate.prompts import PromptAssembler
-from harness_factory.substrate.tools import ToolExecutor, model_name
+from harness_factory.substrate.spill import SpillStore
+from harness_factory.substrate.tools import LocalTool, ToolExecutor, model_name
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import PlanBackend, load_reference
 
@@ -105,10 +108,12 @@ def run_key_for(task: Task, recipe: HarnessRecipe, canonical_model: str, provide
     campaign can tell which planned runs already have results (resume) and the two can never disagree."""
     recipe = recipe.with_model(canonical_model)
     served = providers.served(provider_id, canonical_model)
+    env_hash = declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id)
+    if retrieval.active(recipe):       # only then, so every existing env hash stays (FWK-03: framework versions)
+        env_hash = content_hash({"env": env_hash, "retrieval": retrieval.identity(recipe.retrieval)}, 12)
     return RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe.content_hash(),
                   canonical_model=canonical_model, provider=provider_id, seed=seed,
-                  fault_config_hash=fault.content_hash() if fault else "none",
-                  env_hash=declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id))
+                  fault_config_hash=fault.content_hash() if fault else "none", env_hash=env_hash)
 
 
 async def _teardown(sandbox: LocalSandbox) -> None:
@@ -152,6 +157,25 @@ def install_skills(sandbox: LocalSandbox, recipe: HarnessRecipe) -> None:
         dest = sandbox.skills_dir / sid / "SKILL.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(lib[sid].text)
+
+
+async def _retrieval(recipe: HarnessRecipe, task: Task,
+                     declared: ToolCatalogFile) -> tuple[dict[str, LocalTool], dict[str, Any] | None]:
+    """ADR 0017: when the recipe retrieves and the task has a corpus, index it (in a worker thread, before the
+    run's clock starts) and serve `retrieve.search` from the factory process. Returns the local tools and what the
+    snapshot records: the index id, its size, and the evidence (every passage returned, by source and offsets)."""
+    if not retrieval.offered(recipe, task, task_tools(task, declared)):
+        return {}, None
+    try:
+        index = await asyncio.to_thread(retrieval.build_index, task, recipe.retrieval)
+    except ImportError as e:
+        raise HarnessError(ErrorKind.PROVISION, f"{recipe.id} retrieves, but the retrieval extra is not installed "
+                                                f"(uv sync --extra retrieval): {e}") from e
+    evidence: list[dict[str, Any]] = []
+    info = {"index_id": index.index_id, "mode": recipe.retrieval.mode, "top_k": recipe.retrieval.top_k,
+            "rerank": recipe.retrieval.rerank, "documents": index.documents, "chunks": len(index.nodes),
+            "versions": retrieval.versions(), "evidence": evidence}
+    return {retrieval.RETRIEVE_REF: retrieval.local_tool(index, evidence)}, info
 
 
 @dataclass
@@ -216,6 +240,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         inspector = StateInspector(sandbox.workspace, sandbox.db_path)
         before = inspector.capture()
         allowed = allowed_tools(recipe, task, declared)
+        local, retrieval_info = await _retrieval(recipe, task, declared)
+        allowed |= set(local)
         # One test tenant per run (EXT-07): concurrent runs against the same remote server never see each other.
         tenant = f"hf-{uuid.uuid4().hex[:16]}" if any(declared.server(s).tenant for s in recipe.tools.mcp_servers) \
             else None
@@ -223,7 +249,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch, tenant=tenant,
                                   tenant_seeds=task.env_seed.mock_api_state, recording_scopes=scopes) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
-                                 faults=FaultInjector(fault, seed) if fault else None)
+                                 faults=FaultInjector(fault, seed) if fault else None, local=local,
+                                 spill=SpillStore(sandbox.db_path.parent / "spill"))     # state folder (ADR 0015)
             assembler = assembler or PromptAssembler()
             delegate = delegation.context_for(recipe, task, assembler)
             names = sorted(model_name(r) for r in allowed) + ([delegation.DELEGATE_NAME] if delegate else [])
@@ -239,6 +266,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
                           "fault_profile": fault.id if fault else None,
                           **({"delegate": delegate.child.id} if delegate else {}),
+                          **({"retrieval": retrieval_info} if retrieval_info else {}),          # KNW-01, KNW-03
                           **({"remote_servers": remote, "remote_mode": remote_mode,                    # ENV-02
                               "remote_versions": pool.server_versions()} if remote else {}),
                           **({"tenant": tenant, "tenant_servers": pool.tenant_servers()} if tenant else {}),

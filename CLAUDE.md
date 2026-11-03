@@ -34,7 +34,13 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 | New skill | `catalog/skills/<id>/SKILL.md` (header: name, description) | general how-to, never a task's answer; its text is in the recipe hash of every recipe using it; tasks used to judge skills should be written by someone who hasn't seen them |
 | Selector rule | `catalog/selector.yaml` (min_runs, defaults, depth_shapes, hand_picked), `src/harness_factory/select/` | evidence is only cells whose recipe hash and env hash are current; held-out runs never inform a held-out pick; every provisioning decision is logged (`var/decisions/`) |
 | New grader | `src/harness_factory/grading/`, register in `default_pipeline()` | grade the environment or the trace, not the model's claims |
+| Grader registration | `@register_grader` in `src/harness_factory/grading/` (`id`, `version`, `family`, `combine`; see `grading/base.py`) | `default_pipeline()` picks it up; changing what a grader returns bumps its `version` and is a scoring change; a task with only `state_diff` + `trajectory` must keep its numbers (`tests/test_graders_depth.py`) |
+| New check kind | `CheckKind` + the required-field table in `tasks/model.py`, behaviour in `grading/state.py` | a new check field is optional and in `_CHECK_HASH_OMIT_WHEN_NONE` so existing task hashes stay; tests for pass, fail and edge cases; never change an existing kind's semantics (that rescores every task using it) |
+| Rubric check / judge | `kind: rubric` in a task oracle; judge in `grading/judge.py` (config `catalog/judge/judge.yaml`, prompts `prompts/judge/`), calibration in `grading/calibration.py` (ADR 0014) | judge calls only through `ModelGateway` on the judge's own tracer (never in the run's cost, budget or C); the judge sees only the criteria and the subject, the agent never sees the rubric; an uncalibrated judge (no record of its current hash on >= 100 items with kappa >= 0.7) carries weight 0; a judge failure is ungraded (uncalibrated) or INCOMPLETE/ERROR (calibrated), never a 0; editing the judge's model or prompts is a new judge hash |
 | Authoring (`hfx new`, API, UI) | `src/harness_factory/authoring/` (one service; CLI in `cli/authoring.py`) | every catalog write goes through `AuthoringService`: staged, checked by `authoring/snapshot.py` in a child process (never re-point `settings` in-process), rejected on any new issue, written all-or-nothing under the lock; a change to an existing identity needs confirm; the snapshot and `hfx validate` must agree (`tests/test_authoring.py`) |
+| Provider calibration | `results/calibration.py`, CLI `cli/calibration.py` (`hfx calibration`) | pool cells only on a saved `equivalent` verdict whose served model ids are current; C stays per provider; never pool across tool environments (`tools_hash`) |
+| Retrieval (KNW-02) | `src/harness_factory/retrieval/` (`tool.py` without LlamaIndex, `engine.py` with it; extra `retrieval`); a task's corpus is `corpus/` in its seed files | harness-side `LocalTool` through `ToolExecutor`, never a sandbox server (ADR 0017); LlamaIndex components only, embedding and reranker stay deterministic and offline; a reference plan's retrieval step is `"optional": True` and must return the files the plan reads next (`hfx reference`); an engine change goes in `ENGINE` (env hash) |
+| Allocation planner | `runner/allocation.py`, CLI `cli/allocation.py` (`hfx allocate`) | only an equivalent pool (`results.calibration.pools`) may split a model's runs, otherwise one provider per model; capacity from the ledger and the projection's Estimator; never change a RunKey (allocation picks a RunSpec's provider); log every decision, refusals included (`var/decisions/`); run frozen allocations (`var/allocations/`) so resume finds the same runs |
 
 ## Rules that protect the measurements
 
@@ -51,12 +57,17 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
   bake C into a stored run, because it is relative to other runs. Robustness R is the same: computed per cell
   at aggregation (faulted ÷ clean mean outcome). Faulted runs feed only R, never a cell's E mean or the cost
   medians, and an injected tool failure is never counted against Q.
+- **Re-grading.** A stored run's end state (`runner/endstate.py`) is re-graded into the `regrades` table, never
+  into its own row; aggregation reads only `runs`. The results store changes only additively, one Alembic revision per change
+  (`results/migrations/versions/`; a revision adopts what an older store already has, and
+  `tests/test_results_store.py` checks the migrated schema against `store.metadata`).
 - **No free credit.** A run that does nothing must score 0. Preservation checks are zero-weight guards, and
   trajectory counts as Q·O.
 - **How runs end** (`shapes/common.finish`, `runner._finalize_status`):
-  - A harness stop (budget, stage cap, context overflow, malformed output) is graded on the environment with
-    outcome × `OVERRUN_OUTCOME_FACTOR` and status at most PARTIAL.
-  - Infrastructure is INCOMPLETE; setup and crashes are ERROR. Neither is averaged into cell means.
+  - A harness stop (budget, V3 stage cap, V4 step cap, context overflow, malformed output) is graded on the
+    environment with outcome × `OVERRUN_OUTCOME_FACTOR` and status at most PARTIAL.
+  - Infrastructure is INCOMPLETE; setup and crashes are ERROR, including a delegate's or worker's (it ends the
+    parent run). Neither is averaged into cell means.
   - Provider exceptions are classified in exactly one place, `substrate/gateway.classify_provider_error`. Never
     catch provider errors elsewhere.
   - A 400 is the model's fault only when the provider says the output was malformed.
@@ -91,6 +102,12 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
 ## Git
 
 Branch from `main` (`feat/…`, `fix/…`, `ci/…`), one concern per PR, CI green before merge.
+
+**Commit identity and signing.** `main` requires verified signatures, and GitHub checks the signing key
+against the *committer's* account. Commit with the session's default git identity and signing as configured:
+never change `user.name`/`user.email` (in config or via `GIT_COMMITTER_*`), never pass
+`-c commit.gpgsign=false` or `--no-gpg-sign`. If signing fails, stop and report it instead of committing
+unsigned. A commit made under any other identity, or unsigned, blocks the PR from merging.
 
 ## Parallel sessions
 
