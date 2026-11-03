@@ -108,9 +108,12 @@ class MemoryProfile(BaseModel):
 
 
 class RetrievalConfig(BaseModel):
+    """Retrieval as a recipe axis (KNW-02, ADR 0017): the `retrieve.search` tool over the task's corpus, served by
+    the harness. Offered only on tasks whose seed has a corpus/ folder; elsewhere the recipe runs like its base.
+    Set (mode other than none), the whole config is in the recipe hash; unset recipes keep theirs."""
     mode: Literal["none", "bm25", "dense", "hybrid"] = "none"
-    top_k: int = 8
-    rerank: bool = False
+    top_k: int = Field(8, ge=1, le=50)               # passages per call
+    rerank: bool = False                             # rerank a pool of top_k x 3 candidates down to top_k
 
 
 class WorkflowStage(BaseModel):

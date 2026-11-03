@@ -565,6 +565,8 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
 | tools | `v2-docs` | Adds the `docs` server: read and edit `.docx` (`docx_read`, `docx_replace`, `docx_append_paragraph`) and `.xlsx` (`xlsx_sheets`, `xlsx_read`, `xlsx_write`), read `.pdf` (`pdf_text`, `pdf_info`). The office tasks name these tools, so plans run them only on recipes that open the server |
+| retrieval | `v2-retrieval-bm25` | A `retrieve__search` tool over the task's corpus, BM25, 5 passages per call (`retrieval: {mode: bm25, top_k: 5}`); see [Retrieval](#retrieval) |
+| retrieval | `v2-retrieval-hybrid` | The same tool with hybrid search (dense + BM25, reciprocal rank fusion) and a reranker (`retrieval: {mode: hybrid, top_k: 5, rerank: true}`) |
 
 **Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
 general how-tos so far: `sql-analysis`, `sql-changes`, `editing-files`, `file-exports`,
@@ -622,6 +624,51 @@ Rules for a dimension:
 - **It has an offline test,** with a scripted model that triggers it. `scripted/invent` makes its first call to
   a tool that doesn't exist. On the 20 visible tasks, `v2-base` passes 0/20 with it and `v2-recover` passes
   20/20, at E₀ 0.930 rather than 1.0.
+
+## Retrieval
+
+`retrieval: {mode, top_k, rerank}` gives any shape a `retrieve__search(query)` tool over the task's own corpus
+(KNW-02, ADR 0017). Modes: `bm25`, `dense`, `hybrid`; `rerank` reranks a pool of `top_k x 3` candidates down to
+`top_k`. It is built from LlamaIndex's own components (optional extra `retrieval`, included in `dev`):
+
+| Mode | LlamaIndex |
+|---|---|
+| all | `Document` per corpus file, `SentenceSplitter` (64 words, overlap 12; passages keep exact character offsets) |
+| `bm25` | `BM25Retriever` (llama-index-retrievers-bm25: bm25s, English stemmer and stopwords) |
+| `dense` | `VectorStoreIndex` on `QdrantVectorStore`, qdrant-client in local in-memory mode (no server, no files) |
+| `hybrid` | `QueryFusionRetriever` over the two, reciprocal rank fusion, one query (no LLM query generation) |
+| `rerank` | a `BaseNodePostprocessor` on the first stage's results |
+
+**Offline by design.** CI makes no model downloads, so the embedding is `HashingEmbedding` (a `BaseEmbedding`:
+signed feature hashing of words and word pairs; deterministic, ranks by shared vocabulary) and the reranker is
+`TermCoverageRerank` (share of query words in each candidate). Both are named in the run's environment hash; a
+real embedding model or cross-encoder would be a different environment.
+
+**Where it runs.** In the factory process, not in the sandbox (sandbox servers may import only `mcp` and the
+standard library). The tool is a local tool of the run's `ToolExecutor`, so a call goes through the same checks
+as an MCP call: allowance, V3 stage filter, arguments, READ permission, faults, timeout, a `tool_call` span and a
+budget charge. Its answer is JSON: a note that the passages are data, not instructions, then source, offsets,
+score and text per passage.
+
+**When it is offered.** The recipe retrieves, the task's seed has a top-level `corpus/` folder (`.md`, `.txt`),
+and the task allows `fs.read_file` (the passages are from files the model could read anyway). Otherwise the
+recipe runs exactly like its base. The provisioner indexes the corpus from the task's seed before the run's clock
+starts; the run's snapshot (and transcript) records the index id, its size, the framework versions and the
+evidence: every passage returned, by source and offsets. A V3 stage offers the tool if its patterns allow
+`retrieve.search`; a delegated helper gets it only if its own recipe retrieves.
+
+**Identity.** The retrieval config is in the recipe hash (unset recipes keep theirs); for retrieval recipes,
+`env_hash` also covers the engine and the six framework versions. The corpus is in the task hash through the seed.
+
+**Tasks.** `rag-01`, `rag-02` (TEST) and `rag-03` (HELD_OUT) use the `kb` seed: 60 short documents under opaque
+names (`corpus/kb-001.md` ...), so listing the folder says nothing and reading every file costs more than the
+budget. Answers cite the document id. Reference plans call `retrieve.search` as an optional step: the scripted
+model skips it when the tool isn't offered, and `hfx reference` checks that the retrieval step returns every file
+the plan reads next.
+
+```bash
+uv run hfx smoke --recipe v2-retrieval-bm25,v2-retrieval-hybrid --models scripted/replay --strict
+```
 
 ## Selector
 
@@ -830,7 +877,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-29 tasks over six seeds. The first five are the P0 smoke set. The other twenty-four each hide a trap that a
+32 tasks over seven seeds. The first five are the P0 smoke set. The other twenty-seven each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -872,6 +919,9 @@ so `v2-base` still runs the same 20 visible tasks. `biz-01` is irreversible by c
 The two office tasks (seed `office`, built by `scripts/taskgen/office.py`) need the `docs` server. A plan leaves
 out any task × recipe pair whose recipe can't call a tool the task names (`hfx smoke` lists them), so they run
 on `v2-docs`, not on the base recipes.
+| `rag-01` | unknown path, read, R0 | TEST | Refund limit: a superseded policy, an unapproved draft and the wholesale desk's limit sit next to the current one |
+| `rag-02` | unknown path, read, R0 | TEST | Service port: the catalog entry is stale, a change notice moved it, a later move was cancelled |
+| `rag-03` | unknown path, read, R0 | HELD_OUT | Incident cause and owner: the catalog's owner is stale, and INC-2219 looks like INC-2291 |
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on

@@ -34,6 +34,7 @@ from harness_factory.provision.provisioner import provision
 from harness_factory.recipes.model import HarnessRecipe, load_recipes
 from harness_factory.results.model import EffectivenessRecord, FamilyScores, ScoreWeights
 from harness_factory.results.store import UNSCORED, ResultsStore
+from harness_factory.retrieval import tool as retrieval
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes.base import ShapeRegistry
@@ -226,19 +227,48 @@ async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe) -
         log.warning("MLflow mirror failed for %s: %s: %s", rec.run_key.short(), type(e).__name__, str(e)[:300])
 
 
+def _reference_index(task: Task, plan: list[dict]):
+    """A retrieval step in a reference plan (ADR 0017) runs on the task's corpus with REFERENCE_CONFIG."""
+    if not any(step["tool"] == retrieval.RETRIEVE_REF for step in plan):
+        return None
+    return retrieval.build_index(task, retrieval.REFERENCE_CONFIG)
+
+
+def _check_retrieved(task: Task, plan: list[dict], i: int, text: str) -> None:
+    """A reference retrieval step must find every corpus file the plan reads before its next retrieval step."""
+    found = {p["source"] for p in json.loads(text)["passages"]}
+    reads = []
+    for step in plan[i + 1:]:
+        if step["tool"] == retrieval.RETRIEVE_REF:
+            break
+        path = step["args"].get("path", "") if step["tool"] == "fs.read_file" else ""
+        if path.startswith(f"{retrieval.CORPUS_PREFIX}/"):
+            reads.append(path)
+    missing = [p for p in reads if p not in found]
+    if missing:
+        raise RuntimeError(f"{task.key()} reference retrieval {plan[i]['args']} does not return {missing} "
+                           f"(got {sorted(found)})")
+
+
 async def run_reference(f: Factory, task: Task) -> Grade:
     """TSK-04: the reference plan must pass the task's own oracle."""
     ref = load_reference(task)
-    servers = sorted({step["tool"].split(".")[0] for step in ref.plan}) or ["fs"]
+    servers = sorted({step["tool"].split(".")[0] for step in ref.plan} - {retrieval.RETRIEVE_SERVER}) or ["fs"]
+    index = await asyncio.to_thread(_reference_index, task, ref.plan)
     with make_sandbox(label=f"ref-{task.id}") as sb:
         sb.reset(task)
         insp = StateInspector(sb.workspace, sb.db_path)
         before = insp.capture()
         tracer = Tracer(f"reference|{task.key()}")
         async with MCPSessionPool(f.declared, servers, sb.env(), sb.launch) as pool:
-            for step in ref.plan:
+            for i, step in enumerate(ref.plan):
                 with tracer.span(SpanKind.tool_call, step["tool"]) as span:
-                    res = await pool.call(step["tool"], step["args"])
+                    if step["tool"] == retrieval.RETRIEVE_REF:
+                        res = await retrieval.local_tool(index, []).call(step["args"])
+                        if not res.is_error:
+                            _check_retrieved(task, ref.plan, i, res.text)
+                    else:
+                        res = await pool.call(step["tool"], step["args"])
                     if res.is_error:
                         span.status = "error"
                         raise RuntimeError(f"{task.key()} reference step {step['tool']} failed: {res.text}")

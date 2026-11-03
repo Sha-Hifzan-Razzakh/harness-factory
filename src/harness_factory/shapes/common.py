@@ -71,9 +71,10 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
 
 
 def offered_tools(inst: HarnessInstance, restrict: Callable[[str], bool] | None = None) -> list[dict[str, Any]]:
-    """The tools a model is offered: the allowed MCP tools (optionally narrowed, e.g. to a V3 stage), plus the
+    """The tools a model is offered: the allowed tools (optionally narrowed, e.g. to a V3 stage), plus the
     delegate tool when the recipe has a delegation and the limits allow one more level. Every shape uses this, so a
-    recipe dimension that adds a harness-side tool reaches every shape the same way."""
+    recipe dimension that adds a harness-side tool reaches every shape the same way. The allowed tools include the
+    run's LocalTools (retrieval, ADR 0017), which ToolExecutor offers and executes like MCP tools."""
     spec = delegate.tool_spec(inst, restrict)
     return inst.tools.tools_for_model(restrict) + ([spec] if spec else [])
 

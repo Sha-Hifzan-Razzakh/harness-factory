@@ -36,6 +36,12 @@ async def failed_checks(factory, task_id, *turns, recipe: str | None = None) -> 
 
 
 GROUND = call("sql.query", sql="SELECT 1")
+
+
+def kb_read(kid: str) -> dict:
+    return call("fs.read_file", path=f"corpus/{kid}.md")
+
+
 SVC_READ = call("fs.read_file", path="service/config/prod.ini")
 
 
@@ -158,6 +164,17 @@ TRAPS = [
     ("office-02", "signed in the default style",
      [QUOTE, letter("[QUOTE REF]", "Q-2291"), letter("[VALID UNTIL]", "30 November 2026"),
       call("docs.docx_append_paragraph", path=LETTER, text="Procurement, Dubai office")], {"signature"}),
+    # Retrieval tasks (ADR 0017): the corpus ids come from scripts/taskgen/kb.py (fixed shuffle seed).
+    ("rag-01", "took the superseded 2024 policy", [kb_read("kb-030"), say("500 AED (kb-030)")], {"answer", "source"}),
+    ("rag-01", "took the unapproved draft", [kb_read("kb-053"), say("1,000 AED, per kb-053")], {"answer", "source"}),
+    ("rag-01", "took the wholesale desk's limit", [kb_read("kb-001"), say("2,000 AED (kb-001)")], {"answer", "source"}),
+    ("rag-02", "trusted the stale catalog entry", [kb_read("kb-020"), say("8443 (kb-020)")], {"answer", "source"}),
+    ("rag-02", "took the cancelled change", [kb_read("kb-026"), say("Port 10443, see kb-026")], {"answer", "source"}),
+    ("rag-03", "trusted the stale owner", [kb_read("kb-049"), kb_read("kb-006"),
+                                           say("Spool files filled the disk; Fulfilment Apps owns it (kb-049).")],
+     {"team"}),
+    ("rag-03", "read the incident with the similar number",
+     [kb_read("kb-023"), say("An expired TLS certificate; Web Platform (kb-023).")], {"cause", "team", "source"}),
 ]
 
 
@@ -284,10 +301,11 @@ async def test_a_run_that_does_nothing_scores_zero(factory, task_id):
 ANSWER_TASKS = [t for t in ALL_TASKS
                 if any(c.kind == "output_regex" for c in __import__("harness_factory.tasks.registry", fromlist=["x"])
                        .TaskRegistry().get(t).oracle.checks)]
-def wrong_answers() -> dict[str, list[str]]:
-    """task -> the wrong final answers its trap scripts give, from this file and every other tests/test_task_traps*.py
-    (later batches keep their traps in files of their own). Gathered when a test runs, not at import, because those
-    files import helpers from this one; a script may be a list of turns or a function returning one."""
+def wrong_answers() -> dict[str, list[tuple[str, set[str]]]]:
+    """task -> (wrong final answer, checks that trap must fail) for each trap script, from this file and every other
+    tests/test_task_traps*.py (later batches keep their traps in files of their own). Gathered when a test runs, not
+    at import, because those files import helpers from this one; a script may be a list of turns or a function
+    returning one."""
     import importlib.util
     import sys
     from pathlib import Path
@@ -302,12 +320,12 @@ def wrong_answers() -> dict[str, list[str]]:
             sys.modules[name] = module
             spec.loader.exec_module(module)
         traps += list(getattr(module, "TRAPS", []))
-    out: dict[str, list[str]] = {}
+    out: dict[str, list[tuple[str, set[str]]]] = {}
     for entry in traps:                  # (task, trap, script, must_fail[, recipe]): later files add a recipe
-        task, script = entry[0], entry[2]
+        task, script, must_fail = entry[0], entry[2], set(entry[3])
         for step in (script() if callable(script) else script):
             if isinstance(step, dict) and "content" in step:
-                out.setdefault(task, []).append(step["content"])
+                out.setdefault(task, []).append((step["content"], must_fail))
     return out
 
 
@@ -320,15 +338,17 @@ def hedges(right: str, wrong: str) -> list[str]:
 @pytest.mark.parametrize("task_id", ANSWER_TASKS)
 def test_an_answer_check_refuses_a_hedge(factory, task_id):
     """Every output_regex check must pass the reference answer alone and fail the reference answer said next to
-    any wrong answer from this file's trap scripts. A trap answer that is already part of the right one (a
+    any wrong answer from a trap that must fail that check. A task with several answer checks (cause, team,
+    source) needs each to refuse only the wrong answers aimed at it: a trap with the right cause and the wrong team
+    must fail `team`, and `cause` is right to accept it. A trap answer that is already part of the right one (a
     subset, e.g. "staging" for "dev, staging") makes no hedge and is skipped."""
     task = factory.tasks.get(task_id)
     right = load_reference(task).final
-    wrongs = [w for w in wrong_answers().get(task_id, []) if w.lower() not in right.lower()]
+    wrongs = [(w, must_fail) for w, must_fail in wrong_answers().get(task_id, []) if w.lower() not in right.lower()]
     assert wrongs, f"{task_id} has an output_regex check but no wrong-answer trap in any tests/test_task_traps*.py to hedge with"
     for check in (c for c in task.oracle.checks if c.kind == "output_regex"):
         assert output_matches(check.pattern, right), f"{task_id}/{check.id} refuses its own reference answer"
-        for wrong in wrongs:
+        for wrong in (w for w, must_fail in wrongs if check.id in must_fail):
             for reply in hedges(right, wrong):
                 assert not output_matches(check.pattern, reply), f"{task_id}/{check.id} accepts {reply!r}"
 
