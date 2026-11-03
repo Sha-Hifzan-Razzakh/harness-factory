@@ -1,5 +1,5 @@
 id: biz-02
-version: 1
+version: 2
 domain: api
 instruction: How much does Oasis Foods owe us on overdue invoices as of today? Answer with the amount.
 env_seed:
@@ -30,6 +30,9 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: biz.inv_list_invoices
+    touches:
+    - customer_id=C-1004
+    - customer_id=C-1011
   - id: data_unchanged
     kind: biz_equals
     weight: 0

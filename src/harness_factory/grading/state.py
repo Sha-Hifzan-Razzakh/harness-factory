@@ -28,6 +28,7 @@ from fnmatch import fnmatch
 from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.impl import proc
 from harness_factory.grading.base import CheckResult, Grade, GradeContext, register_grader
+from harness_factory.grading.touches import grounded_on_data
 from harness_factory.observability.span import SpanKind
 from harness_factory.shapes.result import Violation
 from harness_factory.tasks.model import WeightedCheck
@@ -290,6 +291,8 @@ class StateDiffGrader:
             out = ctx.result.output if isinstance(ctx.result.output, str) else str(ctx.result.output or "")
             ok = output_matches(c.pattern or "", out)
             return ok, "matched" if ok else f"output {out[:120]!r}"
+        if c.kind == "tool_called" and c.touches is not None:
+            return grounded_on_data(c.pattern or "", c.touches, ctx.spans, ctx.workspace)
         if c.kind == "tool_called":
             called = [s.name for s in ctx.spans if s.kind == SpanKind.tool_call and s.status != "error"]
             ok = any(fnmatch(n, c.pattern or "") for n in called)
