@@ -58,6 +58,63 @@ hfx catalog rm fault slow-sql
   servers `fs`, `sql`, `search` and `skills`.
 - Files are written, never committed: review them with `git diff`.
 
+## API: `hfx serve`
+
+The same authoring rules over HTTP, plus read access to what experiments are made of and what they produced. The
+UI uses it; scripts can too.
+
+```bash
+uv sync --extra dev --extra api
+hfx serve                                  # http://127.0.0.1:8765, OpenAPI docs at /docs
+HF_API_TOKEN=... hfx serve --host 0.0.0.0  # beyond localhost a token is required
+docker compose --profile api up -d api     # in a container (needs HF_API_TOKEN in .env), host loopback only
+```
+
+| Area | Routes |
+|---|---|
+| Catalog | `GET /api/catalog[/{kind}[/{id}]]`, `POST /api/catalog/{kind}`, `PUT` / `DELETE /api/catalog/{kind}/{id}`; `?dry_run=true`, `?confirm=true`; `GET /api/check`; `POST /api/servers/stub` |
+| Experiments | `GET /api/meta` (variants, dimensions, prompt layers), `/api/tasks` (with task class), `/api/models` (and whether each provider's key is set), `/api/faults` |
+| Campaigns | `POST /api/campaigns/plan` (projection, nothing runs), `POST /api/campaigns` (202, runs in the background), `GET /api/campaigns[/{id}]` (state and progress), `DELETE /api/campaigns/{id}` (cancel) |
+| Results | `GET /api/results`, `/api/results/cells`, `/api/baselines`, `/api/report` (markdown), `/api/runs/{id}/transcript` |
+
+- **A change answers like the CLI.** 201/200 when written or dry-run, **409** when it changes an existing identity
+  (the body lists the recipes and servers; repeat with `?confirm=true`), **422** when rejected (the body lists the
+  issues; nothing was written). Kinds are `prompt`, `skill`, `recipe`, `server`, `fault`; a prompt's id is its
+  ref, slash included (`/api/catalog/prompt/system/terse`).
+- **Pasted tool code runs** when its tools are discovered, on the machine running the API. That's why it binds
+  to localhost by default and refuses any other address without `HF_API_TOKEN`; with a token, every route but
+  `/api/health` needs `Authorization: Bearer <token>`.
+- **Campaigns are `hfx smoke` in the background:** the same plan and preflight (a bucket spent today, a plan
+  past `deadline_days` or over `budget_usd` is refused with 409), `resume` to skip scored runs, progress from the
+  store as runs finish. Every campaign shares the API's one quota ledger, so campaigns started side by side are
+  paced together. Each starts from the catalog as it is then, so a recipe written through the API runs in the next
+  campaign without a restart. Cancelling tears down the runs' sandboxes and servers; finished runs stay stored.
+  The campaign list lives in memory: after a restart it is empty, the runs are not.
+- The compose service mounts `catalog/`, `prompts/` and the local tool servers' folder read-write (the `factory`
+  services keep them read-only). The image has no ruff, so a module written through it is linted by CI instead.
+
+## UI: `hfx ui`
+
+A Streamlit UI over the API. It has no rules of its own: every check, write and campaign is an API call.
+
+```bash
+uv sync --extra dev --extra api --extra ui
+hfx ui --serve            # the API and the UI together: http://127.0.0.1:8501
+hfx ui                    # just the UI, against a running API (HF_API_URL, default http://127.0.0.1:8765)
+```
+
+| Page | What it does |
+|---|---|
+| Catalog | Every prompt, skill, recipe, tool server and fault profile, with what uses it and its hash. Open one to read its file, edit it or delete it |
+| New experiment | A matrix recipe in a few clicks: pick a base, pick the one thing that changes (system prompt, skills, config, tools, delegation, or any field as YAML), check, create |
+| Add | A local tool server (tools table, stub or your own module), a remote server, a skill, a prompt, a fault profile, or a whole recipe |
+| Run | Recipes × models × tasks × faults × seeds on a provider: plan (projection per quota bucket), start, follow the progress, cancel |
+| Results | Cells (E, its 95% interval, pass rate, E₀, C, R), the paired report, recent runs and each run's transcript |
+
+**Check** is a dry run: the same validation and impact, nothing written. A change that alters existing recipe hashes
+or tool environments shows which ones and waits for **Confirm and write**. The UI listens on localhost only; with
+a token on the API, set `HF_API_TOKEN` for the UI too.
+
 ## Real models
 
 Put keys in `.env` (copy `.env.example`), then check the model ids and limits in `catalog/providers.yaml` against
@@ -740,6 +797,8 @@ src/harness_factory/
   mcp/                    MCPClient, MCPSessionPool, ToolCatalog                    (B11)
   observability/          Span, Tracer (JSONL + OTLP)
   authoring/              AuthoringService: staged, validated catalog writes (ADR 0009)
+  api/                    hfx serve: authoring and results over HTTP (extra `api`)
+  ui/                     hfx ui: Streamlit pages over the API (extra `ui`)
   cli/                    hfx
 ```
 
