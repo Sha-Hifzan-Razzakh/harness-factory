@@ -29,7 +29,7 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.75
-    pattern: '(?is)^(?=.*\bTidewater Retail\b)(?=.*\bCopperleaf Studio\b)(?!.*\b(?:Qasr|Bluefin|Northgate|Saffron|Ironbridge|Mirage|Atlas|Juniper|Helix|Ledgerline|Sales Demo|Palmyra)\b)'
+    pattern: '(?is)\A(?=.*\bTidewater Retail\b)(?=.*\bCopperleaf Studio\b)(?!.*\b(?:Qasr|Bluefin|Northgate|Saffron|Ironbridge|Mirage|Atlas|Juniper|Helix|Ledgerline|Sales Demo|Palmyra)\b)'
   - id: grounded
     kind: tool_called
     weight: 0.25

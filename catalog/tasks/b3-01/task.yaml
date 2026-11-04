@@ -26,7 +26,7 @@ oracle:
   - id: answer
     kind: output_regex
     weight: 0.75
-    pattern: (?<![\d.,])9,?960(?![\d,]|\.\d*[1-9])
+    pattern: (?s)\A(?!.*(?<![\d.,])(?:11,?740|9,?070|10,?850|7,?560)(?![\d,]|\.\d*[1-9]))(?=.*(?<![\d.,])9,?960(?![\d,]|\.\d*[1-9]))
   - id: grounded
     kind: tool_called
     weight: 0.25
