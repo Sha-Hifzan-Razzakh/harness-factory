@@ -291,7 +291,8 @@ def test_campaigns_plan_biz_tasks_only_with_recipes_that_open_biz(factory):
     d = factory.declared
     biz1, fs1 = factory.tasks.get("biz-01"), factory.tasks.get("fs-01")
     assert not reaches(factory.recipes["v2-base"], biz1, d) and reaches(factory.recipes["v2-biz"], biz1, d)
-    assert all(reaches(r, fs1, d) for r in factory.recipes.values())          # every base recipe opens fs and sql
+    # every recipe opens all of fs and sql, except v2-outbox: it may send, so it leaves out what else is IRREVERSIBLE
+    assert all(reaches(r, fs1, d) for r in factory.recipes.values() if r.id != "v2-outbox")
     specs = plan(factory, ["v2-base", "v2-biz"], "scripted", ["scripted/replay"], task_ids=["fs-01", "biz-01"])
     assert [(s.task_id, s.recipe_id) for s in specs] == [("fs-01", "v2-base"), ("fs-01", "v2-biz"),
                                                          ("biz-01", "v2-biz")]

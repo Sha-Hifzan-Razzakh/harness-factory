@@ -166,6 +166,8 @@ def validate() -> None:
             console.print(f"    {i.rule}: {i.detail}")
         bad += bool(issues)
     bad += _validate_judge(f)
+    from harness_factory.cli.corpus import validate_corpora  # recorded web corpora (ADR 0018)
+    bad += validate_corpora(f.tasks.all(include_held_out=True))
     raise typer.Exit(code=1 if bad else 0)
 
 
@@ -676,6 +678,15 @@ _register_analysis(app)
 from harness_factory.cli.transfer import transfer_app
 
 app.add_typer(transfer_app, name="transfer")
+from harness_factory.cli.perturb import register as _register_perturb  # hfx perturb (TSK-04)
+
+_register_perturb(app)
+from harness_factory.cli.corpus import register as _register_corpus  # hfx corpus (ADR 0018)
+
+_register_corpus(app)
+from harness_factory.cli.conformance import register as _register_conformance  # hfx conformance (MCP-11)
+
+_register_conformance(app)
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":

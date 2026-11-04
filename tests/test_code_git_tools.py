@@ -280,20 +280,21 @@ def test_adding_code_and_git_moved_no_existing_identity(factory):
     def before_this_pr(t):                    # the task hash formula as it was: no `git`, no `ref`
         data = t.model_dump(mode="json", exclude={"status", "split", "tags"})
         data["env_seed"].pop("git")
-        for k in ("biz_state",):              # added by a later PR (#46), also omitted when unset
+        for k in ("biz_state", "corpus", "server_state"):     # added by later PRs (#46, #72, #73), omitted when unset
             if data["env_seed"].get(k) is None:
                 data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
             c.pop("ref")
             for k in ("sheet", "cell", "expected", "tolerance", "style",     # check fields from #47, unset
-                      "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric"):   # and #48, #49
+                      "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric",   # #48, #49
+                      "touches"):                                                          # and #69
                 if c.get(k) is None:
                     c.pop(k, None)
         data["seed_hash"] = t.env_seed.data_hash(t.source_dir)
         return content_hash(data)
 
     for t in factory.tasks.all(include_held_out=True):
-        if not t.env_seed.git:
+        if not t.env_seed.git and not t.env_seed.corpus:     # a web corpus (#72) is identity too
             assert t.content_hash() == before_this_pr(t), t.id
     code = factory.tasks.get("code-02")
     flipped = code.model_copy(deep=True)

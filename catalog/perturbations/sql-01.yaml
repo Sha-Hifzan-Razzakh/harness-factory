@@ -1,0 +1,21 @@
+# Perturbations of sql-01 (TSK-04). `hfx perturb` turns each entry into catalog/tasks/sql-01--<type>-<n>.
+base: sql-01
+variants:
+  - type: tool_failure
+    n: 1
+    params:
+      faults:
+        - {tools: [sql.query], kind: error, nth: [1]}
+      why: The first query fails as if the database were briefly unavailable; the same query again answers.
+  - type: slow_tool
+    n: 1
+    params:
+      faults:
+        - {tools: [sql.query], kind: latency, delay_s: 1.0}
+      why: Every query takes a second to answer, well under the tool's 20 s timeout.
+  - type: ambiguous_wording
+    n: 1
+    params:
+      instruction: How many customers do we have in DXB? Answer with the number.
+      vague: The city is named only by its airport code, DXB.
+      why: The customers table has three cities, Dubai, Abu Dhabi and Sharjah; DXB can only be Dubai.

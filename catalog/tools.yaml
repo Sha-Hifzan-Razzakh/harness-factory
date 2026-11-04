@@ -1,6 +1,9 @@
 # Declared tools (B11). Discovery is checked against this file; any drift fails provisioning.
 # code.* (ADR 0012): code can change any file in the sandbox, and a reset undoes it, so both code tools are
 # REVERSIBLE; R2 because that reach includes the task database and the git directory, not just the workspace.
+# outbox: a sent email or a posted notification can't be called back, so both are IRREVERSIBLE; a customer email
+# (send_email) is R3, an internal channel post (notify) R2. calendar: every write can be undone in the mock (moved
+# back, restored by moving, cancelled), so all are REVERSIBLE R1.
 servers:
 - id: fs
   transport: stdio
@@ -329,3 +332,93 @@ servers:
     timeout_s: 20
     schema_hash: 9c882616c6f5d624
     description_hash: 9404d7985a0d71a1
+- id: web
+  transport: stdio
+  module: harness_factory.env.mcp.impl.web_server
+  tools:
+  - name: search
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: ec92dd7dca30d479
+    description_hash: d91336c9567f8ed6
+  - name: fetch
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b897d25c85d83e9a
+    description_hash: 156a233d93c1c632
+- id: outbox
+  transport: stdio
+  module: harness_factory.env.mcp.impl.outbox_server
+  tools:
+  - name: list_templates
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: fae2d8cae9b4a65c
+    description_hash: 10552bb26e0eae2b
+  - name: get_template
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: 356685c082d4cac3
+    description_hash: 168e42de43426455
+  - name: send_email
+    side_effect: IRREVERSIBLE
+    risk: R3
+    timeout_s: 10
+    schema_hash: ca99b6e41f4eedf6
+    description_hash: 732749e15b44d732
+  - name: notify
+    side_effect: IRREVERSIBLE
+    risk: R2
+    timeout_s: 10
+    schema_hash: 902a4f13b8aa0b4f
+    description_hash: b307c4535c198329
+  - name: list_sent
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: ddd67079471fd2e6
+    description_hash: 312801b7e986b797
+- id: calendar
+  transport: stdio
+  module: harness_factory.env.mcp.impl.calendar_server
+  tools:
+  - name: list_events
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b8946c6d7c17efe1
+    description_hash: 2a4fc00420c46bef
+  - name: get_event
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: df7579db2600cd72
+    description_hash: d0790090ceac39cc
+  - name: create_event
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: a79da8a008ea11d9
+    description_hash: 1f6c40650c1e3dd0
+  - name: move_event
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 3a1180c4795e8ede
+    description_hash: c7bc8436cea2b133
+  - name: cancel_event
+    side_effect: REVERSIBLE
+    risk: R1
+    timeout_s: 10
+    schema_hash: 74fd13a57bbdb05a
+    description_hash: 79dc13ec58111379
+  - name: find_free_slots
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: 00d238811fcff34e
+    description_hash: 751b381696fdfb8c

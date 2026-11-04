@@ -22,9 +22,11 @@ def say(text: str) -> dict:
 
 
 def recipe_for(factory, task_id):
-    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git, office-* need docs)."""
+    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git, office-* need docs,
+    web-* need web, cal-02 needs calendar, cal-01 and out-01 need outbox)."""
     task = factory.tasks.get(task_id)
-    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code", "v2-docs") if reaches(factory.recipes[r], task, factory.declared))
+    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code", "v2-docs", "v2-web", "v2-calendar", "v2-outbox")
+                if reaches(factory.recipes[r], task, factory.declared))
 
 
 async def failed_checks(factory, task_id, *turns, recipe: str | None = None) -> tuple[str, set[str]]:
@@ -94,6 +96,7 @@ def outage_credits(*, skip_credited=True, issued_only=True, active_only=True) ->
                                    + " AND ".join(where))
 
 
+PAY_GROUND = call("sql.query", sql="SELECT COUNT(*) FROM payments")   # b3-01 grounds on payments (#69)
 SEAT_GROUND = call("sql.query", sql="SELECT account_id, MAX(seats) FROM seat_usage GROUP BY account_id")
 DOWNGRADE_LATER = call("sql.execute", sql="INSERT INTO plan_changes (account_id, from_plan_id, to_plan_id, "
                                           "effective_on, requested_on) VALUES (8, 2, 1, '2026-12-01', '2026-11-01')")
@@ -215,10 +218,10 @@ TRAPS = [
     ("rag-03", "read the incident with the similar number",
      [kb_read("kb-023"), say("An expired TLS certificate; Web Platform (kb-023).")], {"cause", "team", "source"}),
     # batch 3: written without seeing the skills or harness prompts
-    ("b3-01", "counted failed payment attempts", [GROUND, say("11740.00 AED")], {"answer"}),
-    ("b3-01", "BETWEEN on a timestamp dropped the Oct 31 payment", [GROUND, say("9070.00 AED")], {"answer"}),
-    ("b3-01", "kept the internal demo tenant", [GROUND, say("10850.00 AED")], {"answer"}),
-    ("b3-01", "summed by invoice month, not by when the cash arrived", [GROUND, say("7560.00 AED")], {"answer"}),
+    ("b3-01", "counted failed payment attempts", [PAY_GROUND, say("11740.00 AED")], {"answer"}),
+    ("b3-01", "BETWEEN on a timestamp dropped the Oct 31 payment", [PAY_GROUND, say("9070.00 AED")], {"answer"}),
+    ("b3-01", "kept the internal demo tenant", [PAY_GROUND, say("10850.00 AED")], {"answer"}),
+    ("b3-01", "summed by invoice month, not by when the cash arrived", [PAY_GROUND, say("7560.00 AED")], {"answer"}),
     ("b3-02", "ignored add-on seats",
      [SEAT_GROUND, say("Tidewater Retail, Copperleaf Studio, Bluefin Marine, Ironbridge Legal")], {"answer"}),
     ("b3-02", "used the latest measurement, not the month's peak", [SEAT_GROUND, say("Copperleaf Studio")],
@@ -497,3 +500,55 @@ def test_a_plain_answer_still_passes(factory, task_id, reply):
     instruction itself uses (2026) and numbers inside words (Q3)."""
     checks = [c for c in factory.tasks.get(task_id).oracle.checks if c.kind == "output_regex"]
     assert checks and all(output_matches(c.pattern, reply) for c in checks)
+
+
+# ------------------------------------------------------------------ grounding means touching the data (GRD-01)
+
+# The right answer, grounded on data the answer doesn't come from: `grounded` (tool_called with `touches`) must
+# fail, so a guess dressed up with SELECT 1 or an unrelated file keeps only the answer's weight.
+GROUNDING_TRAPS = [
+    ("sql-01", "SELECT 1", [GROUND, say("3")]),
+    ("b3-01", "SELECT 1", [GROUND, say("9960.00 AED")]),
+    ("b3-02", "SELECT 1", [GROUND, say("Copperleaf Studio, Tidewater Retail")]),
+    ("sql-01", "the table named only in a string", [call("sql.query", sql="SELECT 'customers'"), say("3")]),
+    ("sql-03", "SELECT 1", [GROUND, say("Harbor Logistics")]),
+    ("sql-03", "an unrelated table", [call("sql.query", sql="SELECT COUNT(*) FROM products"), say("Harbor Logistics")]),
+    ("sql-04", "SELECT 1", [GROUND, say("6")]),
+    ("sql-04", "the table named only in a comment", [call("sql.query", sql="SELECT 1 -- from orders"), say("6")]),
+    ("sql-08", "SELECT 1", [GROUND, say("1,696.11")]),
+    ("ops-03", "another day's log", [call("fs.read_file", path="logs/app-2026-10-25.log"), say("/api/checkout")]),
+    ("res-01", "an unrelated file", [call("fs.read_file", path="requirements.txt"), say("dev, staging")]),
+    ("biz-02", "another customer's invoices", [call("biz.inv_list_invoices", customer_id="C-1001"),
+                                               say("AED 1,837.50")]),
+]
+
+
+@pytest.mark.parametrize(("task_id", "trap", "script"), GROUNDING_TRAPS, ids=[f"{t[0]}: {t[1]}" for t in GROUNDING_TRAPS])
+async def test_grounding_on_irrelevant_data_earns_nothing(factory, task_id, trap, script):
+    status, failed = await failed_checks(factory, task_id, *script)
+    assert status != "SUCCESS"
+    assert "grounded" in failed and "answer" not in failed, f"{trap}: failed {failed}"
+
+
+# Calls that did touch the data, in forms a model may well use: they still ground.
+GROUNDED_ON_DATA = [
+    ("sql-01", [call("sql.query", sql='select count(*) from "Customers" where city = \'Dubai\''), say("3")]),
+    ("sql-04", [call("sql.query", sql="SELECT COUNT(*) FROM main.[orders]"), say("6")]),
+    ("ops-03", [call("fs.read_file", path="./logs/../logs/app-2026-10-26.log"), say("/api/checkout")]),
+    ("res-01", [call("fs.read_file", path="service/config/staging.ini"), say("dev, staging")]),
+    ("biz-02", [call("biz.inv_list_invoices", status="open"), say("AED 1,837.50")]),   # no customer filter
+    ("biz-02", [call("biz.inv_list_invoices", customer_id="C-1011"), say("AED 1,837.50")]),
+]
+
+
+@pytest.mark.parametrize(("task_id", "script"), GROUNDED_ON_DATA, ids=[f"{t[0]}-{i}" for i, t in enumerate(GROUNDED_ON_DATA)])
+async def test_a_call_that_touched_the_data_still_grounds(factory, task_id, script):
+    _, failed = await failed_checks(factory, task_id, *script)
+    assert "grounded" not in failed and "answer" not in failed, failed
+
+
+def test_every_grounding_check_names_the_data(factory):
+    """A bare tool_called check pays for any call (SELECT 1), so every catalog task names what it grounds on."""
+    bare = [f"{t.id}/{c.id}" for t in factory.tasks.all(include_held_out=True) for c in t.oracle.checks
+            if c.kind == "tool_called" and c.touches is None]
+    assert not bare, f"tool_called checks without touches: {bare}"

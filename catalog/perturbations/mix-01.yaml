@@ -1,0 +1,15 @@
+# Perturbations of mix-01 (TSK-04). `hfx perturb` turns each entry into catalog/tasks/mix-01--<type>-<n>.
+base: mix-01
+variants:
+  - type: tool_failure
+    n: 1
+    params:
+      faults:
+        - {tools: [fs.write_file], kind: error, nth: [1]}
+      why: The first write fails and nothing is written; writing the same file again succeeds.
+  - type: slow_tool
+    n: 1
+    params:
+      faults:
+        - {tools: ["sql.*", "fs.*"], kind: latency, delay_s: [0.3, 1.0]}
+      why: Every call waits 0.3 to 1 second, drawn per call, under the tools' timeouts.

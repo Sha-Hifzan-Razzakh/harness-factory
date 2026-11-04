@@ -1,0 +1,54 @@
+id: web-02
+version: 1
+domain: research
+instruction: Using the web, find the date of the first passenger sailing on Saltmarsh Ferries' Dunmore-Kessick
+  crossing, as the operator itself last announced it. Follow the research desk rules in brief.md. Answer with the
+  date as YYYY-MM-DD, then the URL of the announcement.
+env_seed:
+  files: ../../seeds/research-desk/files
+  corpus: saltmarsh-press
+allowed_tools:
+- fs.read_file
+- web.search
+- web.fetch
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- web
+- research
+- reconcile
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  # 29 September 2026 (release of 5 September). Wrong: 15 September (the June release, and the Gazette's article of
+  # 12 September, newer but repeating it), 1 July (the first announcement), 1 August (freight, not passengers).
+  - id: answer
+    kind: output_regex
+    weight: 0.6
+    pattern: (?is)\A\W*2026-09-29\b(?!.*(?:2026-0(?:7-01|8-01|9-15)|\b1(?:st)? (?:july|august)\b|\b15(?:th)? september|\b(?:july|august) 1(?:st)?\b|\bseptember 15))
+  - id: source
+    kind: output_regex
+    weight: 0.2
+    pattern: (?is)\A(?!.*(?:coastal-gazette\.example|/news/kessick-route-update|/news/kessick-route-announced))(?=.*press\.saltmarsh-ferries\.example/news/kessick-sea-trials-complete\b)
+  - id: grounded
+    kind: tool_called
+    weight: 0.2
+    pattern: web.fetch
+    touches:
+    - url=*press.saltmarsh-ferries.example/news/kessick-sea-trials-complete*
+  - id: brief_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: brief.md
+    text: |
+      # Research desk rules
+
+      1. Answer from the organisation's own, current sources: its documentation or its press releases. A retired
+         version, a launch announcement or a news report may be out of date, even when it is newer.
+      2. When sources disagree, the organisation's latest statement wins. Check the dates on each page.
+      3. Give the URL of the page your answer comes from.
+      4. Don't change any files.

@@ -158,6 +158,13 @@ def take() -> dict[str, Any]:
             unknown = graders.unknown(t)
             if unknown:
                 err("task", t.id, f"unknown grader(s) {', '.join(unknown)}; known: {', '.join(sorted(graders.graders))}")
+            if t.env_seed.corpus:            # same rule as `hfx validate`: its corpus exists and is frozen (ADR 0018)
+                try:
+                    stale = t.env_seed.web_corpus(t.source_dir).stale()
+                except ValueError as e:      # CorpusError
+                    stale = str(e)
+                if stale:
+                    err("task", t.id, stale)
     except Exception as e:  # noqa: BLE001  (a finding, not a crash)
         err("task", "*", str(e))
 

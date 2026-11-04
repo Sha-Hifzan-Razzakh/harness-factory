@@ -59,6 +59,7 @@ def test_isolation_contract_in_run_args(tmp_path, monkeypatch):
                  "--pids-limit", "--memory", "--cpus"):
         assert flag in joined, flag
     assert f"{sb.workspace}:/work" in args and f"{sb.db_path.parent}:/state" in args
+    assert f"{sb.db_path.parent / 'web'}:/state/web:ro" in args       # the web corpus is read-only (ADR 0018)
     if hasattr(os, "getuid"):
         assert f"{os.getuid()}:{os.getgid()}" in args
 
@@ -121,14 +122,15 @@ def test_no_network(sandbox):
 
 def test_root_is_read_only_and_only_mounts_are_writable(sandbox):
     r = _exec(sandbox, "import os",
-              "for p in ('/etc/hf-probe', '/opt/hf/probe', '/work/probe', '/state/probe', '/tmp/probe'):",
+              "for p in ('/etc/hf-probe', '/opt/hf/probe', '/work/probe', '/state/probe', '/tmp/probe',",
+              "          '/state/web/probe'):",
               "    try:",
               "        open(p, 'w').write('x'); print(p, 'writable')",
               "    except OSError:",
               "        print(p, 'denied')")
     status = dict(line.split() for line in r.stdout.strip().splitlines())
     assert status == {"/etc/hf-probe": "denied", "/opt/hf/probe": "denied", "/work/probe": "writable",
-                      "/state/probe": "writable", "/tmp/probe": "writable"}
+                      "/state/probe": "writable", "/tmp/probe": "writable", "/state/web/probe": "denied"}
 
 
 def test_runs_unprivileged_and_files_stay_owned_by_the_host_user(sandbox):
@@ -223,3 +225,49 @@ async def test_business_state_inside_the_container(factory, docker_required, mon
     assert rec.status.value == "SUCCESS", rec.grades
     state = next(g for g in rec.grades if g["grader_id"] == "state_diff")
     assert state["snapshot"]["sandbox"] == "docker" and "+biz credit_notes/CN-0004" in state["detail"]
+
+
+async def test_web_corpus_inside_the_container(factory, docker_required, monkeypatch):
+    """ADR 0018: the web server runs in the container over the corpus mounted read-only at /state/web; nothing in
+    the container can change it, and the run records which corpus version it saw."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    task = factory.tasks.get("web-01")
+    rec = await run_one(factory, task, factory.recipes["v2-web"], "scripted/replay", "scripted")
+    assert rec.status.value == "SUCCESS", rec.grades
+    snap = next(g for g in rec.grades if g["grader_id"] == "state_diff")["snapshot"]
+    assert snap["sandbox"] == "docker" and snap["web_corpus"]["version"] == task.env_seed.web_corpus(
+        task.source_dir).version
+    sb = DockerSandbox("dk-web")
+    try:
+        sb.reset(task)
+        r = _exec(sb, "import os",
+                  "for p in ('/state/web/corpus.json', '/state/web/new'):",
+                  "    try:",
+                  "        open(p, 'a').write('x'); print(p, 'writable')",
+                  "    except OSError:",
+                  "        print(p, 'denied')")
+        assert dict(line.split() for line in r.stdout.strip().splitlines()) == {
+            "/state/web/corpus.json": "denied", "/state/web/new": "denied"}
+        async with MCPSessionPool(factory.declared, ["web"], sb.env(), sb.launch) as pool:
+            page = json.loads((await pool.call("web.fetch", {"url": "https://docs.relaymail.example/rate-limits"})).text)
+            assert page["url"] == "https://docs.relaymail.example/v2/rate-limits" and "600" in page["text"]
+    finally:
+        sb.teardown()
+
+
+async def test_outbox_and_calendar_states_inside_the_container(factory, docker_required, monkeypatch):
+    """The outbox and calendar servers run in the container and write their states in /state, next to the
+    database and biz.json; graders read the host side of the same files."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    sb = make_sandbox("comms-docker")
+    try:
+        assert (sb.env()["HF_OUTBOX"], sb.env()["HF_CALENDAR"]) == ("/state/outbox.json", "/state/calendar.json")
+        assert sb.state_path("outbox").parent == sb.db_path.parent == sb.biz_path.parent
+    finally:
+        sb.teardown()
+    rec = await run_one(factory, factory.tasks.get("cal-01"), factory.recipes["v2-outbox"], "scripted/replay",
+                        "scripted")
+    assert rec.status.value == "SUCCESS", rec.grades
+    state = next(g for g in rec.grades if g["grader_id"] == "state_diff")
+    assert state["snapshot"]["sandbox"] == "docker"
+    assert "+outbox deliveries/D-0004" in state["detail"] and "~calendar events/EV-0107" in state["detail"]

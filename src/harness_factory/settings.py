@@ -49,6 +49,7 @@ RESULTS_URL = os.environ.get("HF_RESULTS_URL", f"sqlite:///{VAR / 'results.db'}"
 TRACES_DIR = VAR / "traces"
 QUOTA_STATE = Path(os.environ.get("HF_QUOTA_STATE", VAR / "quota_ledger.json"))   # provider usage, survives restarts
 SANDBOXES_DIR = VAR / "sandboxes"
+CORPORA_DIR = VAR / "corpora"        # compiled web corpora, one per version and engine (ADR 0018)
 
 OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")  # e.g. http://localhost:4318
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
@@ -84,6 +85,12 @@ def remote_mode() -> str:
     if mode not in ("live", "record", "replay"):
         raise ValueError(f"HF_REMOTE_MODE must be live, record or replay, not {mode!r}")
     return mode
+
+
+def health_timeout_s() -> float:
+    """ENV-06: how long a tool server may take to start, answer initialize, list its tools and answer a ping before
+    it counts as unhealthy and the run is refused (ERROR, not scored). HF_MCP_HEALTH_TIMEOUT_S, read at call time."""
+    return float(os.environ.get("HF_MCP_HEALTH_TIMEOUT_S", "60"))
 
 
 def remote_recordings() -> Path:

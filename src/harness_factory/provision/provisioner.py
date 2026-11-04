@@ -229,6 +229,10 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                                                 f"HF_ALLOW_LOCAL_CODE=1 (ADR 0012)")
     run_key = run_key_for(task, recipe, canonical_model, provider_id, seed, declared=declared, providers=providers,
                           fault=fault)
+    bound = task.bound_faults()          # TSK-04: a tool_failure / slow_tool variant's own faults, in its task hash
+    if bound is not None and fault is not None:
+        raise HarnessError(ErrorKind.PROVISION, f"{task.key()} binds its own faults ({task.perturbation.type}); a "
+                                                f"campaign fault profile ({fault.id}) is refused on it")
     for slot in recipe.model_slots.values():          # the seed is a campaign axis: the run's seed is the one sent
         slot.seed = seed
     tracer = Tracer(run_key.as_str())
@@ -259,7 +263,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
         async with MCPSessionPool(declared, recipe.tools.mcp_servers, sandbox.env(), sandbox.launch, tenant=tenant,
                                   tenant_seeds=task.env_seed.mock_api_state, recording_scopes=scopes) as pool:
             tools = ToolExecutor(pool, declared, allowed, recipe.policies, budget, tracer, run_key.as_str(),
-                                 faults=FaultInjector(fault, seed) if fault else None, local=local,
+                                 faults=FaultInjector(fault or bound, seed) if fault or bound else None, local=local,
                                  spill=SpillStore(sandbox.db_path.parent / "spill"))     # state folder (ADR 0015)
             assembler = assembler or PromptAssembler()
             delegate = delegation.context_for(recipe, task, assembler)
@@ -274,9 +278,12 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                               messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
+                          "mcp_health": pool.health,                                              # ENV-06
                           "fault_profile": fault.id if fault else None,
+                          **({"task_faults": bound.content_hash()} if bound else {}),
                           **({"delegate": delegate.child.id} if delegate else {}),
                           **({"retrieval": retrieval_info} if retrieval_info else {}),          # KNW-01, KNW-03
+                          **({"web_corpus": sandbox.corpus_info} if sandbox.corpus_info else {}),   # ADR 0018
                           **({"remote_servers": remote, "remote_mode": remote_mode,                    # ENV-02
                               "remote_versions": pool.server_versions()} if remote else {}),
                           **({"tenant": tenant, "tenant_servers": pool.tenant_servers()} if tenant else {}),

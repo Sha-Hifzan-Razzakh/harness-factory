@@ -15,11 +15,27 @@ from pydantic import BaseModel, Field
 
 BIZ_FILE = "biz.json"     # the biz server's state, in the run's state folder next to the database
 
+# Stateful mock servers: each keeps one JSON document in the run's state folder (next to the database, never in the
+# workspace), copied from the task's seed before every run and named to its server by an environment variable.
+# biz is seeded by `env_seed.biz_state`, the others by `env_seed.server_state[<name>]`. Graders read the same files
+# after the run (biz_equals / biz_count, and state_equals / state_count for any of them).
+JSON_STATES: dict[str, tuple[str, str]] = {      # name -> (file in the state folder, environment variable)
+    "biz": (BIZ_FILE, "HF_BIZ"),
+    "outbox": ("outbox.json", "HF_OUTBOX"),
+    "calendar": ("calendar.json", "HF_CALENDAR"),
+}
+SERVER_STATES = tuple(n for n in JSON_STATES if n != "biz")    # the ones env_seed.server_state seeds
+
 
 class EnvState(BaseModel):
     files: dict[str, str] = Field(default_factory=dict)            # relative path -> sha256
     tables: dict[str, list[list]] = Field(default_factory=dict)     # table -> sorted rows
     biz: dict[str, Any] | None = None                              # the business state document, if seeded
+    states: dict[str, Any] = Field(default_factory=dict)           # the other JSON states (SERVER_STATES), by name
+
+    def json_state(self, name: str) -> dict[str, Any] | None:
+        """A stateful server's document after (or before) the run, or None when the task seeds none."""
+        return self.biz if name == "biz" else self.states.get(name)
 
 
 class StateDiff(BaseModel):
@@ -33,11 +49,16 @@ class StateDiff(BaseModel):
     biz_added: list[str] = Field(default_factory=list)
     biz_removed: list[str] = Field(default_factory=list)
     biz_changed: list[str] = Field(default_factory=list)
+    # The other JSON states the same way, each record prefixed by its state ("outbox:sent/M-0003").
+    state_added: list[str] = Field(default_factory=list)
+    state_removed: list[str] = Field(default_factory=list)
+    state_changed: list[str] = Field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
         return not (self.files_added or self.files_removed or self.files_changed or self.rows_added
-                    or self.rows_removed or self.biz_added or self.biz_removed or self.biz_changed)
+                    or self.rows_removed or self.biz_added or self.biz_removed or self.biz_changed
+                    or self.state_added or self.state_removed or self.state_changed)
 
     def summary(self) -> str:
         parts = []
@@ -51,6 +72,12 @@ class StateDiff(BaseModel):
         for label, items in (("+biz", self.biz_added), ("-biz", self.biz_removed), ("~biz", self.biz_changed)):
             if items:
                 parts.append(f"{label} {', '.join(items)}")
+        for label, items in (("+", self.state_added), ("-", self.state_removed), ("~", self.state_changed)):
+            by_state: dict[str, list[str]] = {}
+            for item in items:
+                name, _, rec = item.partition(":")
+                by_state.setdefault(name, []).append(rec)
+            parts += [f"{label}{name} {', '.join(recs)}" for name, recs in by_state.items()]
         return "; ".join(parts) or "no change"
 
 
@@ -84,7 +111,12 @@ class StateInspector:
                     rows = [list(r) for r in c.execute(f'SELECT * FROM "{t}"')]
                     tables[t] = sorted(rows, key=repr)
         biz = json.loads(self.biz_path.read_text()) if self.biz_path.is_file() else None
-        return EnvState(files=files, tables=tables, biz=biz)
+        states = {}
+        for name in SERVER_STATES:
+            p = self.db_path.with_name(JSON_STATES[name][0])
+            if p.is_file():
+                states[name] = json.loads(p.read_text())
+        return EnvState(files=files, tables=tables, biz=biz, states=states)
 
     @staticmethod
     def diff(before: EnvState, after: EnvState) -> StateDiff:
@@ -105,4 +137,11 @@ class StateInspector:
         d.biz_added = sorted(set(a) - set(b))
         d.biz_removed = sorted(set(b) - set(a))
         d.biz_changed = sorted(k for k in set(a) & set(b) if a[k] != b[k])
+        for name in SERVER_STATES:
+            if name not in before.states and name not in after.states:
+                continue
+            b, a = _records(before.states.get(name) or {}), _records(after.states.get(name) or {})
+            d.state_added += [f"{name}:{k}" for k in sorted(set(a) - set(b))]
+            d.state_removed += [f"{name}:{k}" for k in sorted(set(b) - set(a))]
+            d.state_changed += [f"{name}:{k}" for k in sorted(set(a) & set(b)) if a[k] != b[k]]
         return d

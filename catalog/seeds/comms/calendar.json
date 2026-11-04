@@ -1,0 +1,313 @@
+{
+ "meta": {
+  "now": "2026-10-29T06:00:00Z",
+  "timezone": "Asia/Dubai",
+  "user": "rana.aziz@gulfwave.ae",
+  "horizon_end": "2027-01-01T00:00:00Z",
+  "slot_minutes": 15,
+  "sequences": {
+   "event": 116
+  }
+ },
+ "zones": {
+  "Asia/Dubai": [
+   {
+    "from": "2026-01-01T00:00:00Z",
+    "offset": "+04:00"
+   }
+  ],
+  "Asia/Kolkata": [
+   {
+    "from": "2026-01-01T00:00:00Z",
+    "offset": "+05:30"
+   }
+  ],
+  "Europe/London": [
+   {
+    "from": "2026-01-01T00:00:00Z",
+    "offset": "+00:00"
+   },
+   {
+    "from": "2026-03-29T01:00:00Z",
+    "offset": "+01:00"
+   },
+   {
+    "from": "2026-10-25T01:00:00Z",
+    "offset": "+00:00"
+   },
+   {
+    "from": "2027-03-28T01:00:00Z",
+    "offset": "+01:00"
+   },
+   {
+    "from": "2027-10-31T01:00:00Z",
+    "offset": "+00:00"
+   }
+  ],
+  "America/New_York": [
+   {
+    "from": "2026-01-01T00:00:00Z",
+    "offset": "-05:00"
+   },
+   {
+    "from": "2026-03-08T07:00:00Z",
+    "offset": "-04:00"
+   },
+   {
+    "from": "2026-11-01T06:00:00Z",
+    "offset": "-05:00"
+   },
+   {
+    "from": "2027-03-14T07:00:00Z",
+    "offset": "-04:00"
+   },
+   {
+    "from": "2027-11-07T06:00:00Z",
+    "offset": "-05:00"
+   }
+  ]
+ },
+ "people": {
+  "rana.aziz@gulfwave.ae": {
+   "name": "Rana Aziz",
+   "timezone": "Asia/Dubai",
+   "working_hours": {
+    "days": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri"
+    ],
+    "start": "09:00",
+    "end": "18:00"
+   }
+  },
+  "lina.haddad@gulfwave.ae": {
+   "name": "Lina Haddad",
+   "timezone": "Asia/Dubai",
+   "working_hours": {
+    "days": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri"
+    ],
+    "start": "09:00",
+    "end": "18:00"
+   }
+  },
+  "tom.hale@northbridge.co.uk": {
+   "name": "Tom Hale",
+   "timezone": "Europe/London",
+   "working_hours": {
+    "days": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri"
+    ],
+    "start": "09:00",
+    "end": "17:30"
+   }
+  },
+  "maya.chen@ridgeline-freight.com": {
+   "name": "Maya Chen",
+   "timezone": "America/New_York",
+   "working_hours": {
+    "days": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri"
+    ],
+    "start": "08:00",
+    "end": "16:00"
+   }
+  },
+  "arjun.rao@monsooncustoms.in": {
+   "name": "Arjun Rao",
+   "timezone": "Asia/Kolkata",
+   "working_hours": {
+    "days": [
+     "Mon",
+     "Tue",
+     "Wed",
+     "Thu",
+     "Fri"
+    ],
+    "start": "09:30",
+    "end": "18:30"
+   }
+  }
+ },
+ "calendars": {
+  "procurement": {
+   "name": "Procurement",
+   "owner": "rana.aziz@gulfwave.ae"
+  },
+  "finance": {
+   "name": "Finance",
+   "owner": "lina.haddad@gulfwave.ae"
+  }
+ },
+ "events": {
+  "EV-0101": {
+   "id": "EV-0101",
+   "calendar": "procurement",
+   "title": "Weekly procurement stand-up",
+   "start": "2026-10-26T05:30:00Z",
+   "end": "2026-10-26T06:00:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": ""
+  },
+  "EV-0104": {
+   "id": "EV-0104",
+   "calendar": "procurement",
+   "title": "Freight rates call",
+   "start": "2026-10-27T13:00:00Z",
+   "end": "2026-10-27T13:45:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "maya.chen@ridgeline-freight.com",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": "Q1 2027 sea freight rates."
+  },
+  "EV-0107": {
+   "id": "EV-0107",
+   "calendar": "procurement",
+   "title": "Q4 vendor review",
+   "start": "2026-10-29T12:00:00Z",
+   "end": "2026-10-29T13:00:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "maya.chen@ridgeline-freight.com",
+    "rana.aziz@gulfwave.ae",
+    "tom.hale@northbridge.co.uk"
+   ],
+   "status": "confirmed",
+   "description": "Quarterly review of Northbridge (packaging) and Ridgeline (freight) service levels."
+  },
+  "EV-0108": {
+   "id": "EV-0108",
+   "calendar": "finance",
+   "title": "Budget check-in",
+   "start": "2026-10-29T07:00:00Z",
+   "end": "2026-10-29T07:30:00Z",
+   "organizer": "lina.haddad@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": ""
+  },
+  "EV-0109": {
+   "id": "EV-0109",
+   "calendar": "procurement",
+   "title": "Vendor review prep",
+   "start": "2026-10-29T09:00:00Z",
+   "end": "2026-10-29T09:30:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "cancelled",
+   "description": ""
+  },
+  "EV-0110": {
+   "id": "EV-0110",
+   "calendar": "finance",
+   "title": "Payroll sign-off",
+   "start": "2026-11-02T13:00:00Z",
+   "end": "2026-11-02T13:30:00Z",
+   "organizer": "lina.haddad@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": "November payroll."
+  },
+  "EV-0111": {
+   "id": "EV-0111",
+   "calendar": "procurement",
+   "title": "Supplier call: Al Noor Trading",
+   "start": "2026-11-02T09:00:00Z",
+   "end": "2026-11-02T10:00:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": ""
+  },
+  "EV-0112": {
+   "id": "EV-0112",
+   "calendar": "procurement",
+   "title": "Packaging spec sign-off",
+   "start": "2026-11-02T10:00:00Z",
+   "end": "2026-11-02T10:30:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "tom.hale@northbridge.co.uk"
+   ],
+   "status": "confirmed",
+   "description": ""
+  },
+  "EV-0113": {
+   "id": "EV-0113",
+   "calendar": "procurement",
+   "title": "Customs pre-clearance call",
+   "start": "2026-11-02T10:30:00Z",
+   "end": "2026-11-02T11:15:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "arjun.rao@monsooncustoms.in",
+    "lina.haddad@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": "Pre-clearance for the November container."
+  },
+  "EV-0114": {
+   "id": "EV-0114",
+   "calendar": "procurement",
+   "title": "Warehouse walk-through",
+   "start": "2026-11-03T06:00:00Z",
+   "end": "2026-11-03T07:00:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": ""
+  },
+  "EV-0115": {
+   "id": "EV-0115",
+   "calendar": "procurement",
+   "title": "Weekly procurement stand-up",
+   "start": "2026-11-02T05:30:00Z",
+   "end": "2026-11-02T06:00:00Z",
+   "organizer": "rana.aziz@gulfwave.ae",
+   "attendees": [
+    "lina.haddad@gulfwave.ae",
+    "rana.aziz@gulfwave.ae"
+   ],
+   "status": "confirmed",
+   "description": ""
+  }
+ }
+}

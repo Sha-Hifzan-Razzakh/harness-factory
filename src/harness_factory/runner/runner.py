@@ -53,6 +53,8 @@ from harness_factory.shapes.checkpoint import Checkpoint, CheckpointConfig, Paus
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import Backend
+from harness_factory.substrate.tools import ARGS_CHARS
+from harness_factory.tasks import perturb
 from harness_factory.tasks.model import Task
 from harness_factory.tasks.reference import load_reference
 from harness_factory.tasks.registry import TaskRegistry
@@ -345,9 +347,11 @@ async def run_reference(f: Factory, task: Task) -> Grade:
         insp = StateInspector(sb.workspace, sb.db_path)
         before = insp.capture()
         tracer = Tracer(f"reference|{task.key()}")
+        outputs: list[tuple[str, int]] = []
         async with MCPSessionPool(f.declared, servers, sb.env(), sb.launch) as pool:
             for i, step in enumerate(ref.plan):
                 with tracer.span(SpanKind.tool_call, step["tool"]) as span:
+                    span.attributes["args"] = json.dumps(step["args"], default=str)[:ARGS_CHARS]   # as ToolExecutor
                     if step["tool"] == retrieval.RETRIEVE_REF:
                         res = await retrieval.local_tool(index, []).call(step["args"])
                         if not res.is_error:
@@ -357,6 +361,8 @@ async def run_reference(f: Factory, task: Task) -> Grade:
                     if res.is_error:
                         span.status = "error"
                         raise RuntimeError(f"{task.key()} reference step {step['tool']} failed: {res.text}")
+                    outputs.append((step["tool"], len(res.text)))
+        perturb.check_reference_outputs(task, outputs)        # an oversized_output variant's call is past the cap
         after = insp.capture()
         dummy = RunResult(run_key=RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash="ref",
                                          canonical_model="reference", provider="none"),
@@ -448,10 +454,13 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
     for t in tasks:
         f.graders.check(t)                                   # unknown grader: likewise
     skip = set(skipped_pairs(f, recipe_ids, tasks))
+    # A variant that binds its own faults (tool_failure, slow_tool; TSK-04) is run clean only: a campaign fault
+    # profile on it is refused (provision), so the plan leaves those runs out instead of failing them.
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)
             for t in tasks for r in recipe_ids if (t.id, r) not in skip
-            for m in models for fid in faults for s in range(seeds)]
+            for m in models for fid in faults if fid in (None, NO_FAULTS) or t.bound_faults() is None
+            for s in range(seeds)]
 
 
 def skipped_pairs(f: Factory, recipe_ids: list[str], tasks: list[Task]) -> list[tuple[str, str]]:

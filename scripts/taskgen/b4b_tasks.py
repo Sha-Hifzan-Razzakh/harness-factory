@@ -86,6 +86,9 @@ def only_number(right: str, allowed=()) -> str:
             rf"(?=.*(?<![\d.,])(?:{right})(?![\d]|[.,]\d))")
 
 
+# Task versions bumped after the batch first shipped: grounding checks gained `touches` (#69, R-01 follow-up).
+VERSIONS = {'b4-09': 2, 'b4-13': 2}
+
 def task(id, domain, depth, risk, split, tools, instruction, checks, plan, final, seed, tags):
     assert len(plan) <= 11, (id, len(plan))
     first_write = next((i for i, s in enumerate(plan) if s["tool"] not in READS), len(plan))
@@ -143,7 +146,7 @@ task("b4-09", "data", "UNKNOWN_PATH", "R0", "TEST", [*FS_READ, *SQL_READ],
      "Finance needs Qamar Trading's net revenue in AED for Q3 2026 (July to September), computed the way the "
      "finance team's reporting rules in docs/ say. Answer with the amount in whole dirhams.",
      [chk("answer", "output_regex", 0.75, pattern=only_number(money_pattern(Decimal(WHOLE), 0), ["2026"])),
-      chk("grounded", "tool_called", 0.25, pattern="sql.query"), *LEDGER_UNCHANGED],
+      chk("grounded", "tool_called", 0.25, pattern="sql.query", touches=["orders", "order_lines"]), *LEDGER_UNCHANGED],
      [call("fs.list_dir", path="docs"), call("fs.read_file", path="docs/finance/reporting_rules.md"),
       call("fs.read_file", path="docs/data_dictionary.md"), call("sql.list_tables"),
       call("sql.describe_table", table="fx_rates"), q(q3_rev_sql), q(q3_ref_sql)],
@@ -421,7 +424,7 @@ task("b4-13", "api", "UNKNOWN_PATH", "R0", "HELD_OUT",
      "Collections asks: how much does Saffron Hospitality (trade licence DED-552310) owe us on overdue invoices as "
      "of today, across all of its contacts? Answer with the amount in AED.",
      [chk("answer", "output_regex", 0.75, pattern=only_number(money_pattern(RIGHT_C, 2), ["552310"])),
-      chk("grounded", "tool_called", 0.25, pattern="biz.inv_list_invoices"),
+      chk("grounded", "tool_called", 0.25, pattern="biz.inv_list_invoices", touches=[f"customer_id={c}" for c in saffron]),
       biz_eq("data_unchanged", "/meta/sequences", st["meta"]["sequences"])],
      [call("biz.crm_search_contacts", query="Saffron", limit=50),
       *[call("biz.crm_get_contact", id=c) for c in [*saffron[1:], group[0]]],
@@ -572,7 +575,7 @@ for t in sorted(TASKS, key=lambda t: t["id"]):
     for c in t["checks"]:
         if c["kind"] == "output_regex":
             assert re.search(c["pattern"], t["final"], re.MULTILINE), (t["id"], t["final"])
-    doc = {"id": t["id"], "version": 1, "domain": t["domain"], "instruction": t["instruction"],
+    doc = {"id": t["id"], "version": VERSIONS.get(t["id"], 1), "domain": t["domain"], "instruction": t["instruction"],
            "env_seed": t["seed"], "allowed_tools": t["allowed_tools"], "risk": t["risk"],
            "expected_depth": t["expected_depth"], "split": t["split"], "status": "verified", "tags": t["tags"],
            "oracle": {"pass_threshold": 1.0, "checks": t["checks"]}}

@@ -1,0 +1,25 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The calendar state is the shared comms
+# seed (catalog/seeds/comms, now 2026-10-29 10:00 Asia/Dubai); the calls run in order (EV-0116 is created, moved,
+# then cancelled).
+server: calendar
+seed: {server_state: {calendar: ../seeds/comms/calendar.json}}
+calls:
+- {tool: list_events, args: {start: "2026-10-26T00:00:00+04:00", end: "2026-10-31T00:00:00+04:00"}, expect: {contains: [EV-0101]}}
+- {tool: get_event, args: {id: EV-0107}, expect: {contains: [EV-0107]}}
+- {tool: find_free_slots, args: {attendees: [rana.aziz@gulfwave.ae, lina.haddad@gulfwave.ae], duration: 30,
+                                 window: {start: "2026-11-02T00:00:00+04:00", end: "2026-11-03T00:00:00+04:00"}},
+   expect: {contains: ["2026-11-02"]}}
+- {tool: create_event, args: {title: Conformance check, start: "2026-11-02T10:00:00+04:00", end: "2026-11-02T10:30:00+04:00",
+                              attendees: [rana.aziz@gulfwave.ae], calendar: procurement},
+   expect: {contains: [EV-0116]}}
+- {tool: move_event, args: {id: EV-0116, start: "2026-11-02T11:00:00+04:00", end: "2026-11-02T11:30:00+04:00"},
+   expect: {contains: ["11:00"]}}
+- {tool: cancel_event, args: {id: EV-0116}, expect: {contains: [cancelled]}}
+refusals:
+- {tool: get_event, args: {id: EV-0000}, contains: ["unknown event id 'EV-0000'"]}
+- {tool: cancel_event, args: {id: EV-0116}, contains: [EV-0116 is already cancelled]}
+- {tool: create_event, args: {title: Too early, start: "2026-10-20T10:00:00+04:00", end: "2026-10-20T10:30:00+04:00",
+                              attendees: [rana.aziz@gulfwave.ae], calendar: procurement},
+   contains: [is in the past]}
+- {tool: list_events, args: {start: "2026-11-01T00:00:00+04:00", end: "2026-11-02T00:00:00+04:00", calendar: nowhere},
+   contains: ["unknown calendar 'nowhere'"]}
