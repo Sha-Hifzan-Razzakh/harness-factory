@@ -55,12 +55,12 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #50 | `feat/context-management` | `…KhAFMPUEPRU3mK2t2` | Token accounting, output spill, compaction | ready for review (CI green) | new optional recipe field |
 | #51 | `feat/shape-depth` | `…KhAFMPUEPRU3mK2t2` | Structured plans, parallel tool calls, concurrent V5 workers | ready for review, stacked on #50 | new optional recipe fields |
 | #52 | `feat/task-batch-4` | `…KhAFMPUEPRU3mK2t2` | Long, data-heavy tasks by an independent author | ready for review (CI green), stacked on #47 | new tasks only |
-| #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | ready for review, rebased on main (merge train 2); stacked base of #70–#74 | yes (scoring; tasks whose check gains a field) |
-| #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | ready for review (CI green), stacked on #69 | new fault profiles only |
-| #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | ready for review (CI green), stacked on #70 | new tasks only |
-| #72 | `feat/env-web-corpus` | `…KhAFMPUEPRU3mK2t2` | Web search and fetch over a recorded, versioned corpus (ENV-01, KNW-01; ADR 0018) | ready for review, stacked on #71 | new server; corpus version in the task hash (ADR 0018 §8) |
-| #73 | `feat/env-outbox-calendar` | `…KhAFMPUEPRU3mK2t2` | Email/notification outbox and calendar servers (ENV-01) | ready for review, stacked on #72 | new servers only (sandbox image tag changes) |
-| #74 | `feat/mcp-conformance` | `…KhAFMPUEPRU3mK2t2` | MCP conformance suite in CI and server health before runs (MCP-11, ENV-06) | ready for review, stacked on #73 | no |
+| #69 | `fix/grounded-check` | `…KhAFMPUEPRU3mK2t2` | Grounded check requires touching the task's data (R-01 follow-up) | merged (merge train #97, 2026-11-04) | yes (scoring; tasks whose check gains a field) |
+| #70 | `feat/fault-kinds` | `…KhAFMPUEPRU3mK2t2` | Fault kinds: latency and malformed results (ENV-03) | merged (merge train #97, 2026-11-04) | new fault profiles only |
+| #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | merged (merge train #97, 2026-11-04) | new tasks only |
+| #72 | `feat/env-web-corpus` | `…KhAFMPUEPRU3mK2t2` | Web search and fetch over a recorded, versioned corpus (ENV-01, KNW-01; ADR 0018) | merged (merge train #97, 2026-11-04) | new server; corpus version in the task hash (ADR 0018 §8) |
+| #73 | `feat/env-outbox-calendar` | `…KhAFMPUEPRU3mK2t2` | Email/notification outbox and calendar servers (ENV-01) | merged (merge train #97, 2026-11-04) | new servers only (sandbox image tag changes) |
+| #74 | `feat/mcp-conformance` | `…KhAFMPUEPRU3mK2t2` | MCP conformance suite in CI and server health before runs (MCP-11, ENV-06) | merged (merge train #97, 2026-11-04) | no |
 | #75 | `feat/approval-gate` | `…KhAFMPUEPRU3mK2t2` | Approval gate and scripted approver; POLICY_BLOCKED (GOV-01, GOV-03; ADR 0019) | draft, reserved (wave 6) | run status logic (recipes using ASK) |
 | #76 | `feat/clarification` | `…KhAFMPUEPRU3mK2t2` | Clarification: NEEDS_INPUT in headless runs, scripted user, elicitation (SHP-06, MCP-06) | draft, reserved (wave 6) | run status logic; new optional recipe field |
 | #77 | `feat/guardrails` | `…KhAFMPUEPRU3mK2t2` | Guardrails, data tagging and trace redaction (GOV-02, GOV-05, GOV-06) | draft, reserved (wave 6) | new optional recipe field |
