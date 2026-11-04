@@ -19,6 +19,7 @@ from harness_factory.tasks.reference import load_reference
 from harness_factory.tasks.registry import TaskRegistry
 
 ROOT = Path(__file__).parents[1]
+REG = TaskRegistry()
 
 
 @functools.cache
@@ -52,7 +53,7 @@ def top_csv(**kw) -> str:
         f"{cust[k].code},{cust[k].name},{int(v.to_integral_value())}\n" for k, v in best)
 
 
-GROUND = call("sql.query", sql="SELECT 1")
+GROUND = call("sql.query", sql="SELECT COUNT(*) FROM orders")      # touches the data b4-09 is grounded on
 LIST_OPEN = call("biz.inv_list_invoices", status="open", limit=50)
 TOP = "reports/top_accounts_2026.csv"
 REPORT = "reports/short_payments_2026-10.csv"
@@ -184,6 +185,13 @@ def b416(script: str) -> list[dict]:
 
 TRAPS = [
     # task, trap, script (a list of turns, or a builder and its argument), checks that must fail
+    # Grounding (#69): the right answer after a query that never touched orders or order_lines, or after listing
+    # another customer's invoices, earns no grounding.
+    ("b4-09", "right total, grounded on SELECT 1", lambda: [call("sql.query", sql="SELECT 1"),
+                                                            say(load_reference(REG.get("b4-09")).final)], {"grounded"}),
+    ("b4-13", "right total, grounded on another customer's invoices",
+     lambda: [call("biz.inv_list_invoices", customer_id="C-2167", status="open", limit=50),
+              say(load_reference(REG.get("b4-13")).final)], {"grounded"}),
     ("b4-09", "monthly average rates (the superseded rules)", lambda: [GROUND, say(whole(monthly=True))], {"answer"}),
     ("b4-09", "inner join on fx_rates dropped AED orders", lambda: [GROUND, say(whole(drop_aed=True))], {"answer"}),
     ("b4-09", "kept orders entered twice", lambda: [GROUND, say(whole(keep_deleted=True))], {"answer"}),
@@ -274,7 +282,9 @@ def test_an_answer_check_refuses_a_hedge(task_id):
     hedge test of tests/test_task_traps.py)."""
     task = TaskRegistry().get(task_id)
     right = load_reference(task).final
-    wrongs = wrong_answers(task_id)
+    # as the catalog-wide test does: a trap answer contained in the right one (e.g. a grounding trap that gives the
+    # right answer) makes no hedge
+    wrongs = [w for w in wrong_answers(task_id) if w.lower() not in right.lower()]
     assert wrongs
     for check in (c for c in task.oracle.checks if c.kind == "output_regex"):
         assert matches(check.pattern, right)

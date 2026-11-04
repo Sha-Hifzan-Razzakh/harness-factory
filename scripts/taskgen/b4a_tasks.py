@@ -43,6 +43,9 @@ def step(tool, **args):
     return {"tool": tool, "args": args}
 
 
+# Task versions bumped after the batch first shipped: grounding checks gained `touches` (#69, R-01 follow-up).
+VERSIONS = {'b4-06': 2}
+
 def task(id, domain, depth, risk, split, tools, instruction, checks, plan, final, seed, tags=(), git=False):
     TASKS.append(dict(id=id, domain=domain, depth=depth, risk=risk, split=split, tools=tools, instruction=instruction,
                       checks=checks, plan=plan, final=final, seed=seed, tags=list(tags), git=git))
@@ -342,7 +345,7 @@ task("b4-06", "ops", "UNKNOWN_PATH", "R0", "DEV", FS_READ,
      "Using the deployment config in infra/, which services run with TLS verification disabled (an effective "
      "TLS_VERIFY=false) in me-central-1 production? Answer with the service names only, comma-separated.",
      [chk("answer", "output_regex", 0.8, pattern=answer_rx),
-      chk("grounded", "tool_called", 0.2, pattern="fs.read_file"),
+      chk("grounded", "tool_called", 0.2, pattern="fs.read_file", touches=[f"{MC}/prod/services/*"]),
       guard("region_config_untouched", "file_equals", path=f"{MC}/region.env", text=infra[f"{MC}/region.env"])],
      [step("fs.read_file", path="infra/README.md"),
       step("fs.read_file", path=f"{MC}/region.env"),
@@ -445,7 +448,7 @@ for t in TASKS:
     long = n > 8 or lead > 3 or after > 5
     tags = ["batch-4", *t["tags"], *(["long"] if long else [])]
     seed = {"files": f"../../seeds/{t['seed']}/files", **({"git": True} if t["git"] else {})}
-    doc = {"id": t["id"], "version": 1, "domain": t["domain"], "instruction": t["instruction"], "env_seed": seed,
+    doc = {"id": t["id"], "version": VERSIONS.get(t["id"], 1), "domain": t["domain"], "instruction": t["instruction"], "env_seed": seed,
            "allowed_tools": t["tools"], "risk": t["risk"], "expected_depth": t["depth"], "split": t["split"],
            "status": "verified", "tags": tags, "oracle": {"pass_threshold": 1.0, "checks": t["checks"]}}
     (d / "task.yaml").write_text(yaml.dump(doc, Dumper=Dumper, sort_keys=False, width=110, allow_unicode=True))
