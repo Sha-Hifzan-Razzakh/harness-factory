@@ -500,6 +500,7 @@ migrated again.
 - **`0002` adds what main gained before Alembic landed:** the `runs` columns `grader_versions`, `endstate_path`,
   `judge_usage`, `tools_hash` and `served_id`, and the tables `equivalences`, `regrades` and
   `judge_calibrations`. Stores from that code may already have them, so `0002` adopts them the way `0001` does.
+- **`0003` adds `transfers`** (runner transfer checks, ADR 0016), adopted the same way.
 - **A store written by newer code is refused.** If its revision is unknown to this checkout, the store is not
   opened, and the error says so. Use another `HF_RESULTS_URL` per branch if your branches change the schema.
 
@@ -511,7 +512,7 @@ To add a column or a table:
    ```bash
    HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini upgrade head
    HF_RESULTS_URL=sqlite:///var/schema.db uv run alembic -c src/harness_factory/results/migrations/alembic.ini \
-       revision --autogenerate --rev-id 0003 -m "add runs.<column>"
+       revision --autogenerate --rev-id 0004 -m "add runs.<column>"
    ```
 
    Autogenerate compares the database with `metadata`. Read what it wrote and keep only your change. For
@@ -756,6 +757,55 @@ the plan reads next.
 uv run hfx smoke --recipe v2-retrieval-bm25,v2-retrieval-hybrid --models scripted/replay --strict
 ```
 
+## Runners
+
+A runner is what executes a recipe. Until now that was always the factory's own graphs (`native`). A recipe can name
+a framework's own ready-made agent instead, so the factory measures what a team would deploy (ADR 0016):
+
+```yaml
+# catalog/recipes/matrix/v2_langgraph_prebuilt.yaml
+id: v2-langgraph-prebuilt
+base: v2-base
+runtime: langgraph-prebuilt      # or llamaindex-agent; unset = native (left out of the hash)
+```
+
+| Runtime | Agent | MCP tools via | Extra |
+|---|---|---|---|
+| `native` | the factory's shapes (`shapes/`) | the run's MCP session pool | (none) |
+| `langgraph-prebuilt` | `langchain.agents.create_agent` (LangGraph graph with `ToolNode`; successor of `create_react_agent`) | `langchain.mcp` (successor of langchain-mcp-adapters, which needs `mcp<2`) | `langgraph-prebuilt` |
+| `llamaindex-agent` | `FunctionAgent` | `McpToolSpec` (llama-index-tools-mcp) | `llamaindex` |
+
+- **Only two things are wrapped.**
+  - **Model client:** a LangChain chat model / LlamaIndex LLM whose calls go through `model_turn` and
+    `ModelGateway` (budget, quota, tokens, cost, error classification).
+  - **Tool calls:** the framework's MCP adapter builds its tools from a session whose `call_tool` goes to
+    `ToolExecutor` (allowance, permissions, faults, traces).
+
+  The loop, prompts, tool formatting, parsing, retries and history are the framework's, at its defaults. Neither
+  framework adds prompt text: the recipe's system message is the agent's system prompt and its task message the
+  input. They do differ in what tools and results look like. LlamaIndex, for example, shows a tool result as the
+  `CallToolResult` object's repr.
+- **Tool loop only.** A runtime other than `native` is refused for V1/V3/V4 recipes, `delegation` and
+  `recover_malformed`: those are the factory's control flow, not the framework's.
+- **Identity.** A runner recipe's hash includes the runtime and the exact versions of its framework packages
+  (`runners/identity.py`, locked in `uv.lock`). A framework upgrade starts new cells; native hashes never change.
+- **Run endings** are native ones:
+  - final answer: graded;
+  - a budget limit, or the framework's own recursion or iteration limit (LlamaIndex: 20): a harness stop, outcome
+    × 0.5;
+  - provider infrastructure: INCOMPLETE.
+- **Transfer check:** does the score carry over? The same recipe, tasks, seeds, model and provider on native and on
+  the runner; the paired E0 difference is judged like a provider calibration and frozen:
+
+```bash
+hfx transfer run v2-llamaindex-agent --model scripted/replay --provider scripted --run --min-pairs 20
+hfx transfer list
+```
+
+Offline (`scripted/replay`, the 20 visible tasks), both runners pass 20/20 with the same model and tool calls as
+`v2-base`, and both transfer checks are `equivalent` (20 pairs, every one a tie). Tokens against `v2-base`:
+LangGraph ×1.02, LlamaIndex ×1.22, mostly from its repr tool results. Real models are where runners can differ.
+
 ## Selector
 
 The payoff: given a task, which recipe? `catalog/selector.yaml` holds the rules; `src/harness_factory/select/`
@@ -811,6 +861,17 @@ How a decision is made, for one task class, model and provider:
 Held-out runs are never used as evidence. Strategies that agree share a run, done runs are reused, and every
 strategy is scored against one cost baseline that includes the evaluation runs. So a strategy that solves a task
 more cheaply scores higher. v1 is done when the selector beats the best single recipe here.
+
+**Pooled evidence (opt-in, ADR 0010).** With `pool_providers: true` in `catalog/selector.yaml`, or `--pool` on
+`hfx select show|freeze|evaluate` and `hfx provision`, a provider in a pool of providers calibrated as
+`equivalent` for the model (`hfx calibration`) decides from the pooled cells, so its pool partners' runs count as
+evidence. A pooled cell is current only if every run in it has the recipe's current recipe hash, the recipe's
+current tools hash (`tools_hash`), and the served model id its provider's catalog entry names now. Cost stays per
+provider. The decision, and so its log in `var/decisions/`, carries a `pool` entry: the pool label, the served ids,
+the ids of the `equivalent` records it rests on, and the scored runs from each provider (in total and per recipe).
+For a held-out evaluation every verdict in force is judged again on the evidence rows alone, so a pool never rests
+on held-out pairs. A provider in no pool decides exactly as with pooling off. Off, the selector, its decisions and
+frozen policies are unchanged (same ids).
 
 ## How a run works
 

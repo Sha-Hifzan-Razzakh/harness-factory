@@ -83,6 +83,14 @@ equivalences = Table(
     Column("created_at", DateTime, nullable=False),
 )
 
+transfers = Table(
+    "transfers", metadata,                                   # runner transfer checks (ADR 0016), frozen
+    Column("id", String(12), primary_key=True),              # content hash of what was compared and found
+    Column("runtime", String, nullable=False, index=True),
+    Column("record", JSON, nullable=False),                  # results.transfer.Transfer
+    Column("created_at", DateTime, nullable=False),
+)
+
 # Re-grades (hfx regrade): the current graders over a stored run's end state. A row here never changes the run's
 # own row, and aggregation reads only `runs`: a re-grade shows what a grader or check change would do to stored
 # runs; new runs are what put the change into the numbers.
@@ -471,4 +479,18 @@ class ResultsStore:
         """Saved calibrations as dicts, oldest first (results.calibration.Equivalence.model_validate reads them)."""
         with self.engine.connect() as c:
             rs = c.execute(select(equivalences.c.record).order_by(equivalences.c.created_at)).all()
+        return [r[0] for r in rs]
+
+    def save_transfer(self, tr) -> str:
+        """Freeze a runner transfer check (results.transfer.Transfer). Idempotent: the id is a content hash."""
+        with self.engine.begin() as c:
+            if c.execute(select(transfers.c.id).where(transfers.c.id == tr.id)).first() is None:
+                c.execute(insert(transfers).values(id=tr.id, runtime=tr.runtime, record=tr.model_dump(mode="json"),
+                                                   created_at=tr.created_at))
+        return tr.id
+
+    def transfers(self) -> list[dict]:
+        """Saved transfer checks as dicts, oldest first (results.transfer.Transfer.model_validate reads them)."""
+        with self.engine.connect() as c:
+            rs = c.execute(select(transfers.c.record).order_by(transfers.c.created_at)).all()
         return [r[0] for r in rs]

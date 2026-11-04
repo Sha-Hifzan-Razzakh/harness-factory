@@ -29,9 +29,9 @@ from harness_factory.results.store import current_task_rows
 from harness_factory.select.selector import (
     Decision,
     SelectorConfig,
-    _current_cells,
     current_task_hashes,
     decide,
+    evidence_for,
     hard_rules,
     load_selector_config,
     task_classes,
@@ -67,9 +67,9 @@ class Policy(BaseModel):
 def build_policy(factory, rows: list[dict], baseline: CostBaseline, canonical_model: str, provider: str,
                  config: SelectorConfig | None = None, note: str = "") -> Policy:
     config = config or load_selector_config()
-    cells = _current_cells(factory, rows, baseline, canonical_model, provider)
+    ev = evidence_for(factory, rows, baseline, canonical_model, provider, config)
     decisions = {c: decide(c, canonical_model, provider, factory=factory, rows=rows, baseline=baseline,
-                           config=config, cells=cells) for c in task_classes(factory)}
+                           config=config, evidence=ev) for c in task_classes(factory)}
     return Policy(canonical_model=canonical_model, provider=provider, baseline_id=baseline.id,
                   config_hash=config.config_hash(), decisions=decisions, note=note)
 
@@ -130,7 +130,9 @@ def plan_evaluation(factory, rows: list[dict], canonical_model: str, provider: s
         raise ValueError(f"no {split.value} tasks to evaluate on")
     evidence = current_task_rows(evidence_rows(rows, {t.id for t in targets}), current_task_hashes(factory))
     baseline = CostBaseline.from_rows(evidence, note=f"evidence for {split.value} evaluation")
-    cells = _current_cells(factory, evidence, baseline, canonical_model, provider)
+    # With pooling, every calibration in force is judged again on the evidence alone (no held-out pairs).
+    ev = evidence_for(factory, evidence, baseline, canonical_model, provider, config, rejudge_on=evidence)
+    cells = ev.cells
 
     # Best global recipe: highest mean E over all its current evidence, pooled across classes. A cell whose runs
     # are all INCOMPLETE / ERROR has n = 0: no evidence, so it takes no part (and can't divide by zero).
@@ -146,7 +148,7 @@ def plan_evaluation(factory, rows: list[dict], canonical_model: str, provider: s
     for t in targets:
         cls = task_class(t, factory.declared)
         d = decide(cls, canonical_model, provider, factory=factory, rows=evidence, baseline=baseline, config=config,
-                   task=t, cells=cells)
+                   task=t, evidence=ev)
         decisions[t.id] = d
         picks["selector"][t.id] = d.chosen[0]          # a close call's runner-up is not part of the comparison
 

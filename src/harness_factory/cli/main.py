@@ -426,6 +426,9 @@ def baseline_list() -> None:
         console.print(f"[yellow]{len(legacy)} baseline(s) saved before per-provider medians are ignored: "
                       f"{', '.join(legacy)}")
 
+# One option shared by the selector commands: --pool / --no-pool override selector.yaml's pool_providers.
+_POOL = typer.Option(None, "--pool/--no-pool", help="pool runs of calibrated-equivalent providers (ADR 0010); "
+                                                    "default: pool_providers in catalog/selector.yaml")
 
 select_app = typer.Typer(no_args_is_help=True, help="Selector: which recipe to use per task class (SEL-01..06).")
 app.add_typer(select_app, name="select")
@@ -444,6 +447,26 @@ def _evidence(f, baseline_id: str | None):
     return rows, CostBaseline.from_rows(rows, note="live")
 
 
+def _selector_config(pool: bool | None):
+    """selector.yaml, with --pool/--no-pool overriding its pool_providers."""
+    from harness_factory.select.selector import load_selector_config
+    config = load_selector_config()
+    return config if pool is None else config.model_copy(update={"pool_providers": pool})
+
+
+def _print_pools(decisions) -> None:
+    """Only when the evidence was pooled (ADR 0010): the pool, its records and the runs from each provider."""
+    pooled = [d for d in decisions if d.pool is not None]
+    if not pooled:
+        return
+    head = pooled[0].pool
+    console.print(f"pooled evidence: {head.label} (records {', '.join(head.equivalences)}"
+                  f"{'; re-judged without held-out runs' if head.rejudged else ''})")
+    for d in pooled:
+        if d.pool.runs:
+            console.print(f"  {d.task_class}: " + ", ".join(f"{p} {n}" for p, n in d.pool.runs.items()))
+
+
 def _decision_row(t: Table, d) -> None:
     top = d.ranked[0] if d.ranked else None
     ev = f"{top.mean_e:.3f} [{top.ci95[0]:.2f}-{top.ci95[1]:.2f}] n={top.n}" if top else "-"
@@ -455,7 +478,8 @@ def _decision_row(t: Table, d) -> None:
 @select_app.command("show")
 def select_show(model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
                 policy: str | None = typer.Option(None, "--policy", help="a frozen policy id instead of live"),
-                baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id")) -> None:
+                baseline: str | None = typer.Option(None, "--baseline", help="frozen cost baseline id"),
+                pool: bool | None = _POOL) -> None:
     """The recipe the selector picks for every task class, with its evidence."""
     from harness_factory.select.policy import build_policy, load_policy
     f = _factory()
@@ -463,23 +487,25 @@ def select_show(model: str = typer.Option(..., "--model"), provider: str = typer
         p = load_policy(policy)
     else:
         rows, b = _evidence(f, baseline)
-        p = build_policy(f, rows, b, model, provider)
+        p = build_policy(f, rows, b, model, provider, config=_selector_config(pool))
     t = Table("class", "rule", "chosen", "E [95% CI] n", "runner-up", "below min", "pruned",
               title=f"{p.canonical_model} on {p.provider}   policy {p.id}{' (frozen)' if policy else ' (live)'}   "
                     f"baseline {p.baseline_id}")
     for d in p.decisions.values():
         _decision_row(t, d)
     console.print(t)
+    _print_pools(p.decisions.values())
 
 
 @select_app.command("freeze")
 def select_freeze(model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
-                  baseline: str | None = typer.Option(None, "--baseline"), note: str = typer.Option("", "--note")) -> None:
+                  baseline: str | None = typer.Option(None, "--baseline"), note: str = typer.Option("", "--note"),
+                  pool: bool | None = _POOL) -> None:
     """Freeze the current decisions as a content-addressed policy, so provisioning stays stable as runs arrive."""
     from harness_factory.select.policy import build_policy, save_policy
     f = _factory()
     rows, b = _evidence(f, baseline)
-    p = build_policy(f, rows, b, model, provider, note=note)
+    p = build_policy(f, rows, b, model, provider, config=_selector_config(pool), note=note)
     console.print(f"saved policy {p.id} ({len(p.decisions)} classes) to {save_policy(p)}")
 
 
@@ -487,7 +513,8 @@ def select_freeze(model: str = typer.Option(..., "--model"), provider: str = typ
 def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
                     split: str = typer.Option("HELD_OUT", "--split"),
                     concurrency: int = typer.Option(4, "--concurrency", "-j"),
-                    dry_run: bool = typer.Option(False, "--dry-run", help="show the picks and the runs, then stop")) -> None:
+                    dry_run: bool = typer.Option(False, "--dry-run", help="show the picks and the runs, then stop"),
+                    pool: bool | None = _POOL) -> None:
     """SEL-06: run the held-out tasks with the selector's pick, the best global recipe, rules-only and the
     hand-picked baseline, and compare mean E. Held-out runs never inform the picks. Done runs are reused."""
     from harness_factory.provision.provisioner import run_key_for
@@ -497,13 +524,14 @@ def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = t
     from harness_factory.tasks.model import Split
     f = _factory()
     _print_sinks(f)
-    plan = plan_evaluation(f, f.store.rows(), model, provider, split=Split(split))
+    plan = plan_evaluation(f, f.store.rows(), model, provider, split=Split(split), config=_selector_config(pool))
     t = Table("task", *plan.picks, title=f"{split} picks for {model} on {provider} (evidence baseline {plan.baseline_id})")
     for task_id in plan.picks["selector"]:
         t.add_row(task_id, *(plan.picks[s][task_id] for s in plan.picks))
     console.print(t)
     for n in plan.notes:
         console.print(f"[yellow]{n}")
+    _print_pools(plan.decisions.values())
     runs = plan.runs()
     console.print(f"{len(runs)} distinct runs (strategies that agree share one)")
     if dry_run:
@@ -535,7 +563,8 @@ def select_evaluate(model: str = typer.Option(..., "--model"), provider: str = t
 def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option(..., "--model"),
               provider: str = typer.Option(..., "--provider"),
               policy: str | None = typer.Option(None, "--policy", help="frozen policy id; default: decide live"),
-              baseline: str | None = typer.Option(None, "--baseline"), seed: int = typer.Option(0, "--seed")) -> None:
+              baseline: str | None = typer.Option(None, "--baseline"), seed: int = typer.Option(0, "--seed"),
+              pool: bool | None = _POOL) -> None:
     """Select and run: the task's class picks the recipe (a close call runs both, SEL-04), the decision is logged
     with its evidence (SEL-05), and the run's result feeds the next decision."""
     from harness_factory.provision.provisioner import task_class
@@ -547,13 +576,15 @@ def provision(task: str = typer.Option(..., "--task"), model: str = typer.Option
     tk = f.tasks.get(task)
     cls = task_class(tk, f.declared)
     if policy:
+        if pool is not None:
+            raise typer.BadParameter("--pool/--no-pool decide live; a frozen policy already says whether it pooled")
         p = load_policy(policy)
         if (p.canonical_model, p.provider) != (model, provider):
             raise typer.BadParameter(f"policy {policy} is for {p.canonical_model} on {p.provider}")
         d = p.decisions[cls]
     else:
         rows, b = _evidence(f, baseline)
-        d = decide(cls, model, provider, factory=f, rows=rows, baseline=b, task=tk)
+        d = decide(cls, model, provider, factory=f, rows=rows, baseline=b, task=tk, config=_selector_config(pool))
     path = log_decision(d, task=tk.key(), policy=policy, seed=seed)
     console.print(f"{d.summary()}\n[dim]decision logged: {path}[/]")
     specs = [RunSpec(task_id=task, recipe_id=r, canonical_model=model, provider=provider, seed=seed) for r in d.chosen]
@@ -620,6 +651,10 @@ _register_judge(app)
 from harness_factory.cli.analysis import register as _register_analysis  # hfx analyze
 
 _register_analysis(app)
+
+from harness_factory.cli.transfer import transfer_app
+
+app.add_typer(transfer_app, name="transfer")
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":
