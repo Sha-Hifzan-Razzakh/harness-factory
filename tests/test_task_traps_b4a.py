@@ -306,6 +306,10 @@ TRAPS = [
               rep("Emirate of Dubai", "Emirate of Abu Dhabi", path="contracts/MSA-2025-031_northwind_retail.docx")],
      {"retail_agreement_untouched"}, None),
 
+    # Grounding (#69): the right services, read only from the README (not a prod service file), earn no grounding.
+    ("b4-06", "right services, grounded on the README only",
+     lambda: [call("fs.read_file", path="infra/README.md"), say("ledger-sync, partner-gateway, report-mailer")],
+     {"grounded"}, None),
     ("b4-06", "took the region-wide setting for every service", lambda: [TLS_READ, say(ALL_SERVICES)], {"answer"},
      None),
     ("b4-06", "took the first assignment in a file, not the last",

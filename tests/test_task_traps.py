@@ -497,3 +497,53 @@ def test_a_plain_answer_still_passes(factory, task_id, reply):
     instruction itself uses (2026) and numbers inside words (Q3)."""
     checks = [c for c in factory.tasks.get(task_id).oracle.checks if c.kind == "output_regex"]
     assert checks and all(output_matches(c.pattern, reply) for c in checks)
+
+
+# ------------------------------------------------------------------ grounding means touching the data (GRD-01)
+
+# The right answer, grounded on data the answer doesn't come from: `grounded` (tool_called with `touches`) must
+# fail, so a guess dressed up with SELECT 1 or an unrelated file keeps only the answer's weight.
+GROUNDING_TRAPS = [
+    ("sql-01", "SELECT 1", [GROUND, say("3")]),
+    ("sql-01", "the table named only in a string", [call("sql.query", sql="SELECT 'customers'"), say("3")]),
+    ("sql-03", "SELECT 1", [GROUND, say("Harbor Logistics")]),
+    ("sql-03", "an unrelated table", [call("sql.query", sql="SELECT COUNT(*) FROM products"), say("Harbor Logistics")]),
+    ("sql-04", "SELECT 1", [GROUND, say("6")]),
+    ("sql-04", "the table named only in a comment", [call("sql.query", sql="SELECT 1 -- from orders"), say("6")]),
+    ("sql-08", "SELECT 1", [GROUND, say("1,696.11")]),
+    ("ops-03", "another day's log", [call("fs.read_file", path="logs/app-2026-10-25.log"), say("/api/checkout")]),
+    ("res-01", "an unrelated file", [call("fs.read_file", path="requirements.txt"), say("dev, staging")]),
+    ("biz-02", "another customer's invoices", [call("biz.inv_list_invoices", customer_id="C-1001"),
+                                               say("AED 1,837.50")]),
+]
+
+
+@pytest.mark.parametrize(("task_id", "trap", "script"), GROUNDING_TRAPS, ids=[f"{t[0]}: {t[1]}" for t in GROUNDING_TRAPS])
+async def test_grounding_on_irrelevant_data_earns_nothing(factory, task_id, trap, script):
+    status, failed = await failed_checks(factory, task_id, *script)
+    assert status != "SUCCESS"
+    assert "grounded" in failed and "answer" not in failed, f"{trap}: failed {failed}"
+
+
+# Calls that did touch the data, in forms a model may well use: they still ground.
+GROUNDED_ON_DATA = [
+    ("sql-01", [call("sql.query", sql='select count(*) from "Customers" where city = \'Dubai\''), say("3")]),
+    ("sql-04", [call("sql.query", sql="SELECT COUNT(*) FROM main.[orders]"), say("6")]),
+    ("ops-03", [call("fs.read_file", path="./logs/../logs/app-2026-10-26.log"), say("/api/checkout")]),
+    ("res-01", [call("fs.read_file", path="service/config/staging.ini"), say("dev, staging")]),
+    ("biz-02", [call("biz.inv_list_invoices", status="open"), say("AED 1,837.50")]),   # no customer filter
+    ("biz-02", [call("biz.inv_list_invoices", customer_id="C-1011"), say("AED 1,837.50")]),
+]
+
+
+@pytest.mark.parametrize(("task_id", "script"), GROUNDED_ON_DATA, ids=[f"{t[0]}-{i}" for i, t in enumerate(GROUNDED_ON_DATA)])
+async def test_a_call_that_touched_the_data_still_grounds(factory, task_id, script):
+    _, failed = await failed_checks(factory, task_id, *script)
+    assert "grounded" not in failed and "answer" not in failed, failed
+
+
+def test_every_grounding_check_names_the_data(factory):
+    """A bare tool_called check pays for any call (SELECT 1), so every catalog task names what it grounds on."""
+    bare = [f"{t.id}/{c.id}" for t in factory.tasks.all(include_held_out=True) for c in t.oracle.checks
+            if c.kind == "tool_called" and c.touches is None]
+    assert not bare, f"tool_called checks without touches: {bare}"

@@ -227,7 +227,8 @@ def test_output_exact(tmp_path):
 # ---- identity -------------------------------------------------------------------------------------------------
 
 USED_BY_NEW_TASKS = {"rubric",     # fields set by tasks written after them (docs-03, #49;
-                     "ref", "sheet", "cell", "expected", "tolerance", "style"}   # code-*, office-*, #45-#47)
+                     "ref", "sheet", "cell", "expected", "tolerance", "style",   # code-*, office-*, #45-#47;
+                     "touches"}                 # the answer-only tasks' grounding, new task versions, #69)
 
 
 def test_new_check_fields_leave_task_hashes_alone(factory):
