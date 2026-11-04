@@ -90,6 +90,7 @@ class MCPClient:
         self.mode = "live"
         self.recording = None                # mcp.recording.Recording, for remote servers in record/replay mode
         self.server_version: str | None = None   # what a remote server reports at initialize (None: not asked)
+        self.init_result = None              # the server's InitializeResult (None in replay: there is no session)
 
     async def __aenter__(self) -> MCPClient:
         # Python never calls __aexit__ for a failed __aenter__: if anything below fails or is cancelled (Ctrl-C
@@ -122,6 +123,7 @@ class MCPClient:
             read, write = await self._stack.enter_async_context(stdio_client(params))
             self._session = await self._stack.enter_async_context(ClientSession(read, write))
             init = await self._session.initialize()
+        self.init_result = init
         self.protocol_version = str(init.protocol_version)
         if self.spec.remote:
             self._check_version(init)
@@ -219,6 +221,17 @@ class MCPClient:
         (res,) = await asyncio.gather(self._owner, return_exceptions=True)
         if isinstance(res, BaseException):
             self.close_error = f"{type(res).__name__}: {str(res)[:200]}"
+
+    @property
+    def session(self) -> ClientSession | None:
+        """The live MCP session (None in replay), for protocol-level checks (mcp.conformance)."""
+        return self._session
+
+    async def ping(self) -> None:
+        """ENV-06: the cheapest liveness question MCP has. A replayed server has no process to ask."""
+        if self.mode == "replay" or self._session is None:
+            return
+        await self._session.send_ping()
 
     async def list_tools(self) -> list[DiscoveredTool]:
         if self.mode == "replay":

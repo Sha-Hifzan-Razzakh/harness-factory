@@ -1,0 +1,17 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The edit is uncommitted, so status,
+# diff and commit have something to show.
+server: git
+seed: {files: seed/files, git: true}
+edits: {notes/hello.txt: "changed by the conformance fixture\n"}
+calls:
+- {tool: status, expect: {contains: [notes/hello.txt]}}
+- {tool: diff, expect: {contains: [changed by the conformance fixture]}}
+- {tool: log, args: {n: 5}}
+- {tool: commit, args: {message: conformance change}, expect: {contains: [committed]}}
+- {tool: branch, args: {name: conform/check}, expect: {contains: [created branch conform/check]}}
+- {tool: checkout, args: {name: conform/check}, expect: {contains: [switched to conform/check]}}
+refusals:
+- {tool: log, args: {n: 0}, contains: [n must be at least 1]}
+- {tool: branch, args: {name: "bad name"}, contains: [invalid branch name]}
+- {tool: checkout, args: {name: no-such-branch}, contains: ["no such branch: no-such-branch"]}
+- {tool: commit, args: {message: nothing new}, contains: [nothing to commit]}

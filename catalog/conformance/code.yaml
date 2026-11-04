@@ -1,0 +1,10 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py).
+server: code
+seed: {files: seed/files}
+calls:
+- {tool: run_tests, args: {path: test_calc.py}, expect: {keys: [exit_code, counts, output]}}
+- {tool: run_python, args: {path: calc.py}, expect: {keys: [exit_code, output], contains: ["5"]}}
+refusals:
+- {tool: run_python, args: {path: notes/hello.txt}, contains: [not a Python file]}
+- {tool: run_tests, args: {args: "--rootdir=/"}, contains: [pytest option not allowed]}
+- {tool: run_tests, args: {path: ../state}, contains: [path escapes the workspace]}
