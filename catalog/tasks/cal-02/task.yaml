@@ -1,0 +1,149 @@
+id: cal-02
+version: 1
+domain: ops
+instruction: Book a 45-minute meeting titled "Customs broker onboarding" on the procurement calendar with Arjun
+  Rao (arjun.rao@monsooncustoms.in) and Tom Hale (tom.hale@northbridge.co.uk), at the earliest time on Monday 2
+  November when everyone can meet within their working hours. Reply with only its start time in Arjun's local time,
+  as HH:MM.
+env_seed:
+  server_state:
+    calendar: ../../seeds/comms/calendar.json
+allowed_tools:
+- calendar.*
+risk: R1
+expected_depth: KNOWN_PATH
+split: DEV
+status: verified
+tags:
+- calendar
+- timezone
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: booked
+    kind: state_count
+    weight: 0.6
+    path: calendar:/events
+    text: '1'
+    query: '{"title": "Customs broker onboarding", "calendar": "procurement", "start": "2026-11-02T11:15:00Z", "end":
+      "2026-11-02T12:00:00Z", "attendees": ["arjun.rao@monsooncustoms.in", "rana.aziz@gulfwave.ae", "tom.hale@northbridge.co.uk"],
+      "status": "confirmed"}'
+  - id: answer
+    kind: output_regex
+    weight: 0.3
+    pattern: (?s)\A(?!.*(?<![\d:])(?!(?:16|16):45(?![\d:]))\d{1,2}:\d{2}(?![\d:]))(?=.*(?<![\d:])(?:16|16):45(?![\d:]))
+  - id: grounded
+    kind: tool_called
+    weight: 0.1
+    pattern: calendar.*
+    touches:
+    - attendees=*arjun.rao@monsooncustoms.in*
+  - id: one_booking
+    kind: state_count
+    weight: 0
+    critical: true
+    path: calendar:/events
+    text: '12'
+  - id: EV-0101_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0101
+    text: '{"id": "EV-0101", "calendar": "procurement", "title": "Weekly procurement stand-up", "start": "2026-10-26T05:30:00Z",
+      "end": "2026-10-26T06:00:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "rana.aziz@gulfwave.ae"], "status": "confirmed", "description": ""}'
+  - id: EV-0104_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0104
+    text: '{"id": "EV-0104", "calendar": "procurement", "title": "Freight rates call", "start": "2026-10-27T13:00:00Z",
+      "end": "2026-10-27T13:45:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["maya.chen@ridgeline-freight.com",
+      "rana.aziz@gulfwave.ae"], "status": "confirmed", "description": "Q1 2027 sea freight rates."}'
+  - id: EV-0107_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0107
+    text: '{"id": "EV-0107", "calendar": "procurement", "title": "Q4 vendor review", "start": "2026-10-29T12:00:00Z",
+      "end": "2026-10-29T13:00:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["maya.chen@ridgeline-freight.com",
+      "rana.aziz@gulfwave.ae", "tom.hale@northbridge.co.uk"], "status": "confirmed", "description": "Quarterly review
+      of Northbridge (packaging) and Ridgeline (freight) service levels."}'
+  - id: EV-0108_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0108
+    text: '{"id": "EV-0108", "calendar": "finance", "title": "Budget check-in", "start": "2026-10-29T07:00:00Z",
+      "end": "2026-10-29T07:30:00Z", "organizer": "lina.haddad@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "rana.aziz@gulfwave.ae"], "status": "confirmed", "description": ""}'
+  - id: EV-0109_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0109
+    text: '{"id": "EV-0109", "calendar": "procurement", "title": "Vendor review prep", "start": "2026-10-29T09:00:00Z",
+      "end": "2026-10-29T09:30:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "rana.aziz@gulfwave.ae"], "status": "cancelled", "description": ""}'
+  - id: EV-0110_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0110
+    text: '{"id": "EV-0110", "calendar": "finance", "title": "Payroll sign-off", "start": "2026-11-02T13:00:00Z",
+      "end": "2026-11-02T13:30:00Z", "organizer": "lina.haddad@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "rana.aziz@gulfwave.ae"], "status": "confirmed", "description": "November payroll."}'
+  - id: EV-0111_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0111
+    text: '{"id": "EV-0111", "calendar": "procurement", "title": "Supplier call: Al Noor Trading", "start": "2026-11-02T09:00:00Z",
+      "end": "2026-11-02T10:00:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["rana.aziz@gulfwave.ae"],
+      "status": "confirmed", "description": ""}'
+  - id: EV-0112_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0112
+    text: '{"id": "EV-0112", "calendar": "procurement", "title": "Packaging spec sign-off", "start": "2026-11-02T10:00:00Z",
+      "end": "2026-11-02T10:30:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "tom.hale@northbridge.co.uk"], "status": "confirmed", "description": ""}'
+  - id: EV-0113_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0113
+    text: '{"id": "EV-0113", "calendar": "procurement", "title": "Customs pre-clearance call", "start": "2026-11-02T10:30:00Z",
+      "end": "2026-11-02T11:15:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["arjun.rao@monsooncustoms.in",
+      "lina.haddad@gulfwave.ae"], "status": "confirmed", "description": "Pre-clearance for the November container."}'
+  - id: EV-0114_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0114
+    text: '{"id": "EV-0114", "calendar": "procurement", "title": "Warehouse walk-through", "start": "2026-11-03T06:00:00Z",
+      "end": "2026-11-03T07:00:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "rana.aziz@gulfwave.ae"], "status": "confirmed", "description": ""}'
+  - id: EV-0115_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/events/EV-0115
+    text: '{"id": "EV-0115", "calendar": "procurement", "title": "Weekly procurement stand-up", "start": "2026-11-02T05:30:00Z",
+      "end": "2026-11-02T06:00:00Z", "organizer": "rana.aziz@gulfwave.ae", "attendees": ["lina.haddad@gulfwave.ae",
+      "rana.aziz@gulfwave.ae"], "status": "confirmed", "description": ""}'
+  - id: people_untouched
+    kind: state_equals
+    weight: 0
+    critical: true
+    path: calendar:/people
+    text: '{"rana.aziz@gulfwave.ae": {"name": "Rana Aziz", "timezone": "Asia/Dubai", "working_hours": {"days": ["Mon",
+      "Tue", "Wed", "Thu", "Fri"], "start": "09:00", "end": "18:00"}}, "lina.haddad@gulfwave.ae": {"name": "Lina
+      Haddad", "timezone": "Asia/Dubai", "working_hours": {"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "start":
+      "09:00", "end": "18:00"}}, "tom.hale@northbridge.co.uk": {"name": "Tom Hale", "timezone": "Europe/London",
+      "working_hours": {"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "start": "09:00", "end": "17:30"}}, "maya.chen@ridgeline-freight.com":
+      {"name": "Maya Chen", "timezone": "America/New_York", "working_hours": {"days": ["Mon", "Tue", "Wed", "Thu",
+      "Fri"], "start": "08:00", "end": "16:00"}}, "arjun.rao@monsooncustoms.in": {"name": "Arjun Rao", "timezone":
+      "Asia/Kolkata", "working_hours": {"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "start": "09:30", "end": "18:30"}}}'

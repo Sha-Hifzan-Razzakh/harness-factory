@@ -312,6 +312,10 @@ class StateDiffGrader:
             return self._git_log(c, ctx)
         if c.kind in ("biz_equals", "biz_count"):
             return _biz_check(c, ctx.after.biz)
+        if c.kind in ("state_equals", "state_count"):
+            name, _, pointer = (c.path or "").partition(":")
+            return _json_state_check(c.kind == "state_equals", pointer, c, ctx.after.json_state(name),
+                                     f"no {name} state (the task seeds none, or it was removed)")
         return False, f"unknown check kind {c.kind}"
 
     @staticmethod
@@ -438,11 +442,17 @@ def _biz_expected(text: str):
 
 
 def _biz_check(c: WeightedCheck, doc) -> tuple[bool, str]:
+    return _json_state_check(c.kind == "biz_equals", c.path or "", c, doc,
+                             "no business state (the task seeds none, or it was removed)")
+
+
+def _json_state_check(equals: bool, pointer: str, c: WeightedCheck, doc, absent: str) -> tuple[bool, str]:
+    """biz_equals / state_equals (equals) and biz_count / state_count on one JSON state document, strict on type."""
     if doc is None:
-        return False, "no business state (the task seeds none, or it was removed)"
-    actual = _pointer(doc, c.path or "")
+        return False, absent
+    actual = _pointer(doc, pointer)
     shown = "missing" if actual is _MISSING else json.dumps(actual, default=str)[:120]
-    if c.kind == "biz_equals":
+    if equals:
         found = actual is not _MISSING and _biz_eq(actual, _biz_expected(c.text or ""))
         ok = (not found) if c.negate else found
         return ok, ("equal" if found else f"got {shown}") + (" (negated)" if c.negate else "")

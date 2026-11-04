@@ -146,7 +146,7 @@ jobs:
       - name: References and smoke inside containers
         run: |
           uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v2-docs,v2-web --models scripted/replay --strict -j 8 --exclude-tag needs-retry
+          uv run --no-sync hfx smoke --recipe v2-base,v2-docs,v2-web,v2-outbox --models scripted/replay --strict -j 8 --exclude-tag needs-retry
           uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
           uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8 --exclude-tag needs-retry
 

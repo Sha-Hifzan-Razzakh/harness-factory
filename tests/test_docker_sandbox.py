@@ -253,3 +253,21 @@ async def test_web_corpus_inside_the_container(factory, docker_required, monkeyp
             assert page["url"] == "https://docs.relaymail.example/v2/rate-limits" and "600" in page["text"]
     finally:
         sb.teardown()
+
+
+async def test_outbox_and_calendar_states_inside_the_container(factory, docker_required, monkeypatch):
+    """The outbox and calendar servers run in the container and write their states in /state, next to the
+    database and biz.json; graders read the host side of the same files."""
+    monkeypatch.setattr(settings, "SANDBOX", "docker")
+    sb = make_sandbox("comms-docker")
+    try:
+        assert (sb.env()["HF_OUTBOX"], sb.env()["HF_CALENDAR"]) == ("/state/outbox.json", "/state/calendar.json")
+        assert sb.state_path("outbox").parent == sb.db_path.parent == sb.biz_path.parent
+    finally:
+        sb.teardown()
+    rec = await run_one(factory, factory.tasks.get("cal-01"), factory.recipes["v2-outbox"], "scripted/replay",
+                        "scripted")
+    assert rec.status.value == "SUCCESS", rec.grades
+    state = next(g for g in rec.grades if g["grader_id"] == "state_diff")
+    assert state["snapshot"]["sandbox"] == "docker"
+    assert "+outbox deliveries/D-0004" in state["detail"] and "~calendar events/EV-0107" in state["detail"]

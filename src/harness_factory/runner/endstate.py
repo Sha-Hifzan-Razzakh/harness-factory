@@ -3,6 +3,8 @@
 One zip per run, next to its trace (`<trace>.endstate.zip`):
   workspace/...      every file in the sandbox workspace
   state/task.sqlite  the task database (an sqlite3 serialize() of it: a consistent copy, WAL included)
+  state/<name>.json  each stateful mock server's JSON state the run had (biz.json, outbox.json, calendar.json:
+                     env/state.JSON_STATES), so state checks re-grade like the rest
   run.json           what the graders read besides the environment: the before-state, the run's result (status,
                      whether it was scored, final answer, harness violations), the spans graders saw, the remote
                      tenants' end state, max_steps, task class and weight profile
@@ -26,6 +28,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from harness_factory.env.state import JSON_STATES
 from harness_factory.grading.base import GradeContext
 
 log = logging.getLogger(__name__)
@@ -82,6 +85,8 @@ def save_endstate(trace_path: Path, ctx: GradeContext, **meta: Any) -> str | Non
     tmp: Path | None = None
     try:
         files = _workspace_files(ctx.workspace)
+        files += [(f"state/{name}", p) for name, _ in JSON_STATES.values()
+                  if (p := ctx.db_path.with_name(name)).is_file()]
         db = _db_bytes(ctx.db_path)
         size = sum(p.stat().st_size for _, p in files) + len(db or b"")
         if size > max_bytes():
