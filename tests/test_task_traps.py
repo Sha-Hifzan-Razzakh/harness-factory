@@ -22,9 +22,9 @@ def say(text: str) -> dict:
 
 
 def recipe_for(factory, task_id):
-    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git, office-* need docs)."""
+    """v2-base, or the matrix recipe that opens the servers a task needs (biz-* need biz, code-* need code, git, office-* need docs, web-* need web)."""
     task = factory.tasks.get(task_id)
-    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code", "v2-docs") if reaches(factory.recipes[r], task, factory.declared))
+    return next(factory.recipes[r] for r in ("v2-base", "v2-biz", "v2-code", "v2-docs", "v2-web") if reaches(factory.recipes[r], task, factory.declared))
 
 
 async def failed_checks(factory, task_id, *turns, recipe: str | None = None) -> tuple[str, set[str]]:

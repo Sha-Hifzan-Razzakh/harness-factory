@@ -272,6 +272,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                           **({"task_faults": bound.content_hash()} if bound else {}),
                           **({"delegate": delegate.child.id} if delegate else {}),
                           **({"retrieval": retrieval_info} if retrieval_info else {}),          # KNW-01, KNW-03
+                          **({"web_corpus": sandbox.corpus_info} if sandbox.corpus_info else {}),   # ADR 0018
                           **({"remote_servers": remote, "remote_mode": remote_mode,                    # ENV-02
                               "remote_versions": pool.server_versions()} if remote else {}),
                           **({"tenant": tenant, "tenant_servers": pool.tenant_servers()} if tenant else {}),

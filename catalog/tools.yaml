@@ -329,3 +329,19 @@ servers:
     timeout_s: 20
     schema_hash: 9c882616c6f5d624
     description_hash: 9404d7985a0d71a1
+- id: web
+  transport: stdio
+  module: harness_factory.env.mcp.impl.web_server
+  tools:
+  - name: search
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: ec92dd7dca30d479
+    description_hash: d91336c9567f8ed6
+  - name: fetch
+    side_effect: READ
+    risk: R0
+    timeout_s: 10
+    schema_hash: b897d25c85d83e9a
+    description_hash: 156a233d93c1c632

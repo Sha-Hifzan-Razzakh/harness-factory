@@ -90,7 +90,7 @@ jobs:
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
         run: |
-             uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs,v2-retrieval-bm25,v2-retrieval-hybrid,v2-compact,v2-parallel-tools --models scripted/replay --strict -j 8 --exclude-tag perturbation
+             uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs,v2-retrieval-bm25,v2-retrieval-hybrid,v2-compact,v2-parallel-tools,v2-web --models scripted/replay --strict -j 8 --exclude-tag perturbation
              uv run --no-sync hfx smoke --recipe v4-structured,v5-parallel --models scripted/replay --strict -j 8 --exclude-tag long,perturbation
 
       - name: Runner gate (framework runners solve the visible tasks offline, ADR 0016)
@@ -136,7 +136,7 @@ jobs:
       - name: References and smoke inside containers
         run: |
           uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v2-docs --models scripted/replay --strict -j 8 --exclude-tag needs-retry
+          uv run --no-sync hfx smoke --recipe v2-base,v2-docs,v2-web --models scripted/replay --strict -j 8 --exclude-tag needs-retry
           uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
           uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8 --exclude-tag needs-retry
 
