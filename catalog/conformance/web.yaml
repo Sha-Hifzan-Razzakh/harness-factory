@@ -1,0 +1,10 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The recorded relaymail-docs corpus
+# (ADR 0018), mounted read-only as in a run.
+server: web
+seed: {corpus: relaymail-docs}
+calls:
+- {tool: search, args: {query: rate limit per key}, expect: {contains: [docs.relaymail.example]}}
+- {tool: fetch, args: {url: "https://docs.relaymail.example/rate-limits"}, expect: {contains: ["600"]}}
+refusals:
+- {tool: search, args: {query: rate limit, page: 99}, contains: [page]}
+- {tool: fetch, args: {url: "ftp://docs.relaymail.example/"}, contains: [not an http(s) URL]}

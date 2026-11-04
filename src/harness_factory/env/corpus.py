@@ -155,7 +155,11 @@ class Corpus(BaseModel):
 
 
 def corpora_dir(task_dir: Path) -> Path:
-    """Where a task's corpora are: `corpora/` next to the folder of task folders (catalog/tasks/<id>)."""
+    """Where a task's corpora are: `corpora/` next to the folder of task folders (catalog/tasks/<id>). A conformance
+    fixture's seed is relative to catalog/conformance/ itself, so there `corpora/` is a sibling of that folder."""
+    for root in (task_dir.parent.parent, task_dir.parent):
+        if (root / CORPORA).is_dir():
+            return root / CORPORA
     return task_dir.parent.parent / CORPORA
 
 

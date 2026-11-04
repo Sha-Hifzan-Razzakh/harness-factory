@@ -1,0 +1,15 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The comms seed's calendar state (now is
+# 2026-10-29 06:00Z); the calls run in order (an event is booked, moved, then cancelled).
+server: calendar
+seed: {server_state: {calendar: ../seeds/comms/calendar.json}}
+calls:
+- {tool: list_events, args: {start: "2026-11-02T00:00:00+04:00", end: "2026-11-07T00:00:00+04:00"}, expect: {keys: [events], contains: [EV-0115]}}
+- {tool: get_event, args: {id: EV-0107}, expect: {contains: [EV-0107]}}
+- {tool: find_free_slots, args: {attendees: [tom.hale@northbridge.co.uk], duration: 30, window: {start: "2026-11-02T00:00:00+04:00", end: "2026-11-04T00:00:00+04:00"}}, expect: {keys: [slots]}}
+- {tool: create_event, args: {title: Conformance check, start: "2026-11-02T15:15:00+04:00", end: "2026-11-02T15:45:00+04:00", attendees: [tom.hale@northbridge.co.uk], calendar: procurement}, expect: {contains: [Conformance check]}}
+- {tool: move_event, args: {id: EV-0116, start: "2026-11-02T16:00:00+04:00", end: "2026-11-02T16:30:00+04:00"}, expect: {contains: [EV-0116]}}
+- {tool: cancel_event, args: {id: EV-0116}, expect: {contains: [cancelled]}}
+refusals:
+- {tool: get_event, args: {id: EV-9999}, contains: ["unknown event id 'EV-9999'"]}
+- {tool: create_event, args: {title: Too early, start: "2026-10-01T10:00:00+04:00", end: "2026-10-01T10:30:00+04:00", attendees: [tom.hale@northbridge.co.uk], calendar: procurement}, contains: [is in the past]}
+- {tool: list_events, args: {start: "2026-11-02T00:00:00+04:00", end: "2026-11-01T00:00:00+04:00"}, contains: [end must be after start]}

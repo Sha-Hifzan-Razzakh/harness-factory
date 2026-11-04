@@ -1,0 +1,14 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The comms seed's outbox state; the
+# calls run in order (one email is sent, then listed).
+server: outbox
+seed: {server_state: {outbox: ../seeds/comms/outbox.json}}
+calls:
+- {tool: list_templates, expect: {keys: [templates], contains: [T-02]}}
+- {tool: get_template, args: {id: T-02}, expect: {contains: [T-02]}}
+- {tool: send_email, args: {to: [maya.chen@ridgeline-freight.com], subject: Conformance, body: checked by conformance}, expect: {contains: [maya.chen@ridgeline-freight.com]}}
+- {tool: notify, args: {channel: "#procurement", text: checked by conformance}, expect: {contains: [checked by conformance]}}
+- {tool: list_sent, expect: {contains: [Conformance]}}
+refusals:
+- {tool: get_template, args: {id: T-99}, contains: ["unknown template id 'T-99'"]}
+- {tool: send_email, args: {to: [someone@example.com], subject: x, body: y}, contains: [not an approved recipient domain]}
+- {tool: notify, args: {channel: "#nowhere", text: x}, contains: ["unknown channel '#nowhere'"]}
