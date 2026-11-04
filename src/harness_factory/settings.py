@@ -88,3 +88,23 @@ def remote_mode() -> str:
 
 def remote_recordings() -> Path:
     return Path(os.environ.get("HF_REMOTE_RECORDINGS", VAR / "remote"))
+
+
+def checkpoint_backend() -> str | None:
+    """LangGraph checkpointing of V2-V5 runs, so a paused run resumes from its last node (SUB-09): HF_CHECKPOINT =
+    off (default) | sqlite | postgres. Read at call time. Off changes nothing about how runs execute or score."""
+    value = os.environ.get("HF_CHECKPOINT", "off").strip().lower()
+    if value in ("", "off", "0", "none"):
+        return None
+    if value not in ("sqlite", "postgres"):
+        raise ValueError(f"HF_CHECKPOINT must be off, sqlite or postgres, not {value!r}")
+    return value
+
+
+def checkpoint_url(backend: str) -> str:
+    """Where checkpoints go: HF_CHECKPOINT_URL, a file path for sqlite (default var/checkpoints.db) or a Postgres
+    conninfo string for postgres (required; keep credentials in .env)."""
+    url = os.environ.get("HF_CHECKPOINT_URL", "")
+    if url or backend != "sqlite":
+        return url
+    return str(VAR / "checkpoints.db")

@@ -52,6 +52,7 @@ class RunnerContext:
     transcript: list[dict[str, Any]] = field(default_factory=list)   # last conversation sent, plus the reply
     model_calls: int = 0                    # calls the framework made into the model client
     tool_calls: int = 0                     # calls the framework made into tool callables
+    tools_in_flight: int = 0                # started, not yet charged to the budget (frameworks run calls at once)
 
     def halt(self, stop: str, error: str | None = None) -> RunnerStop:
         if self.stop is None:
@@ -73,14 +74,26 @@ class RunnerContext:
         return turn.message
 
     async def tool(self, name: str, arguments: dict[str, Any] | str | None) -> ToolResult:
-        """Measurement point (b): the same order as the native `run_tool_calls`: budget, then ToolExecutor."""
+        """Measurement point (b): the same order as the native `run_tool_calls`: budget, then ToolExecutor.
+
+        Native runs a reply's calls one after another; several frameworks start them all at once (Agent Framework,
+        AutoGen). A call is charged to the budget when it ends, so calls still running count against max_tool_calls
+        here: a batch never runs more calls than the budget has left, as natively."""
         self.tool_calls += 1
         if self.stop is not None:
             raise RunnerStop(self.stop, self.error)
-        limit = self.inst.budget.exceeded_by(before="tool_call")
+        budget = self.inst.budget
+        limit = budget.exceeded_by(before="tool_call")
+        if not limit and budget.used_tool_calls + self.tools_in_flight >= budget.limits.max_tool_calls:
+            limit = f"max_tool_calls {budget.limits.max_tool_calls}"
         if limit:
             raise self.halt(f"budget:{limit}")
-        return await self.inst.tools.execute(name, arguments if arguments is not None else {}, scope=self.inst.scope)
+        self.tools_in_flight += 1
+        try:
+            return await self.inst.tools.execute(name, arguments if arguments is not None else {},
+                                                 scope=self.inst.scope)
+        finally:
+            self.tools_in_flight -= 1
 
     def system_and_task(self) -> tuple[str, str]:
         """The recipe's assembled prompt: its system message becomes the framework's system prompt / instructions,
@@ -149,6 +162,11 @@ class RunnerRegistry:
     _modules: ClassVar[dict[str, str]] = {
         "langgraph-prebuilt": "harness_factory.runners.langgraph_prebuilt:LangGraphPrebuiltRunner",
         "llamaindex-agent": "harness_factory.runners.llamaindex_agent:LlamaIndexAgentRunner",
+        "ms-agent-framework": "harness_factory.runners.ms_agent_framework:MsAgentFrameworkRunner",
+        "autogen-agentchat": "harness_factory.runners.autogen_agentchat:AutoGenAgentChatRunner",
+        "langgraph-supervisor": "harness_factory.runners.langgraph_supervisor:LangGraphSupervisorRunner",
+        "pydantic-ai": "harness_factory.runners.pydantic_ai_agent:PydanticAIRunner",
+        "openai-agents": "harness_factory.runners.openai_agents:OpenAIAgentsRunner",
     }
 
     @classmethod

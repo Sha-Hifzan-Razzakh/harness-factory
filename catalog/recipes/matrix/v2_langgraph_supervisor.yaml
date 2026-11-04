@@ -1,0 +1,8 @@
+# Matrix (runtime): v2-base run by LangGraph's supervisor (langgraph_supervisor.create_supervisor) over one worker
+# agent (langchain.agents.create_agent + ToolNode, MCP tools through langchain.mcp) instead of the native loop. Same
+# prompts, tools, permissions and budget; the supervisor's handoffs, the worker's loop, tool formatting and error
+# handling at their defaults. A V2 recipe on purpose: V5's planner and delegation are native control flow. ADR 0016.
+id: v2-langgraph-supervisor
+version: 1
+base: v2-base
+runtime: langgraph-supervisor

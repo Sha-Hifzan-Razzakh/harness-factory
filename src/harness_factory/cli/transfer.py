@@ -2,6 +2,11 @@
 
     hfx transfer run v2-langgraph-prebuilt --model scripted/replay --provider scripted --run --seeds 4
     hfx transfer list
+
+Migration check (RUN-11): the same recipe on two runners, e.g. AutoGen against its successor Microsoft Agent Framework:
+
+    hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay \
+        --provider scripted --run --min-pairs 20
 """
 
 from __future__ import annotations
@@ -12,8 +17,8 @@ import typer
 from rich.table import Table
 
 transfer_app = typer.Typer(no_args_is_help=True,
-                           help="Runner transfer check: native vs a framework runner on the same recipe, judged "
-                                "with the provider-calibration rule.")
+                           help="Runner transfer check: native (or another runner, --baseline) vs a framework runner "
+                                "on the same recipe, judged with the provider-calibration rule.")
 
 
 def _console():
@@ -22,12 +27,15 @@ def _console():
 
 
 def _table(trs) -> Table:
-    t = Table("id", "native", "runner", "runtime", "framework", "model", "provider", "pairs", "mean R-N",
+    t = Table("id", "native (or baseline)", "runner", "runtime", "framework", "model", "provider", "pairs", "mean R-N",
               "95% interval", "W/L/T", "tokens R/N", "calls R/N", "verdict",
-              title="runner transfer checks (runner minus native, E0)")
+              title="runner transfer checks (runner minus native or baseline runner, E0)")
     for tr in trs:
         fw = ", ".join(f"{k} {v}" for k, v in tr.framework.items())
-        t.add_row(tr.id, tr.native_recipe, tr.runner_recipe, tr.runtime, fw, tr.canonical_model, tr.provider,
+        if tr.baseline_framework:                                    # a migration check: both sides are runners
+            fw += " vs " + ", ".join(f"{k} {v}" for k, v in tr.baseline_framework.items())
+        native = tr.native_recipe if tr.baseline_runtime is None else f"{tr.native_recipe} ({tr.baseline_runtime})"
+        t.add_row(tr.id, native, tr.runner_recipe, tr.runtime, fw, tr.canonical_model, tr.provider,
                   str(tr.n), "-" if tr.mean is None else f"{tr.mean:+.3f}",
                   "-" if tr.ci is None else f"[{tr.ci[0]:+.3f}, {tr.ci[1]:+.3f}]", f"{tr.wins}/{tr.losses}/{tr.ties}",
                   "-" if tr.token_ratio is None else f"{tr.token_ratio:.2f}",
@@ -38,6 +46,9 @@ def _table(trs) -> Table:
 @transfer_app.command("run")
 def run(runner: str = typer.Argument(..., help="recipe id with a framework runtime, e.g. v2-langgraph-prebuilt"),
         native: str | None = typer.Option(None, "--native", help="its native counterpart; default: its base"),
+        baseline: str | None = typer.Option(None, "--baseline",
+                                            help="migration check (RUN-11): compare with this recipe on another "
+                                                 "runner instead of native, e.g. v2-ms-agent-framework"),
         model: str = typer.Option(..., "--model"),
         provider: str = typer.Option(..., "--provider"),
         margin: float = typer.Option(0.1, "--margin", help="largest E0 difference still called equivalent"),
@@ -56,11 +67,16 @@ def run(runner: str = typer.Argument(..., help="recipe id with a framework runti
     if runner not in f.recipes:
         console.print(f"[red]unknown recipe {runner!r}")
         raise typer.Exit(code=2)
-    native = native or f.recipes[runner].base
-    if native not in f.recipes:
-        console.print(f"[red]{runner} names no native counterpart; pass --native")
+    if native and baseline:
+        console.print("[red]pass --native or --baseline, not both")
         raise typer.Exit(code=2)
-    issues = counterpart_issues(f.recipes[native], f.recipes[runner])
+    between = baseline is not None
+    native = baseline or native or f.recipes[runner].base
+    if native not in f.recipes:
+        console.print(f"[red]{runner} names no native counterpart; pass --native" if not between
+                      else f"[red]unknown recipe {native!r}")
+        raise typer.Exit(code=2)
+    issues = counterpart_issues(f.recipes[native], f.recipes[runner], between)
     if issues:
         for i in issues:
             console.print(f"[red]{i}")
@@ -72,7 +88,7 @@ def run(runner: str = typer.Argument(..., help="recipe id with a framework runti
         console.print(f"ran {len(result.records)} runs ({len(result.skipped)} already in the store, "
                       f"{len(result.errors)} errors)")
     tr = transfer(f.store.rows(), f.providers, f.recipes[native], f.recipes[runner], model, provider,
-                  margin=margin, min_pairs=min_pairs, note=note)
+                  margin=margin, min_pairs=min_pairs, note=note, between_runners=between)
     f.store.save_transfer(tr)
     console.print(_table([tr]))
     console.print(f"{tr.verdict}: {tr.reason}")

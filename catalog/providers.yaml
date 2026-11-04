@@ -12,6 +12,8 @@ providers:
       - {canonical: scripted/retry,  provider_model_id: retry}    # retries a step after a tool error
       - {canonical: scripted/invent, provider_model_id: invent}   # first call names a tool that doesn't exist
       - {canonical: scripted/delegate, provider_model_id: delegate}   # hands the task to a helper when it can
+      # No native tool calling: writes its calls as JSON text, which tool-call emulation (instructor) parses (SUB-02)
+      - {canonical: scripted/emulated, provider_model_id: emulated, caps: {tool_calling: emulated}}
 
   # The offline rubric judge (grading/judge.ScriptedJudgeBackend, ADR 0014): deterministic, never calibrated.
   # Its own provider, so a smoke over the scripted provider's models never runs it as an agent.

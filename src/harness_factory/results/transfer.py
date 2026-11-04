@@ -13,6 +13,12 @@ framework runner?
 
 A verdict is about one recipe on one model and provider: a framework upgrade changes the runner recipe's hash, so
 its runs no longer pair with the old verdict's and the check has to be run again.
+
+Migration check (RUN-11): the baseline may itself be a runner recipe (`between_runners=True`), e.g. the same recipe on
+AutoGen and on its successor Microsoft Agent Framework. Steps 1 to 4 are the same, with the baseline in place of
+native: both recipes must differ only in `runtime`, and the two runtimes must differ. The record then also names the
+baseline's runtime and framework versions (`baseline_runtime`, `baseline_framework`); the `native_*` fields hold the
+baseline side, so records of native checks keep their shape and their ids.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from harness_factory.results.store import UNSCORED
 from harness_factory.runners.identity import framework_versions
 
 _NOT_HARNESS = ("id", "version", "base", "runtime")         # what may differ between the two recipes
+_ID_OMIT_WHEN_NONE = ("baseline_runtime", "baseline_framework")   # unset for native checks: their ids stay
 
 
 class Transfer(BaseModel):
@@ -59,17 +66,26 @@ class Transfer(BaseModel):
     reason: str
     note: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # Migration check (RUN-11): set when the baseline (`native_*`) is itself a framework runner.
+    baseline_runtime: str | None = None
+    baseline_framework: dict[str, str | None] | None = None
 
     @property
     def id(self) -> str:
-        return content_hash({k: v for k, v in self.model_dump(mode="json").items() if k not in ("created_at", "note")},
-                            12)
+        return content_hash({k: v for k, v in self.model_dump(mode="json").items()
+                             if k not in ("created_at", "note") and not (k in _ID_OMIT_WHEN_NONE and v is None)}, 12)
 
 
-def counterpart_issues(native: HarnessRecipe, runner: HarnessRecipe) -> list[str]:
-    """Why these two recipes are not the same harness on two runtimes (empty when they are)."""
+def counterpart_issues(native: HarnessRecipe, runner: HarnessRecipe, between_runners: bool = False) -> list[str]:
+    """Why these two recipes are not the same harness on two runtimes (empty when they are). With `between_runners`
+    the baseline (`native`) must be a framework runner too, on another runtime (the migration check)."""
     out = []
-    if native.runner is not None:
+    if between_runners:
+        if native.runner is None:
+            out.append(f"{native.id} has no framework runtime (a migration check compares two runners)")
+        elif native.runner == runner.runner:
+            out.append(f"{native.id} and {runner.id} both run on {runner.runner}")
+    elif native.runner is not None:
         out.append(f"{native.id} is not native (runtime {native.runtime})")
     if runner.runner is None:
         out.append(f"{runner.id} has no framework runtime")
@@ -106,8 +122,9 @@ def _median_ratio(ps: list[tuple[dict, dict]], value) -> float | None:
 
 def transfer(rows: list[dict], providers: ProviderCatalog, native: HarnessRecipe, runner: HarnessRecipe,
              canonical_model: str, provider: str, margin: float = DEFAULT_MARGIN,
-             min_pairs: int = DEFAULT_MIN_PAIRS, note: str = "") -> Transfer:
-    issues = counterpart_issues(native, runner)
+             min_pairs: int = DEFAULT_MIN_PAIRS, note: str = "", between_runners: bool = False) -> Transfer:
+    """`native` is the baseline: the native recipe, or with `between_runners` another runner's recipe."""
+    issues = counterpart_issues(native, runner, between_runners)
     if issues:
         raise ValueError("; ".join(issues))
     served = providers.served(provider, canonical_model).provider_model_id
@@ -122,5 +139,7 @@ def transfer(rows: list[dict], providers: ProviderCatalog, native: HarnessRecipe
                     token_ratio=_median_ratio(ps, lambda r: r["tokens_in"] + r["tokens_out"]),
                     call_ratio=_median_ratio(ps, lambda r: r["model_calls"]),
                     verdict=verdict, reason=reason, note=note,
+                    **({"baseline_runtime": str(native.runner),
+                        "baseline_framework": framework_versions(str(native.runner))} if between_runners else {}),
                     **({"mean": d["mean"], "ci": d["ci"], "wins": d["wins"], "losses": d["losses"],
                         "ties": d["ties"]} if ps else {}))

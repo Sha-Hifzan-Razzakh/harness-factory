@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 45 tasks and their class keys (9 held out)
+hfx tasks                 # 57 tasks and their class keys (13 held out)
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -498,7 +498,7 @@ The replies are there to read: their quality is measured by campaigns, not by pr
 ## Observability and MLOps stack
 
 ```bash
-docker compose up -d     # postgres, mlflow, phoenix, otel-collector
+docker compose up -d     # postgres, mlflow, phoenix, otel-collector, langfuse-* (see Langfuse below)
 ```
 
 Then set the following in `.env`:
@@ -509,9 +509,7 @@ Then set the following in `.env`:
 | `MLFLOW_TRACKING_URI` | `http://localhost:5000` | Each run is logged as an MLflow run (params, metrics, trace artifact) |
 | `HF_RESULTS_URL` | `postgresql+psycopg://hf:hf@localhost:5432/hf` | Results go to Postgres (`uv pip install -e ".[postgres,mlops]"`) |
 
-Langfuse needs ClickHouse, Redis and object storage, so it isn't in this compose file. Run Langfuse's official
-docker-compose on the same Docker network, or use Langfuse Cloud. Then set `LANGFUSE_OTLP_ENDPOINT` and
-`LANGFUSE_AUTH` (base64 of `public_key:secret_key`).
+Langfuse runs in the same compose file and needs a key pair in `.env` first: see [Langfuse](#langfuse).
 
 Each run is **one trace**:
 
@@ -574,6 +572,56 @@ heads, and `test_migrations_have_one_head` fails. Rebase that revision: give it 
 available. To use a server you already run, such as the compose `postgres` service, set
 `HF_TEST_POSTGRES_URL=postgresql+psycopg://hf:hf@localhost:5432/hf`. Each test creates its own database there
 and drops it afterwards. With neither Docker nor that variable, the Postgres variants are skipped.
+
+## Langfuse
+
+Self-hosted Langfuse v4 is the collector's second trace target, next to Phoenix. `compose.yaml` follows Langfuse's
+own docker-compose: `langfuse-web` (UI and OTLP ingestion) and `langfuse-worker`, with their own Postgres,
+ClickHouse, Redis and MinIO (`langfuse-postgres`, `-clickhouse`, `-redis`, `-minio`; separate from the results
+`postgres`). Only the UI has a host port (`HF_LANGFUSE_PORT`, default 3000). Langfuse recommends 4 cores and 16 GiB
+for a server; locally, give Docker a few GiB more than the rest of the stack needs.
+
+The collector's `otlphttp/langfuse` exporter sends to `LANGFUSE_OTLP_ENDPOINT` (default
+`http://langfuse-web:3000/api/public/otel`, plus `/v1/traces`; Langfuse takes OTLP over HTTP only, not gRPC). It
+authenticates with HTTP Basic auth built from `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` (the `basicauth`
+extension) and sends `x-langfuse-ingestion-version: 4`, so spans appear at once. At startup `langfuse-web`
+creates the `harness-factory` organization and project if missing and, when both keys are set, registers that key
+pair for the project (headless initialization; the first user too, when its email and password are set). For
+Langfuse Cloud instead, set `LANGFUSE_OTLP_ENDPOINT` to `https://cloud.langfuse.com/api/public/otel` (or your
+region) and use that project's keys.
+
+1. In `.env`, set the key pair and a first user, and replace the local-only secret defaults if anyone else can
+   reach port 3000 (`.env.example` lists them):
+
+   ```bash
+   LANGFUSE_PUBLIC_KEY=pk-lf-$(openssl rand -hex 16)      # write the values, not the commands
+   LANGFUSE_SECRET_KEY=sk-lf-$(openssl rand -hex 16)
+   LANGFUSE_INIT_USER_EMAIL=you@example.com
+   LANGFUSE_INIT_USER_PASSWORD=...
+   ```
+
+2. Pin MinIO. Its vendor publishes the image as `latest` only, so after the first pull write its digest to `.env`:
+   `LANGFUSE_MINIO_IMAGE=$(docker image inspect --format '{{index .RepoDigests 0}}' cgr.dev/chainguard/minio:latest)`.
+   The other Langfuse images have pinned defaults (`LANGFUSE_TAG=4.60.0`, Postgres 17.11, ClickHouse 25.12.12.1,
+   Redis 7.4.11).
+
+3. Check that one scripted run reaches both Phoenix and Langfuse:
+
+   ```bash
+   set -a; . ./.env; set +a                               # the keys, for the curl below
+   docker compose up -d
+   docker compose ps                                       # langfuse-web up; its first start runs migrations
+   curl -fsS http://localhost:3000/api/public/health        # 200 once migrations are done
+   curl -fsS -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" http://localhost:3000/api/public/projects   # keys valid
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 hfx smoke --recipe v2-base --models scripted/replay --strict
+   docker compose logs otel-collector | grep -i error      # nothing: both exporters were accepted
+   ```
+
+   Then open Phoenix (http://localhost:6006, project `default`) and Langfuse (http://localhost:3000, project
+   `harness-factory`, Tracing). Both show one `run:<run-key-short>` trace per run with the same `model_call`,
+   `tool_call` and `grade` children. A 401 in the collector log means the keys in `.env` aren't the project's.
+   `langfuse-web` adds a key pair at startup only when its public key is new: after changing the secret alone,
+   pick a new public key too, then `docker compose up -d` (it recreates `langfuse-web` and `otel-collector`).
 
 ## Layout
 
@@ -641,15 +689,16 @@ gateway, a grant that is a subset of the orchestrator's, a budget capped by what
 to it. A worker that replies `BLOCKED:` or stops early triggers the replan. Each worker is a `delegate.run` span with
 scope `step:<n>`; its conversation is in `snapshot.delegations`. See ADR 0008.
 
-Offline comparison (`scripted/replay`, the 20 DEV + TEST tasks, cost baseline over these five recipes):
+Offline comparison (`scripted/replay`, the 25 DEV + TEST tasks, cost baseline over these five recipes; tokens are
+the total over all 25 runs):
 
 | Recipe | Success | E₀ | C | E | Tokens |
 |---|---|---|---|---|---|
-| `v1-base` | 1/20 (fs-01 only) | 0.100 | 0.054 | 0.094 | ~4,500 |
-| `v2-base` | 20/20 | 1.000 | 0.257 | 0.954 | ~28,000 |
-| `v3-staged` | 20/20 | 1.000 | 0.615 | 0.887 | ~62,000 |
-| `v4-planner` | 20/20 | 1.000 | 0.696 | 0.878 | ~81,000 |
-| `v5-orchestrator` | 20/20 | 1.000 | 0.446 | 0.919 | ~46,000 |
+| `v1-base` | 1/25 (fs-01 only) | 0.090 | 0.052 | 0.085 | ~5,700 |
+| `v2-base` | 25/25 | 1.000 | 0.263 | 0.954 | ~41,000 |
+| `v3-staged` | 25/25 | 1.000 | 0.611 | 0.889 | ~86,000 |
+| `v4-planner` | 25/25 | 1.000 | 0.720 | 0.876 | ~120,000 |
+| `v5-orchestrator` | 25/25 | 1.000 | 0.445 | 0.920 | ~64,000 |
 
 V2 to V5 tie on E₀; efficiency C separates them (see *Cost and efficiency*). V5 costs less than V4 with the same
 plan because each worker starts from a short conversation, where V4's executor carries every step's history.
@@ -705,9 +754,10 @@ the recipe's skills in the run's state folder, outside the workspace: the model 
 `skills.load` and can't change them. `skills.load` is granted to every task (`granted_by: []`) because it reads
 harness material, nothing from the task's world.
 
-> **Caveat:** these skills were written by the same author as the tasks, held-out ones included. Skill gains on
-> this catalog are an upper bound. Tasks written later, by an author who hasn't seen the skills, give the honest
-> estimate.
+> **Caveat:** these skills were written by the same author as task batches 1 and 2, held-out ones included, so
+> skill gains on those tasks are an upper bound. Batch 3 (`b3-*`, tag `batch-3`) was written by an author who never
+> saw the skills, recipes, prompts or shapes; measure skills on it for the honest estimate, in a store of its own:
+> `HF_VAR=var/batch3 hfx smoke --tag batch-3 --recipe v2-base,v2-skills-upfront,v2-skills-on-demand --models <m>`.
 
 **New tools without task edits.** A task's `allowed_tools` decides what a run may call, and editing every task
 would change every task hash. A READ tool that reveals nothing beyond other tools declares them instead:
@@ -817,6 +867,7 @@ runtime: langgraph-prebuilt      # or llamaindex-agent; unset = native (left out
 | `native` | the factory's shapes (`shapes/`) | the run's MCP session pool | (none) |
 | `langgraph-prebuilt` | `langchain.agents.create_agent` (LangGraph graph with `ToolNode`; successor of `create_react_agent`) | `langchain.mcp` (successor of langchain-mcp-adapters, which needs `mcp<2`) | `langgraph-prebuilt` |
 | `llamaindex-agent` | `FunctionAgent` | `McpToolSpec` (llama-index-tools-mcp) | `llamaindex` |
+| `autogen-agentchat` | `AssistantAgent` in a single-agent `RoundRobinGroupChat` (`TextMessageTermination`) | autogen-core `BaseTool`s over the executor (autogen-ext's MCP tools don't import under MCP 2.x) | `autogen-agentchat` |
 
 - **Only two things are wrapped.**
   - **Model client:** a LangChain chat model / LlamaIndex LLM whose calls go through `model_turn` and
@@ -848,6 +899,39 @@ hfx transfer list
 Offline (`scripted/replay`, the 20 visible tasks), both runners pass 20/20 with the same model and tool calls as
 `v2-base`, and both transfer checks are `equivalent` (20 pairs, every one a tie). Tokens against `v2-base`:
 LangGraph ×1.02, LlamaIndex ×1.22, mostly from its repr tool results. Real models are where runners can differ.
+
+**Migration check (RUN-11).** For teams on AutoGen (in maintenance mode since October 2025) moving to its successor,
+Microsoft Agent Framework: the same recipe on both runners, paired and judged with the same rule. `--baseline` names
+the runner recipe to compare against instead of native:
+
+```bash
+hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20
+```
+
+Offline it comes out `equivalent` (20 ties). With real models the clearest difference is tool errors: AutoGen shows
+the model the server's message, and Agent Framework shows "Error: Function failed.". Semantic Kernel has no runner:
+every release pins `pydantic<2.14`, and the latest ones also pin `mcp<2`, so it can't be installed beside the factory.
+The AutoGen extra moves protobuf to 5.29 (autogen-core pins `~=5.29.3`). Details are in ADR 0016's #55 addendum.
+
+### More runners (#56)
+
+| Runtime | Agent | MCP tools via | Model client | Extra |
+|---|---|---|---|---|
+| `langgraph-supervisor` | `langgraph_supervisor.create_supervisor` over one `create_agent` worker | `langchain.mcp`, as `langgraph-prebuilt` (the worker's) | `GatewayChatModel` (both agents) | `langgraph-supervisor` |
+| `pydantic-ai` | `pydantic_ai.Agent` | `pydantic_ai.mcp.MCPToolset` (its FastMCP client swapped for an `ExecutorSession` facade) | `GatewayModel(pydantic_ai.models.Model)` | `pydantic-ai` |
+| `openai-agents` | `agents.Agent` run by `agents.Runner` | an `agents.mcp.MCPServer` over `ExecutorSession` | `GatewayModel(agents.models.interface.Model)` | `openai-agents` |
+
+- **The supervisor runs V2 recipes.** It splits the work itself (supervisor → `transfer_to_worker` → worker →
+  back), so a V5 recipe's planner, worker prompt and delegation, which are native control flow, don't apply. Its
+  handoff is a graph move, not an environment tool: no ToolExecutor span. It costs two model calls per run (the
+  handoff and the supervisor's closing answer): offline, calls ×1.67 and tokens ×1.69 against `v2-base`.
+- **Pydantic AI** sends a tool error back as a retry prompt and ends the run on the second failure of the same tool
+  (`retries=1`); its model profile is the one its LiteLLM provider gives the gateway's model string. Tokens ×0.98.
+- **OpenAI Agents SDK** stops at 10 turns (`max_turns`) and is the one runner with a changed default: tracing export
+  to OpenAI is off per run. Tokens ×1.02.
+- **CrewAI is left out:** every CrewAI release since 1.7 pins `mcp<2` and `pydantic<2.13`, and older ones pull in
+  `instructor`, which pins `rich<15`; the factory locks MCP 2.3, pydantic 2.14 and rich 15.
+- All three pass 20/20 offline, and their transfer checks against `v2-base` are `equivalent` (20 ties each).
 
 ## Selector
 
@@ -1021,6 +1105,50 @@ plus 4 per message. That over-counts prose and JSON, so it errs towards acting e
 - **Validation.** `hfx validate` checks every slot's `max_output_tokens` against the `context_len` of every served
   model, and at provisioning against the run's model.
 
+## Pausing and resuming a run (checkpoints)
+
+V2–V5 shapes are LangGraph graphs. With checkpointing on, each graph is compiled with one of LangGraph's own
+savers and run under one LangGraph thread per run, so the graph state is saved after every node. A paused run
+then resumes from the node that was next instead of starting over. It is opt-in. With it off (the default), runs
+execute exactly as before. Nothing about scoring or run identity changes either way: no hash moves, and a resumed
+run must end with the same status, outcome, calls, tokens and conversation as the same run left alone
+(`tests/test_checkpoint.py`).
+
+```bash
+HF_CHECKPOINT=sqlite hfx run --task sql-02 --recipe v3-staged --model scripted/replay --provider scripted
+hfx run ... --checkpoint sqlite --pause-after 3      # pause after 3 nodes, resume from the checkpoint
+hfx smoke ... --checkpoint sqlite                     # checkpoint every run of a campaign
+```
+
+| Setting | Values |
+|---|---|
+| `HF_CHECKPOINT` / `--checkpoint` | `off` (default), `sqlite` (`AsyncSqliteSaver`, offline), `postgres` (`AsyncPostgresSaver`, needs `uv sync --extra checkpoint-postgres`) |
+| `HF_CHECKPOINT_URL` | sqlite: a file path (default `var/checkpoints.db`); postgres: a conninfo string (required; keep it in `.env`) |
+
+What a resume restores, and from where:
+
+- **Graph state** (messages, stage or plan position, retries, the stop): the checkpoint. The thread id is the
+  RunKey's short hash plus an attempt suffix, and is recorded in the run's snapshot (`checkpoint`).
+- **Recursion limit**: the checkpoint's step counter. The limit counts nodes across pauses, so a checkpointed
+  run hits it at exactly the node a plain run does.
+- **Budget used so far, spans, tool violations, the snapshot (V4/V5 plans), delegate call count, the model
+  backend**: the `HarnessInstance`, which is the same object. Nothing is reset, so a resume gets no free steps,
+  tool calls or tokens and counts nothing twice. The trace stays one trace, plus a `resume` handoff span that no
+  grader or cost counts.
+- **Sandbox files, database, MCP sessions**: the same live sandbox.
+
+Pauses happen only between nodes, before the next node starts, so no model or tool call is repeated. A pause
+comes from a pause rule (`run_one(..., pause=...)`, `--pause-after`), and the runner resumes the run at once.
+
+Not supported:
+
+- **Resuming in another process.** The sandbox is torn down when the run ends, and the per-run objects above are
+  not in the checkpoint. The checkpoint itself stays in the saver's database, but a new run starts a new thread.
+- **Checkpoints inside a node.** An exception raised inside a node is a crash (ERROR), as before. A delegate's
+  own graph runs inside its parent's node and is not checkpointed. V1 has no graph.
+- **Structured V5 plans** (`planning.structured`, `v5-parallel`). Their workers run as concurrent tasks
+  (`shapes/dag.py`), not as a LangGraph graph, so they run as before, without checkpoints.
+
 ## Run identity
 
 A RunKey changes whenever any of these changes:
@@ -1087,7 +1215,7 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-49 tasks over seventeen seeds. The first five are the P0 smoke set. The other forty-four each hide a trap that a
+57 tasks over eighteen seeds. The first five are the P0 smoke set. The other fifty-two each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -1168,7 +1296,20 @@ files, with distractors (stale copies, look-alike records, superseded policies).
 - **Reach.** Ten of the sixteen need a server only one V2 matrix recipe opens (`code`/`git`, `biz` or `docs`), so
   they measure models and that recipe, not shapes. Comparing shapes on them needs V3–V5 recipes that open those
   servers (a follow-up).
-- **Held out.** Six of the sixteen are HELD_OUT (9 of 45 overall, 20%; the v1 target is 25%).
+- **Held out.** Six of the sixteen are HELD_OUT (13 of 57 overall, 23%; the v1 target is 25%).
+
+| `b3-01` | known path, read, R0 | TEST | Cash collected in October: failed attempts, an Oct 31 evening payment, the internal tenant, invoice month vs payment date |
+| `b3-02` | unknown path, read, R0 | HELD_OUT | Accounts over their seat allowance: add-on seats, the month's peak, "at" vs "over", a suspended account |
+| `b3-03` | known path, reversible, R2 | TEST | Mark past-due invoices overdue: credit notes, failed payments, due today, drafts and voids |
+| `b3-04` | unknown path, reversible, R2 | TEST | A ticket asks for a downgrade now and a refund; the billing policy says schedule it and no credit note |
+| `b3-05` | unknown path, reversible, R1 | HELD_OUT | Add an EU dunning retry: the EU file has its own list, and `max_attempts` must match |
+| `b3-06` | unknown path, reversible, R1 | TEST | Sync the API doc with the routes: a commented-out route, an internal one, a method that changed |
+| `b3-07` | known path, reversible, R1 | TEST | Raise the late fee; the early-payment discount has the same number, and the floor test changes too |
+| `b3-08` | known path, reversible, R2 | HELD_OUT | Outage credit notes: one account already credited by hand, a draft invoice, a suspended account |
+
+**Batch 3** (`b3-*`, seed `billing`: a B2B SaaS billing world dated 2026-11-02) was written by an independent author
+who did not see the skills, recipes, prompts or shapes, so it is the fair set for judging them. The batch has 31 trap
+scripts in `tests/test_task_traps.py`. `--tag batch-3` restricts `hfx smoke` to it.
 
 **Splits.** DEV is for iterating on recipes and TEST for comparing them. HELD_OUT is never run by `smoke` or
 the parametrised tests (`hfx reference` still checks it), so a recipe chosen on DEV and TEST can be confirmed on

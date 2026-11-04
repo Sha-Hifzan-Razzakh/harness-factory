@@ -19,6 +19,8 @@ dependencies = [
     "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
     "jsonschema>=4.20",           # json_schema checks (grading/state.py); was only transitive (mcp, litellm)
     "alembic>=1.14,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",  # opt-in pause/resume (HF_CHECKPOINT); offline saver
+    "openinference-semantic-conventions>=0.1.9",
 ]
 
 [project.optional-dependencies]
@@ -40,8 +42,23 @@ analysis = ["polars>=1.20", "scipy>=1.15"]  # hfx analyze: shape x model tables,
 # Framework runners (docs/adr/0016-runner-axis.md). Their exact versions are part of a runner run's identity.
 langgraph-prebuilt = ["langchain[mcp]>=1.4.7,<1.5"]          # create_agent + langchain.mcp (FastMCP client)
 llamaindex = ["llama-index-core>=0.14.25,<0.15", "llama-index-tools-mcp>=0.6.0,<0.7"]
-dev = ["harness-factory[analysis,langgraph-prebuilt,llamaindex,retrieval]", "pytest>=8", "pytest-asyncio>=1.0",
-       "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15", "psycopg[binary]>=3.1"]
+ms-agent-framework = ["agent-framework-core>=1.24.0,<2"]     # Agent + MCPStdioTool; the `agent-framework` meta package adds only provider connectors
+# AutoGen is in maintenance mode (fixes only, since Oct 2025): for existing deployments and the migration check against
+# Microsoft Agent Framework (RUN-11). autogen-core pins protobuf~=5.29.3 in every release, so the lock moves protobuf
+# 7.36.2 -> 5.29.6 (and googleapis-common-protos 1.76.0 -> 1.75.0). autogen-ext[openai] for its OpenAI converters;
+# not [mcp]: autogen-ext's MCP tools don't import under MCP 2.x. Semantic Kernel can't be installed: every 1.x pins
+# pydantic<2.14 (1.45+ also mcp<2). ADR 0016, addendum #55.
+autogen-agentchat = ["autogen-agentchat>=0.7.5,<0.8", "autogen-ext[openai]>=0.7.5,<0.8"]
+# langgraph-supervisor is "active" but no longer recommended by LangChain for new code (see ADR 0016, #56)
+langgraph-supervisor = ["langgraph-supervisor>=0.0.31,<0.1", "langchain>=1.4.7,<1.5"]
+pydantic-ai = ["pydantic-ai-slim[mcp]>=2.64,<2.65"]   # Agent + MCP toolset (FastMCP client)
+# 0.20.x is the newest release on openai<3: 0.21+ needs openai>=3, which litellm (<3) excludes
+openai-agents = ["openai-agents>=0.20.0,<0.21"]
+emulation = ["instructor>=1.17,<2"]               # tool-call emulation for models without native tool calling
+dev = ["harness-factory[analysis,autogen-agentchat,emulation,langgraph-prebuilt,langgraph-supervisor,llamaindex,ms-agent-framework,openai-agents,pydantic-ai,retrieval]",
+       "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15",
+       "psycopg[binary]>=3.1"]
+checkpoint-postgres = ["langgraph-checkpoint-postgres>=3,<4", "psycopg[binary]>=3.1"]   # HF_CHECKPOINT=postgres
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"
