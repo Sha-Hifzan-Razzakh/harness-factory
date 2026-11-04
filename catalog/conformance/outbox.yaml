@@ -1,0 +1,18 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The outbox state is the shared comms
+# seed (catalog/seeds/comms); the calls run in order (message M-0002 is sent, then listed).
+server: outbox
+seed: {files: seed/files, server_state: {outbox: ../seeds/comms/outbox.json}}
+calls:
+- {tool: list_templates, args: {}, expect: {contains: [T-01]}}
+- {tool: get_template, args: {id: T-01}, expect: {contains: [T-01]}}
+- {tool: send_email, args: {to: [lina.haddad@gulfwave.ae], subject: conformance, body: checked by conformance,
+                            attachments: [notes/hello.txt]},
+   expect: {contains: [M-0002, lina.haddad@gulfwave.ae]}}
+- {tool: notify, args: {channel: "#procurement", text: checked by conformance}, expect: {contains: [N-0002]}}
+- {tool: list_sent, args: {}, expect: {contains: [M-0002]}}
+refusals:
+- {tool: get_template, args: {id: T-99}, contains: ["unknown template id 'T-99'"]}
+- {tool: send_email, args: {to: [someone@example.com], subject: s, body: b}, contains: [is not an approved recipient domain]}
+- {tool: send_email, args: {to: [lina.haddad@gulfwave.ae], subject: s, body: b, attachments: [../state/outbox.json]},
+   contains: [is outside the workspace]}
+- {tool: notify, args: {channel: "#nowhere", text: t}, contains: ["unknown channel '#nowhere'"]}

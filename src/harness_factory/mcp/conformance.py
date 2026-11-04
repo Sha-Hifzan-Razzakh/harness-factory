@@ -149,6 +149,15 @@ def coverage_problems(spec: MCPServerSpec, fx: Fixture) -> list[str]:
     return out
 
 
+class _FixtureSeed(EnvSeed):
+    """A fixture's seed. Its web corpus is found in `corpora/` next to the fixtures folder (catalog/corpora for
+    catalog/conformance), as a task's is next to the folder of task folders; every other path is the fixture's own."""
+
+    def web_corpus(self, task_dir: Path):
+        from harness_factory.env.corpus import CORPORA, load_corpus
+        return load_corpus(task_dir.parent / CORPORA / self.corpus) if self.corpus else None
+
+
 @dataclass
 class _Seed:
     """What LocalSandbox.reset reads from a task: a fixture seeds its sandbox the same way."""
@@ -381,7 +390,8 @@ class _Checker:
 
 
 def _install(sandbox: LocalSandbox, fx: Fixture, source: Path) -> None:
-    sandbox.reset(_Seed(env_seed=fx.seed, source_dir=source.parent, id=fx.server))
+    seed = _FixtureSeed.model_validate(fx.seed.model_dump())
+    sandbox.reset(_Seed(env_seed=seed, source_dir=source.parent, id=fx.server))
     for rel, text in fx.edits.items():
         p = (sandbox.workspace / rel).resolve()
         if not p.is_relative_to(sandbox.workspace.resolve()):

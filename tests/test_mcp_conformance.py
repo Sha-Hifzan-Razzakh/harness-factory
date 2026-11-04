@@ -66,6 +66,19 @@ async def test_a_fixture_must_call_every_declared_tool(tmp_path):
     assert "no happy-path call for fs.delete_file" in detail and "calls undeclared tool 'nope'" in detail
 
 
+async def test_a_fixture_finds_its_web_corpus_next_to_the_fixtures_folder(tmp_path):
+    """As a task finds catalog/corpora next to catalog/tasks, a fixture finds it next to catalog/conformance."""
+    import shutil
+    fixtures = tmp_path / "conformance"
+    fixtures.mkdir()
+    shutil.copy(conf.fixture_path("web"), fixtures / "web.yaml")
+    report = await conf.check_server(DECLARED, "web", fixtures_dir=fixtures)
+    assert not report.ok and "cannot seed the sandbox" in report.finding("fixture").detail
+    shutil.copytree(settings.CATALOG / "corpora" / "relaymail-docs", tmp_path / "corpora" / "relaymail-docs")
+    report = await conf.check_server(DECLARED, "web", fixtures_dir=fixtures)
+    assert report.ok, "\n".join(f"{f.rule}: {f.detail}" for f in report.failures())
+
+
 def test_the_cli_reports_every_server(monkeypatch):
     from typer.testing import CliRunner
 

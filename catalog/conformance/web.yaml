@@ -1,0 +1,11 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The corpus is a recorded catalog corpus
+# (catalog/corpora/<id>, ADR 0018), found next to the fixtures folder as a task finds it next to the tasks folder.
+server: web
+seed: {corpus: relaymail-docs}
+calls:
+- {tool: search, args: {query: rate limit per API key}, expect: {contains: [https://docs.relaymail.example/v2/rate-limits]}}
+- {tool: fetch, args: {url: "https://docs.relaymail.example/v2/rate-limits"}, expect: {contains: ["600"]}}
+refusals:
+- {tool: search, args: {query: "   "}, contains: [query is empty]}
+- {tool: fetch, args: {url: "ftp://docs.relaymail.example/"}, contains: [not an http(s) URL]}
+- {tool: fetch, args: {url: "https://docs.relaymail.example/no-such-page"}, contains: [HTTP 404 Not Found]}

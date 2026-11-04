@@ -410,6 +410,7 @@ undeclared server fails too (also for a server made with `hfx new`):
 ```yaml
 server: fsx
 seed: {files: seed/files}            # env_seed, relative to this file (catalog/conformance/seed, or ../seeds/...)
+                                     # (a `corpus:` names a catalog/corpora corpus, found as a task finds it)
 edits: {notes/hello.txt: "changed\n"}  # optional: files written after the seed (uncommitted when `git: true`)
 skills: []                           # optional: catalog skills installed for the run
 calls:                               # every declared tool at least once, in order
