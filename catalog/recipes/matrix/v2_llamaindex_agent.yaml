@@ -1,0 +1,7 @@
+# Matrix (runtime): v2-base run by LlamaIndex's FunctionAgent (MCP tools through llama-index-tools-mcp) instead of
+# the native loop. Same prompts, tools, permissions and budget; the framework's loop, memory, tool formatting and
+# error handling at their defaults. ADR 0016.
+id: v2-llamaindex-agent
+version: 1
+base: v2-base
+runtime: llamaindex-agent
