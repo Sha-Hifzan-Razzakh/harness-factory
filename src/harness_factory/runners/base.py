@@ -164,6 +164,9 @@ class RunnerRegistry:
         "llamaindex-agent": "harness_factory.runners.llamaindex_agent:LlamaIndexAgentRunner",
         "ms-agent-framework": "harness_factory.runners.ms_agent_framework:MsAgentFrameworkRunner",
         "autogen-agentchat": "harness_factory.runners.autogen_agentchat:AutoGenAgentChatRunner",
+        "langgraph-supervisor": "harness_factory.runners.langgraph_supervisor:LangGraphSupervisorRunner",
+        "pydantic-ai": "harness_factory.runners.pydantic_ai_agent:PydanticAIRunner",
+        "openai-agents": "harness_factory.runners.openai_agents:OpenAIAgentsRunner",
     }
 
     @classmethod

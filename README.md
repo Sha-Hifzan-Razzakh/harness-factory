@@ -863,6 +863,26 @@ the model the server's message, and Agent Framework shows "Error: Function faile
 every release pins `pydantic<2.14`, and the latest ones also pin `mcp<2`, so it can't be installed beside the factory.
 The AutoGen extra moves protobuf to 5.29 (autogen-core pins `~=5.29.3`). Details are in ADR 0016's #55 addendum.
 
+### More runners (#56)
+
+| Runtime | Agent | MCP tools via | Model client | Extra |
+|---|---|---|---|---|
+| `langgraph-supervisor` | `langgraph_supervisor.create_supervisor` over one `create_agent` worker | `langchain.mcp`, as `langgraph-prebuilt` (the worker's) | `GatewayChatModel` (both agents) | `langgraph-supervisor` |
+| `pydantic-ai` | `pydantic_ai.Agent` | `pydantic_ai.mcp.MCPToolset` (its FastMCP client swapped for an `ExecutorSession` facade) | `GatewayModel(pydantic_ai.models.Model)` | `pydantic-ai` |
+| `openai-agents` | `agents.Agent` run by `agents.Runner` | an `agents.mcp.MCPServer` over `ExecutorSession` | `GatewayModel(agents.models.interface.Model)` | `openai-agents` |
+
+- **The supervisor runs V2 recipes.** It splits the work itself (supervisor → `transfer_to_worker` → worker →
+  back), so a V5 recipe's planner, worker prompt and delegation, which are native control flow, don't apply. Its
+  handoff is a graph move, not an environment tool: no ToolExecutor span. It costs two model calls per run (the
+  handoff and the supervisor's closing answer): offline, calls ×1.67 and tokens ×1.69 against `v2-base`.
+- **Pydantic AI** sends a tool error back as a retry prompt and ends the run on the second failure of the same tool
+  (`retries=1`); its model profile is the one its LiteLLM provider gives the gateway's model string. Tokens ×0.98.
+- **OpenAI Agents SDK** stops at 10 turns (`max_turns`) and is the one runner with a changed default: tracing export
+  to OpenAI is off per run. Tokens ×1.02.
+- **CrewAI is left out:** every CrewAI release since 1.7 pins `mcp<2` and `pydantic<2.13`, and older ones pull in
+  `instructor`, which pins `rich<15`; the factory locks MCP 2.3, pydantic 2.14 and rich 15.
+- All three pass 20/20 offline, and their transfer checks against `v2-base` are `equivalent` (20 ties each).
+
 ## Selector
 
 The payoff: given a task, which recipe? `catalog/selector.yaml` holds the rules; `src/harness_factory/select/`

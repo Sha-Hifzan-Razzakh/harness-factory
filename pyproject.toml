@@ -47,7 +47,12 @@ ms-agent-framework = ["agent-framework-core>=1.24.0,<2"]     # Agent + MCPStdioT
 # not [mcp]: autogen-ext's MCP tools don't import under MCP 2.x. Semantic Kernel can't be installed: every 1.x pins
 # pydantic<2.14 (1.45+ also mcp<2). ADR 0016, addendum #55.
 autogen-agentchat = ["autogen-agentchat>=0.7.5,<0.8", "autogen-ext[openai]>=0.7.5,<0.8"]
-dev = ["harness-factory[analysis,autogen-agentchat,langgraph-prebuilt,llamaindex,ms-agent-framework,retrieval]",
+# langgraph-supervisor is "active" but no longer recommended by LangChain for new code (see ADR 0016, #56)
+langgraph-supervisor = ["langgraph-supervisor>=0.0.31,<0.1", "langchain>=1.4.7,<1.5"]
+pydantic-ai = ["pydantic-ai-slim[mcp]>=2.64,<2.65"]   # Agent + MCP toolset (FastMCP client)
+# 0.20.x is the newest release on openai<3: 0.21+ needs openai>=3, which litellm (<3) excludes
+openai-agents = ["openai-agents>=0.20.0,<0.21"]
+dev = ["harness-factory[analysis,autogen-agentchat,langgraph-prebuilt,langgraph-supervisor,llamaindex,ms-agent-framework,openai-agents,pydantic-ai,retrieval]",
        "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15",
        "psycopg[binary]>=3.1"]
 

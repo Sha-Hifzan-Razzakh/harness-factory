@@ -34,7 +34,7 @@ PermissionModeName = Literal["AUTO", "ASK", "DENY"]
 # What executes the harness (RUN-01, docs/adr/0016-runner-axis.md): the factory's own graphs, or a framework's own
 # ready-made agent. Unset means native.
 RuntimeName = Literal["native", "langgraph-prebuilt", "llamaindex-agent",
-                      "ms-agent-framework"]
+                      "ms-agent-framework", "langgraph-supervisor", "pydantic-ai", "openai-agents"]
 RuntimeName = Literal[RuntimeName, "autogen-agentchat"]          # type: ignore[misc]  (#55; nested Literals flatten)
 
 

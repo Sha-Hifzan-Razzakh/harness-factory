@@ -1,0 +1,7 @@
+# Matrix (runtime): v2-base run by the OpenAI Agents SDK's Agent and Runner (MCP tools through its MCPServer
+# interface) instead of the native loop. Same prompts, tools, permissions and budget; the framework's loop, turn
+# limit, tool formatting and error handling at their defaults (tracing export off). ADR 0016.
+id: v2-openai-agents
+version: 1
+base: v2-base
+runtime: openai-agents
