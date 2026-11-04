@@ -15,7 +15,7 @@ from harness_factory import settings
 from harness_factory.hashing import content_hash
 from harness_factory.providers.catalog import ProviderEntry, ServedModel
 from harness_factory.providers.quota import QuotaLedger
-from harness_factory.provision.provisioner import task_class
+from harness_factory.provision.provisioner import reaches, task_class
 from harness_factory.results.calibration import calibrate
 from harness_factory.results.cost import CostBaseline
 from harness_factory.runner.runner import plan, run_campaign
@@ -173,7 +173,9 @@ async def test_held_out_runs_never_inform_a_pooled_held_out_pick(factory, tmp_pa
     assert any(in_evidence.values())
 
     # A verdict that needs the held-out pairs: judged again without them it is short of min_pairs, so no pool.
-    equivalent(f, rows, min_pairs=len(p0_tasks) + len(held))
+    # Only held-out tasks v2-base can reach are run (plan leaves out the others), so only those make pairs.
+    ran = [t for t in held if reaches(f.recipes["v2-base"], f.tasks.get(t), f.declared)]
+    equivalent(f, rows, min_pairs=len(p0_tasks) + len(ran))
     alone = plan_evaluation(f, rows, MODEL, "scripted", config=on)
     assert all(d.pool is None for d in alone.decisions.values())
     one_side = {t: d.evidence_runs for t, d in alone.decisions.items()}
