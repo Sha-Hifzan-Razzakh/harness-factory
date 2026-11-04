@@ -13,7 +13,7 @@ end to end over real MCP servers, and every run is graded, traced and stored.
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 
-hfx tasks                 # 57 tasks and their class keys (13 held out)
+hfx tasks                 # 91 tasks and their class keys (15 held out): 62 written, 29 perturbed variants
 hfx validate              # every recipe against tools, prompts, tiers
 hfx reference             # every task's reference solution passes its own oracle (TSK-04)
 hfx smoke                 # P0 gate offline: every DEV + TEST task, scripted model
@@ -1374,7 +1374,8 @@ three shapes and all three scripted models):
 
 ## Task catalog
 
-57 tasks over eighteen seeds. The first five are the P0 smoke set. The other fifty-two each hide a trap that a
+62 tasks over twenty seeds, plus 29 perturbed variants of them (`hfx perturb`, below). The first five are the P0
+smoke set. The other fifty-seven each hide a trap that a
 careless harness falls into: the right answer and the plausible wrong one differ, and
 `tests/test_task_traps.py` runs the wrong one to prove the oracle catches it.
 
@@ -1460,7 +1461,7 @@ files, with distractors (stale copies, look-alike records, superseded policies).
 - **Reach.** Ten of the sixteen need a server only one V2 matrix recipe opens (`code`/`git`, `biz` or `docs`), so
   they measure models and that recipe, not shapes. Comparing shapes on them needs V3–V5 recipes that open those
   servers (a follow-up).
-- **Held out.** Six of the sixteen are HELD_OUT (13 of 57 overall, 23%; the v1 target is 25%).
+- **Held out.** Six of the sixteen are HELD_OUT (13 of the 62 written tasks, 21%; the v1 target is 25%).
 
 | `b3-01` | known path, read, R0 | TEST | Cash collected in October: failed attempts, an Oct 31 evening payment, the internal tenant, invoice month vs payment date |
 | `b3-02` | unknown path, read, R0 | HELD_OUT | Accounts over their seat allowance: add-on seats, the month's peak, "at" vs "over", a suspended account |
