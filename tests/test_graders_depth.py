@@ -247,6 +247,8 @@ def test_new_check_fields_leave_task_hashes_alone(factory):
                 if c.get(name) is None or name not in USED_BY_NEW_TASKS:
                     assert c.pop(name) is None
         data["seed_hash"] = task.env_seed.data_hash(task.source_dir)
+        if task.env_seed.corpus:                    # a web corpus's version (ADR 0018), set only by web-* tasks
+            data["corpus_version"] = task.env_seed.web_corpus(task.source_dir).version
         assert task.content_hash() == content_hash(data), task.key()
     t = factory.tasks.get("sql-01").model_copy(deep=True)
     before = t.content_hash()

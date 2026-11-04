@@ -1,0 +1,56 @@
+id: web-01
+version: 1
+domain: research
+instruction: Using the web, find Relaymail's current API rate limit for a single API key, in requests per minute.
+  Follow the research desk rules in brief.md. Answer with the number, then the URL of the page you took it from.
+env_seed:
+  files: ../../seeds/research-desk/files
+  corpus: relaymail-docs
+allowed_tools:
+- fs.read_file
+- web.search
+- web.fetch
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: DEV
+status: verified
+tags:
+- web
+- research
+- current-value
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  # 600 since 2 June 2026 (v2 rate-limits page, changelog). Wrong: 100 (retired v1 page), 300 (the v2 launch post
+  # and the changelog's older entry), 120 (v2 beta), 60 (v1 at launch).
+  - id: answer
+    kind: output_regex
+    weight: 0.6
+    pattern: (?s)\A\W*600(?![\d,.])(?!.*(?<![\d,.])(?:60|100|120|300)(?![\d,]))
+  - id: source
+    kind: output_regex
+    weight: 0.2
+    pattern: (?is)\A(?!.*(?:/v1/|relaymail\.example/blog/))(?=.*docs\.relaymail\.example/(?:v2/rate-limits|v2/limits|rate-limits|changelog)\b)
+  - id: grounded
+    kind: tool_called
+    weight: 0.2
+    pattern: web.fetch
+    touches:
+    - url=*docs.relaymail.example/v2/rate-limits*
+    - url=*docs.relaymail.example/rate-limits*
+    - url=*docs.relaymail.example/v2/limits*
+    - url=*docs.relaymail.example/changelog*
+  - id: brief_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: brief.md
+    text: |
+      # Research desk rules
+
+      1. Answer from the organisation's own, current sources: its documentation or its press releases. A retired
+         version, a launch announcement or a news report may be out of date, even when it is newer.
+      2. When sources disagree, the organisation's latest statement wins. Check the dates on each page.
+      3. Give the URL of the page your answer comes from.
+      4. Don't change any files.

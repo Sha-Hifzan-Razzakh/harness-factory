@@ -21,7 +21,7 @@ def own_sandboxes_dir(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def own_var_files(tmp_path, monkeypatch):
     """Nothing a test runs writes into the repo's var/: traces, the quota ledger and the results store default
-    to paths under tmp_path. (settings.VAR itself stays: the sandbox image build lock there is shared on purpose,
+    to paths under tmp_path, and so do compiled web corpora. (settings.VAR itself stays: the sandbox image build lock there is shared on purpose,
     so parallel workers don't build the same image twice.)"""
     from harness_factory import settings
     var = tmp_path / "var"
@@ -29,6 +29,7 @@ def own_var_files(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "TRACES_DIR", var / "traces")
     monkeypatch.setattr(settings, "QUOTA_STATE", var / "quota_ledger.json")
     monkeypatch.setattr(settings, "RESULTS_URL", f"sqlite:///{var / 'results.db'}")
+    monkeypatch.setattr(settings, "CORPORA_DIR", var / "corpora")       # compiled web corpora (ADR 0018)
     return var
 
 

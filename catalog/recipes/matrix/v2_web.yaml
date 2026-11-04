@@ -1,0 +1,9 @@
+# Matrix (tools): v2-base with one change, the web server (search and fetch over the task's recorded corpus, ADR
+# 0018) added to the tool slice. Research tasks over a corpus allow web tools and need this server; campaigns leave
+# them out of recipes that don't open it, so v2-base keeps its environment hash.
+id: v2-web
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "web.*"]
+  mcp_servers: [fs, sql, web]
