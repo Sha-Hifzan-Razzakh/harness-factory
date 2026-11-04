@@ -35,6 +35,7 @@ class HarnessInstance:
                                                                   # its step and replan prompts during the run)
     stop_error: str | None = None                                 # why a tool batch ended the run (a delegate's
                                                                   # INCOMPLETE / ERROR); finish() reports it
+    checkpoint: Any = None                                        # shapes.checkpoint.Checkpoint, or None (off)
 
 
 class Harness(Protocol):

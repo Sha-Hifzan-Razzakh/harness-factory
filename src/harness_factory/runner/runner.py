@@ -11,6 +11,8 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +48,8 @@ from harness_factory.runner.endstate import save_endstate
 from harness_factory.runner.ledger import CostLedger
 from harness_factory.runner.spec import RunKey
 from harness_factory.runners.base import harness_for
+from harness_factory.shapes.base import Harness, HarnessInstance
+from harness_factory.shapes.checkpoint import Checkpoint, CheckpointConfig, PauseRule, RunPaused, open_saver
 from harness_factory.shapes.result import RunResult, RunStatus, Violation
 from harness_factory.substrate.errors import HarnessError
 from harness_factory.substrate.gateway import Backend
@@ -69,6 +73,7 @@ class Factory:
     tracker: ExperimentTracker = field(default_factory=ExperimentTracker)
     graders: GradingPipeline = field(default_factory=default_pipeline)
     judge: RubricJudge | None = None            # rubric checks (ADR 0014); None = ungraded, weight 0
+    checkpoint: CheckpointConfig | None = None    # LangGraph checkpointing of V2-V5 runs (opt-in); None = off
 
     @staticmethod
     def load(store: bool = True, results_url: str | None = None, quota_state: Path | None = None) -> Factory:
@@ -76,11 +81,13 @@ class Factory:
         providers = load_provider_catalog(settings.PROVIDERS_FILE)
         ledger = QuotaLedger(providers, state_path=quota_state or settings.QUOTA_STATE)
         results = ResultsStore(results_url) if store else None
+        backend = settings.checkpoint_backend()
         return Factory(tasks=TaskRegistry(), recipes=load_recipes(settings.RECIPES_DIR),
                        declared=load_tool_catalog(settings.TOOLS_FILE), providers=providers, ledger=ledger,
                        store=results, faults=load_fault_profiles(settings.FAULTS_DIR),
                        judge=RubricJudge.from_catalog(providers, ledger,
-                                                      results.calibrations if results is not None else None))
+                                                      results.calibrations if results is not None else None),
+                       checkpoint=CheckpointConfig(backend, settings.checkpoint_url(backend)) if backend else None)
 
     def fault(self, fault_id: str | None) -> FaultConfig | None:
         if fault_id in (None, NO_FAULTS):
@@ -115,6 +122,49 @@ def write_transcript(trace_path: Path, inst, result: RunResult) -> Path:
 # (Q only catches exact repeats) and, as a "success", would inflate the cost median for everyone.
 OVERRUN_OUTCOME_FACTOR = 0.5
 OVERRUN_KINDS = frozenset({"budget_exceeded", "stage_cap", "step_cap", "context_overflow", "malformed_output"})
+
+
+@asynccontextmanager
+async def checkpointing(config: CheckpointConfig | None, inst: HarnessInstance,
+                        pause: PauseRule | None = None) -> AsyncIterator[Checkpoint | None]:
+    """Open the run's checkpoint saver and give the instance its LangGraph thread (a no-op when off). The saver stays
+    open for the whole run, so a paused run resumes against the same checkpoints; it is closed before the sandbox
+    is torn down, also on cancel."""
+    if config is None:
+        if pause is not None:
+            raise ValueError("a pause rule needs checkpointing (HF_CHECKPOINT=sqlite|postgres)")
+        yield None
+        return
+    async with open_saver(config) as saver:
+        inst.checkpoint = Checkpoint(saver=saver, thread_id=Checkpoint.thread_for(inst.run_key.short()),
+                                     backend=config.backend, pause=pause)
+        try:
+            yield inst.checkpoint
+        finally:
+            inst.checkpoint = None
+
+
+async def run_shape(shape: Harness, inst: HarnessInstance) -> RunResult:
+    """Run the shape; a run paused between two nodes is resumed from its checkpoint, in this same provision.
+
+    The resume is the same run: same RunKey, the same budget object (so what was used before the pause stays used
+    and no allowance is reset), the same tracer (one trace, plus a `resume` handoff span no grader or cost counts),
+    the same tool violations, snapshot and sandbox. Only the graph state comes back from the checkpoint."""
+    cp = inst.checkpoint
+    while True:
+        try:
+            return await shape.run(inst)
+        except RunPaused as e:
+            if cp is None:              # only a checkpointed graph pauses
+                raise
+            cp.resumes += 1
+            cp.resuming = True
+            with inst.tracer.span(SpanKind.handoff, "resume", thread_id=e.thread_id, after_nodes=e.nodes,
+                                  next=",".join(e.next_nodes), resume=cp.resumes):
+                pass
+        finally:
+            if cp is not None:
+                inst.snapshot["checkpoint"] = cp.describe()
 
 
 def overran(result: RunResult) -> bool:
@@ -154,13 +204,16 @@ def run_scores(result: RunResult, grades: list[Grade]) -> tuple[FamilyScores, li
 
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
                   seed: int = 0, backend: Backend | None = None, flush: bool = True,
-                  fault: str | None = None) -> EffectivenessRecord:
+                  fault: str | None = None, pause: PauseRule | None = None) -> EffectivenessRecord:
     """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end.
-    fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run."""
+    fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run.
+    pause: with checkpointing on (f.checkpoint), pause the run between two nodes when this says so; it is resumed
+    from the checkpoint and must end exactly like an uninterrupted run (shapes/checkpoint.py)."""
     f.graders.check(task)          # a grader typo fails here, before any quota is spent (and on every resume)
     t0 = time.monotonic()
     async with provision(task, recipe, canonical_model, provider_id, declared=f.declared, providers=f.providers,
-                         ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p:
+                         ledger=f.ledger, seed=seed, backend=backend, fault=f.fault(fault)) as p, \
+            checkpointing(f.checkpoint, p.instance, pause):
         inst = p.instance
         shape = harness_for(recipe)          # the recipe's framework runner (ADR 0016), or its native shape
         k = inst.run_key
@@ -171,7 +224,7 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                               prompt_hash=inst.snapshot["prompt_hash"]) as root:
             inst.budget.start()
             try:
-                result = await shape.run(inst)
+                result = await run_shape(shape, inst)
             except HarnessError as e:
                 result = RunResult(run_key=inst.run_key, status=RunStatus.ERROR,
                                    error=f"{e.kind.value}: {e.message}", violations=list(inst.tools.violations))

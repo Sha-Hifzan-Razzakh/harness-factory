@@ -19,6 +19,7 @@ dependencies = [
     "pytest>=8",                  # the code server and tests_pass checks run task tests with it (ADR 0012)
     "jsonschema>=4.20",           # json_schema checks (grading/state.py); was only transitive (mcp, litellm)
     "alembic>=1.14,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",  # opt-in pause/resume (HF_CHECKPOINT); offline saver
 ]
 
 [project.optional-dependencies]
@@ -56,6 +57,7 @@ emulation = ["instructor>=1.17,<2"]               # tool-call emulation for mode
 dev = ["harness-factory[analysis,autogen-agentchat,emulation,langgraph-prebuilt,langgraph-supervisor,llamaindex,ms-agent-framework,openai-agents,pydantic-ai,retrieval]",
        "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15",
        "psycopg[binary]>=3.1"]
+checkpoint-postgres = ["langgraph-checkpoint-postgres>=3,<4", "psycopg[binary]>=3.1"]   # HF_CHECKPOINT=postgres
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

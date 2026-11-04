@@ -22,6 +22,7 @@ from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import Variant
 from harness_factory.shapes import delegate
 from harness_factory.shapes.base import HarnessInstance, ShapeRegistry
+from harness_factory.shapes.checkpoint import run_graph
 from harness_factory.shapes.common import DONE, finish
 from harness_factory.shapes.result import RunResult
 from harness_factory.shapes.v4 import BLOCKED_PREFIX, Planner
@@ -97,16 +98,17 @@ class OrchestratorShape:
         g.add_edge(START, "plan")
         g.add_conditional_edges("plan", after, {"run_step": "run_step", END: END})
         g.add_conditional_edges("run_step", after, {"run_step": "run_step", END: END})
-        return g.compile()
+        return g
 
     async def run(self, inst: HarnessInstance) -> RunResult:
         pl = inst.recipe.planning
         if pl.structured:                   # JSON plans with depends_on: workers run as a graph (shapes/dag.py)
             from harness_factory.shapes.dag import Orchestra
             return await Orchestra(inst).run()
-        final: OrchestraState = await self._build(inst).ainvoke(
+        final: OrchestraState = await run_graph(
+            inst, self._build(inst),
             {"steps": [], "step_no": 0, "replans": 0, "done": [], "stop": None, "output": None, "error": None},
-            config={"recursion_limit": (pl.max_plan_steps + 2) * (pl.max_replans + 1) + 10},
+            recursion_limit=(pl.max_plan_steps + 2) * (pl.max_replans + 1) + 10,
         )
         # The orchestrator's own conversation is its plans; each worker's is in snapshot.delegations.
         messages = [{"role": "assistant", "content": "\n".join(f"{i}. {s}" for i, s in enumerate(p["steps"], 1))}

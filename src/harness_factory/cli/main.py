@@ -19,6 +19,18 @@ def _factory(store: bool = True):
     return Factory.load(store=store)
 
 
+def _set_checkpoint(f, backend: str | None) -> None:
+    """--checkpoint off|sqlite|postgres overrides HF_CHECKPOINT for this command."""
+    if backend is None:
+        return
+    from harness_factory.shapes.checkpoint import CheckpointConfig
+    backend = backend.strip().lower()
+    f.checkpoint = None if backend == "off" else CheckpointConfig(backend, settings.checkpoint_url(backend))
+
+
+_CHECKPOINT_HELP = "LangGraph checkpointing of V2-V5 runs: off, sqlite or postgres (default: HF_CHECKPOINT, off)"
+
+
 def _reachable(url: str) -> bool:
     import socket
     from urllib.parse import urlparse
@@ -194,12 +206,19 @@ def reference(task_id: str | None = typer.Argument(None)) -> None:
 @app.command()
 def run(task: str = typer.Option(..., "--task"), recipe: str = typer.Option("v2-base", "--recipe"),
         model: str = typer.Option(..., "--model"), provider: str = typer.Option(..., "--provider"),
-        seed: int = typer.Option(0, "--seed")) -> None:
+        seed: int = typer.Option(0, "--seed"),
+        checkpoint: str | None = typer.Option(None, "--checkpoint", help=_CHECKPOINT_HELP),
+        pause_after: int | None = typer.Option(None, "--pause-after",
+                                               help="pause after this many graph nodes and resume from the "
+                                                    "checkpoint (needs --checkpoint; the run must end the same)")) -> None:
     """Run one task with one recipe on one model."""
     from harness_factory.runner.runner import run_one
+    from harness_factory.shapes.checkpoint import pause_after as after
     f = _factory()
+    _set_checkpoint(f, checkpoint)
     _print_sinks(f)
-    rec = asyncio.run(run_one(f, f.tasks.get(task), f.recipes[recipe], model, provider, seed))
+    rec = asyncio.run(run_one(f, f.tasks.get(task), f.recipes[recipe], model, provider, seed,
+                              pause=after(pause_after) if pause_after is not None else None))
     console.print(_records_table([rec]))
 
 
@@ -222,12 +241,14 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
           strict: bool = typer.Option(False, "--strict", help="exit 1 unless every run is SUCCESS (CI gate)"),
           tag: str | None = typer.Option(None, "--tag", help="only tasks with one of these tags (comma-separated)"),
           exclude_tag: str | None = typer.Option(None, "--exclude-tag",
-                                                 help="leave out tasks with any of these tags, e.g. long")) -> None:
+                                                 help="leave out tasks with any of these tags, e.g. long"),
+          checkpoint: str | None = typer.Option(None, "--checkpoint", help=_CHECKPOINT_HELP)) -> None:
     """Every task x recipe x model x seed on one provider, run in parallel and paced to the provider's limits.
     One recipe is the P0 gate; several compare shapes. Interrupted (Ctrl-C, quota)? Run it again with --resume."""
     from harness_factory.provision.provisioner import run_key_for
     from harness_factory.runner.runner import plan, plan_status, run_campaign
     f = _factory()
+    _set_checkpoint(f, checkpoint)
     _print_sinks(f)
     specs = plan(f, recipe.split(","), provider, models.split(",") if models else None, seeds,
                  faults=[None if x == "none" else x for x in faults.split(",")] if faults else None,
