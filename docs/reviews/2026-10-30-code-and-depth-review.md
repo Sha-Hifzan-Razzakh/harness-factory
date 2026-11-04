@@ -453,7 +453,7 @@ No existing task, recipe or env hash changes in #72–#74. #73 changes the sandb
   and only the `--exclude-tag` changes remain.
 - Batch 3 (#82) reached main with bare `tool_called` checks, so #69 now also gives `b3-01` (payments) and
   `b3-02` (seat_usage) `touches`, plus grounding traps; both move to version 2.
-- The full suite on the top of the stack: 1401 passed.
+- The full suite on the top of the stack: 1567 passed, 20 skipped.
 
 **Next:** wave 6 (#75–#79).
 
