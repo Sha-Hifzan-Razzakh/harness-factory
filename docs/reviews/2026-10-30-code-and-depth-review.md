@@ -434,3 +434,27 @@ On the stack:
 **Still open:** 29 of the 120+ variants v1 asks for; #52 still open, with the same `--tag` / `--exclude-tag`
 code as #71.
 
+**Wave 5, second half (2026-11-04): #72 → #73 → #74 ready for review, stacked on #71.**
+
+- **#72:** `web` server (`search`, `fetch`) over recorded, versioned corpora (`catalog/corpora/`, ADR 0018);
+  two corpora, tasks `web-01`, `web-02`, matrix recipe `v2-web`. The corpus version is in the task hash, not
+  in `env_hash` (ADR 0018 §8); the ranking engine is in `env_hash` for recipes that open `web`.
+- **#73:** `outbox` and `calendar` servers over seeded JSON states (`env_seed.server_state`, `state_equals` /
+  `state_count`); tasks `cal-01`, `cal-02`, `out-01`; recipes `v2-calendar` and `v2-outbox` (the "may send"
+  dimension, `IRREVERSIBLE: AUTO`). This brings the environment to eight domains.
+- **#74:** `hfx conformance` checks every declared server (12, including the three above) rule by rule in CI;
+  each server is health-probed before the run's clock starts, and an unhealthy server is a PROVISION ERROR.
+
+No existing task, recipe or env hash changes in #72–#74. #73 changes the sandbox image tag.
+
+**Restack on main (2026-11-04):** the whole stack #69–#74 is rebased onto main after merge train 2.
+
+- main's CI now derives its gate recipe lists from the catalog, so the stack's recipe-list edits fall away
+  and only the `--exclude-tag` changes remain.
+- Batch 3 (#82) reached main with bare `tool_called` checks, so #69 now also gives `b3-01` (payments) and
+  `b3-02` (seat_usage) `touches`, plus grounding traps; both move to version 2.
+- The full suite on the top of the stack: 1401 passed.
+
+**Next:** wave 6 (#75–#79).
+
+
