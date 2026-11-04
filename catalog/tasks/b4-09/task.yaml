@@ -1,5 +1,5 @@
 id: b4-09
-version: 1
+version: 2
 domain: data
 instruction: Finance needs Qamar Trading's net revenue in AED for Q3 2026 (July to September), computed the way
   the finance team's reporting rules in docs/ say. Answer with the amount in whole dirhams.
@@ -37,6 +37,9 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - orders
+    - order_lines
   - id: orders_unchanged
     kind: sql_rows
     weight: 0

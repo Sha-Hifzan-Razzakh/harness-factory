@@ -1,5 +1,5 @@
 id: b4-13
-version: 1
+version: 2
 domain: api
 instruction: 'Collections asks: how much does Saffron Hospitality (trade licence DED-552310) owe us on overdue invoices
   as of today, across all of its contacts? Answer with the amount in AED.'
@@ -34,6 +34,10 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: biz.inv_list_invoices
+    touches:
+    - customer_id=C-2151
+    - customer_id=C-2152
+    - customer_id=C-2153
   - id: data_unchanged
     kind: biz_equals
     weight: 0
