@@ -9,24 +9,34 @@
 Evidence is only what still describes the recipe as it is: a cell counts only if its recipe hash and
 environment hash are the ones the recipe has now. Results from an older version of a recipe, or from before a
 tools.yaml or providers.yaml change, never decide for the current one.
+
+Pooled evidence (opt-in: `pool_providers: true` in selector.yaml, or `--pool`; ADR 0010). When the provider is in
+a pool of providers calibrated as `equivalent` for the model (results.calibration.pools), its cells are the pooled
+cells: keyed by the pool and the provider-neutral tool environment (`tools:<tools_hash>`). A pooled cell is
+current only when every run in it has the recipe's current recipe hash, the recipe's current tools hash, and a
+served model id equal to the one its provider's catalog entry names now (which is also the id the verdict was
+calibrated with, or there is no pool). Cost stays per provider. The decision names the pool, the records it rests
+on and the runs from each provider. A provider in no pool decides exactly as without pooling.
 """
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from harness_factory import settings
 from harness_factory.env.mcp.servers import RISK_TO_TIER, TIER_ORDER
 from harness_factory.hashing import content_hash
 from harness_factory.recipes.model import Variant
-from harness_factory.results.cost import CostBaseline
-from harness_factory.results.store import aggregate_rows, current_task_rows
+from harness_factory.results.cost import CostBaseline, is_clean
+from harness_factory.results.store import UNSCORED, CellResult, aggregate_rows, current_task_rows
 
 SELECTOR_FILE = settings.CATALOG / "selector.yaml"
 
@@ -42,6 +52,8 @@ class SelectorConfig(BaseModel):
     hand_picked: str = "v2-base"
     defaults: list[DefaultRule]
     depth_shapes: dict[str, list[Variant]]
+    # ADR 0010: read cells pooled across providers calibrated as `equivalent`. Off by default.
+    pool_providers: bool = False
 
     def default_for(self, task_class: str, exclude: set[str] = frozenset()) -> str:
         """The first matching default not in `exclude` (recipes a hard rule pruned)."""
@@ -51,7 +63,10 @@ class SelectorConfig(BaseModel):
         raise ValueError(f"no default recipe matches class {task_class!r} (add a '*' rule)")
 
     def config_hash(self) -> str:
-        return content_hash(self.model_dump(mode="json", by_alias=True), 12)
+        data = self.model_dump(mode="json", by_alias=True)
+        if not self.pool_providers:          # off: the hash (and every decision and policy id) is what it was
+            data.pop("pool_providers")
+        return content_hash(data, 12)
 
 
 def load_selector_config(path: Path | None = None) -> SelectorConfig:
@@ -74,6 +89,16 @@ class Pruned(BaseModel):
     detail: str
 
 
+class PoolEvidence(BaseModel):
+    """Where a pooled decision's evidence came from (ADR 0010)."""
+    label: str                               # "groq+openrouter"
+    served: dict[str, str]                   # provider -> served model id of every pooled run (the current one)
+    equivalences: list[str]                  # ids of the saved `equivalent` records in force, one per pair
+    rejudged: bool = False                   # held-out evaluation: each verdict re-judged without held-out runs
+    runs: dict[str, int] = Field(default_factory=dict)   # provider -> scored clean runs behind the measured cells
+    by_recipe: dict[str, dict[str, int]] = Field(default_factory=dict)   # recipe -> provider -> runs in its cell
+
+
 class Decision(BaseModel):
     """One selection, with everything it was based on (SEL-05)."""
     task_class: str
@@ -87,7 +112,16 @@ class Decision(BaseModel):
     baseline_id: str
     config_hash: str
     evidence_runs: int                      # scored clean runs behind the ranked and insufficient cells
+    pool: PoolEvidence | None = None        # set only when the evidence is pooled across providers
     made_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_serializer(mode="wrap")
+    def _omit_no_pool(self, handler):
+        # An unpooled decision serializes (and hashes) exactly as before pooling existed.
+        data = handler(self)
+        if self.pool is None and isinstance(data, dict):
+            data.pop("pool", None)
+        return data
 
     @property
     def id(self) -> str:
@@ -100,8 +134,14 @@ class Decision(BaseModel):
         top = self.ranked[0]
         head = f"{self.task_class}: {' + '.join(self.chosen)}"
         if self.rule == "close_call":
-            return f"{head} (close call, run both: E {top.mean_e:.3f} vs {self.ranked[1].mean_e:.3f}, intervals overlap)"
-        return f"{head} (E {top.mean_e:.3f}, 95% CI {top.ci95[0]:.3f}-{top.ci95[1]:.3f}, n={top.n})"
+            return (f"{head} (close call, run both: E {top.mean_e:.3f} vs {self.ranked[1].mean_e:.3f}, intervals "
+                    f"overlap){self._pool_note()}")
+        return f"{head} (E {top.mean_e:.3f}, 95% CI {top.ci95[0]:.3f}-{top.ci95[1]:.3f}, n={top.n}){self._pool_note()}"
+
+    def _pool_note(self) -> str:
+        if self.pool is None:
+            return ""
+        return f" (pooled {self.pool.label}: " + ", ".join(f"{p} {n}" for p, n in sorted(self.pool.runs.items())) + ")"
 
 
 def hard_rules(recipe, task_class: str, canonical_model: str, provider: str, factory, config: SelectorConfig,
@@ -149,10 +189,85 @@ def _current_cells(factory, rows: list[dict], baseline: CostBaseline, canonical_
     return out
 
 
+@dataclass
+class Evidence:
+    """The current cells a decision may use, keyed by (task class, recipe id); with pooling, where they came from."""
+    cells: dict[tuple[str, str], CellResult]
+    pool: PoolEvidence | None = None                         # label, served ids, records; runs filled per decision
+    by_provider: dict[tuple[str, str], dict[str, int]] = field(default_factory=dict)
+
+
+def calibrated_pools(factory, rejudge_on: list[dict] | None = None) -> tuple[dict, dict[tuple[str, str], list[str]]]:
+    """(pools for aggregate_rows, (model, pool label) -> ids of the saved `equivalent` records it rests on).
+
+    rejudge_on: a held-out evaluation passes its evidence rows. Every verdict in force is judged again on those rows
+    only, with its own margin, min_pairs and recipe, so a pool never rests on pairs of held-out runs."""
+    from harness_factory.results.calibration import calibrate, latest, pools
+
+    in_force = {k: eq for k, eq in latest(factory.store.equivalences()).items() if eq.verdict == "equivalent"}
+    judged = in_force
+    if rejudge_on is not None:
+        judged = {}
+        for key, eq in in_force.items():
+            try:
+                judged[key] = calibrate(rejudge_on, factory.providers, eq.canonical_model, list(eq.providers),
+                                        recipe_hash=eq.recipe_hashes[0] if len(eq.recipe_hashes) == 1 else None,
+                                        margin=eq.margin, min_pairs=eq.min_pairs)
+            except KeyError:                                 # a provider no longer serves the model
+                continue
+    pooled = pools([eq.model_dump(mode="json") for eq in judged.values()], factory.providers)
+    ids: dict[tuple[str, str], list[str]] = {}
+    for (model, (a, b)), eq in judged.items():
+        label = pooled.get((model, a, eq.served[a]))
+        if label is not None and label == pooled.get((model, b, eq.served[b])):
+            ids.setdefault((model, label), []).append(in_force[(model, (a, b))].id)
+    return pooled, {k: sorted(v) for k, v in ids.items()}
+
+
+def current_evidence(factory, rows: list[dict], baseline: CostBaseline, canonical_model: str, provider: str,
+                     pooled: tuple[dict, dict] | None = None, rejudged: bool = False) -> Evidence:
+    """The current cells for one model on one provider. pooled: calibrated_pools(...), or None for no pooling.
+    A provider in no pool gets exactly _current_cells."""
+    pool_map, record_ids = pooled or ({}, {})
+    served = factory.providers.served(provider, canonical_model).provider_model_id
+    label = pool_map.get((canonical_model, provider, served))
+    if label is None:
+        return Evidence(cells=_current_cells(factory, rows, baseline, canonical_model, provider))
+    serves = {p: s for (m, p, s), lab in pool_map.items() if m == canonical_model and lab == label}
+    now = {rid: (r.content_hash(), factory.declared.env_hash(r.tools.mcp_servers, "*"))
+           for rid, r in factory.recipes.items()}
+    keep = [r for r in rows if r["canonical_model"] == canonical_model and r.get("provider") in serves
+            and r.get("served_id") == serves[r["provider"]] and r["recipe_id"] in now
+            and (r["recipe_hash"], r.get("tools_hash")) == now[r["recipe_id"]]]
+    cells: dict[tuple[str, str], CellResult] = {}
+    for c in aggregate_rows(keep, baseline, pool_map):       # every kept run pools: one cell per class x recipe
+        assert c.provider == label and (c.task_class, c.recipe_id) not in cells, c
+        cells[(c.task_class, c.recipe_id)] = c
+    counts: dict[tuple[str, str], Counter] = {}
+    for r in keep:
+        if is_clean(r) and r["status"] not in UNSCORED:
+            counts.setdefault((r["task_class"], r["recipe_id"]), Counter())[r["provider"]] += 1
+    pool = PoolEvidence(label=label, served=dict(sorted(serves.items())),
+                        equivalences=record_ids.get((canonical_model, label), []), rejudged=rejudged)
+    return Evidence(cells=cells, pool=pool, by_provider={k: dict(sorted(v.items())) for k, v in counts.items()})
+
+
+def evidence_for(factory, rows: list[dict], baseline: CostBaseline, canonical_model: str, provider: str,
+                 config: SelectorConfig, rejudge_on: list[dict] | None = None) -> Evidence:
+    """current_evidence, pooled when the config says so."""
+    pooled = calibrated_pools(factory, rejudge_on) if config.pool_providers else None
+    return current_evidence(factory, rows, baseline, canonical_model, provider, pooled,
+                            rejudged=rejudge_on is not None)
+
+
 def decide(task_class: str, canonical_model: str, provider: str, *, factory, rows: list[dict],
-           baseline: CostBaseline, config: SelectorConfig | None = None, task=None, cells=None) -> Decision:
+           baseline: CostBaseline, config: SelectorConfig | None = None, task=None, cells=None,
+           evidence: Evidence | None = None) -> Decision:
     config = config or load_selector_config()
-    cells = cells if cells is not None else _current_cells(factory, rows, baseline, canonical_model, provider)
+    if evidence is None:
+        evidence = (Evidence(cells=cells) if cells is not None
+                    else evidence_for(factory, rows, baseline, canonical_model, provider, config))
+    cells = evidence.cells
     ids = config.candidates or sorted(factory.recipes)
     pruned, ranked, insufficient = [], [], []
     for rid in ids:
@@ -172,10 +287,18 @@ def decide(task_class: str, canonical_model: str, provider: str, *, factory, row
                          mean_c=round(cell.mean_c, 6), robustness=cell.robustness)
         (ranked if cell.e.n >= config.min_runs else insufficient).append(cand)
     ranked.sort(key=lambda c: (-c.mean_e, -c.pass_rate, c.mean_c, c.recipe_id))
-    evidence = sum(c.n for c in ranked + insufficient)
+    evidence_runs = sum(c.n for c in ranked + insufficient)
+    pool = None
+    if evidence.pool is not None:
+        by_recipe = {c.recipe_id: evidence.by_provider.get((task_class, c.recipe_id), {})
+                     for c in sorted(ranked + insufficient, key=lambda c: c.recipe_id)}
+        runs = Counter()
+        for counts in by_recipe.values():
+            runs.update(counts)
+        pool = evidence.pool.model_copy(update={"runs": dict(sorted(runs.items())), "by_recipe": by_recipe})
     common = dict(task_class=task_class, canonical_model=canonical_model, provider=provider, ranked=ranked,
                   insufficient=insufficient, pruned=pruned, baseline_id=baseline.id, config_hash=config.config_hash(),
-                  evidence_runs=evidence)
+                  evidence_runs=evidence_runs, pool=pool)
     if not ranked:
         # The first default that survives the hard rules; failing that, the first surviving candidate (e.g. a
         # model without tool calling leaves only V1).

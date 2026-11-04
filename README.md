@@ -862,6 +862,17 @@ Held-out runs are never used as evidence. Strategies that agree share a run, don
 strategy is scored against one cost baseline that includes the evaluation runs. So a strategy that solves a task
 more cheaply scores higher. v1 is done when the selector beats the best single recipe here.
 
+**Pooled evidence (opt-in, ADR 0010).** With `pool_providers: true` in `catalog/selector.yaml`, or `--pool` on
+`hfx select show|freeze|evaluate` and `hfx provision`, a provider in a pool of providers calibrated as
+`equivalent` for the model (`hfx calibration`) decides from the pooled cells, so its pool partners' runs count as
+evidence. A pooled cell is current only if every run in it has the recipe's current recipe hash, the recipe's
+current tools hash (`tools_hash`), and the served model id its provider's catalog entry names now. Cost stays per
+provider. The decision, and so its log in `var/decisions/`, carries a `pool` entry: the pool label, the served ids,
+the ids of the `equivalent` records it rests on, and the scored runs from each provider (in total and per recipe).
+For a held-out evaluation every verdict in force is judged again on the evidence rows alone, so a pool never rests
+on held-out pairs. A provider in no pool decides exactly as with pooling off. Off, the selector, its decisions and
+frozen policies are unchanged (same ids).
+
 ## How a run works
 
 1. **Provision.** The recipe gets the cell's model and is validated (shape registered, prompts exist, tools resolve, tier ≥

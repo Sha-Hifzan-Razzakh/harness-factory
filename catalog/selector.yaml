@@ -21,3 +21,9 @@ depth_shapes:
   SINGLE_STEP: [V1_SINGLE_CALL, V2_TOOL_LOOP, V3_WORKFLOW_GRAPH]
   KNOWN_PATH: [V2_TOOL_LOOP, V3_WORKFLOW_GRAPH]
   UNKNOWN_PATH: [V2_TOOL_LOOP, V3_WORKFLOW_GRAPH]
+
+# ADR 0010: read cells pooled across providers calibrated as `equivalent` for the model (`hfx calibration`), so a
+# provider's decision can use its pool partners' runs. Off unless set here or with `hfx select ... --pool`. A pooled
+# cell counts only when every run in it has the recipe's current hash and tools hash and the served model id its
+# provider's catalog entry names now; the decision log names the pool and the runs from each provider.
+pool_providers: false
