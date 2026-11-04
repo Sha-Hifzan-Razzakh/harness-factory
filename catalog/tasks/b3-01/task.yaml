@@ -1,0 +1,41 @@
+id: b3-01
+version: 1
+domain: data
+instruction: How much cash did we actually collect from customers in October 2026? Internal accounts don't count.
+  Answer with the amount in AED.
+env_seed:
+  files: ../../seeds/billing/files
+  sqlite: ../../seeds/billing/db.sql
+allowed_tools:
+- sql.list_tables
+- sql.describe_table
+- sql.query
+risk: R0
+expected_depth: KNOWN_PATH
+split: TEST
+status: verified
+tags:
+- batch-3
+- sql
+- read
+- dates
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.75
+    pattern: (?<![\d.,])9,?960(?![\d,]|\.\d*[1-9])
+  - id: grounded
+    kind: tool_called
+    weight: 0.25
+    pattern: sql.query
+  - id: payments_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(amount) FROM payments
+    rows:
+    - - 22
+      - 23640.0

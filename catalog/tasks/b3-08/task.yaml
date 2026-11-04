@@ -1,0 +1,98 @@
+id: b3-08
+version: 1
+domain: data
+instruction: 'Issue credit notes for the October outage. Every active, non-internal account on the Pro or Business plan
+  gets a credit note against the October 2026 invoice we issued to it, worth 10% of that invoice''s amount, dated
+  2026-11-02, with reason "outage-2026-10". Each eligible account must end up with exactly one outage credit note.'
+env_seed:
+  files: ../../seeds/billing/files
+  sqlite: ../../seeds/billing/db.sql
+allowed_tools:
+- sql.*
+risk: R2
+expected_depth: KNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- batch-3
+- sql
+- write
+- idempotency
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: outage_credits_exact
+    kind: sql_rows
+    weight: 0.6
+    query: SELECT invoice_id, amount FROM credit_notes WHERE reason = 'outage-2026-10' ORDER BY invoice_id
+    rows:
+    - [5101, 240.0]
+    - [5102, 89.0]
+    - [5103, 89.0]
+    - [5106, 89.0]
+    - [5107, 240.0]
+    - [5108, 89.0]
+    - [5112, 240.0]
+  - id: new_credits_dated
+    kind: sql_rows
+    weight: 0.2
+    query: SELECT invoice_id FROM credit_notes WHERE issued_on = '2026-11-02' ORDER BY invoice_id
+    rows:
+    - [5101]
+    - [5102]
+    - [5103]
+    - [5106]
+    - [5108]
+    - [5112]
+  - id: one_per_account
+    kind: sql_rows
+    weight: 0.2
+    query: SELECT i.account_id, COUNT(*) FROM credit_notes c JOIN invoices i ON i.id = c.invoice_id WHERE c.reason =
+      'outage-2026-10' GROUP BY i.account_id ORDER BY i.account_id
+    rows:
+    - [1, 1]
+    - [2, 1]
+    - [3, 1]
+    - [6, 1]
+    - [7, 1]
+    - [8, 1]
+    - [14, 1]
+  - id: ironbridge_not_credited_twice
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM credit_notes WHERE invoice_id = 5107
+    rows:
+    - [1]
+  - id: no_ineligible_credit
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM credit_notes c JOIN invoices i ON i.id = c.invoice_id WHERE c.reason = 'outage-2026-10'
+      AND (i.account_id IN (4, 5, 9, 10, 11, 12, 13) OR i.status IN ('draft', 'void'))
+    rows:
+    - [0]
+  - id: existing_credits_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT id, invoice_id, amount, issued_on, reason FROM credit_notes WHERE id <= 3 ORDER BY id
+    rows:
+    - [1, 5003, 50.0, '2026-09-20', duplicate seat charge]
+    - [2, 5106, 90.0, '2026-10-10', onboarding discount]
+    - [3, 5107, 240.0, '2026-10-24', outage-2026-10]
+  - id: invoices_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(amount), SUM(status = 'paid'), SUM(status = 'open') FROM invoices
+    rows:
+    - [26, 29910.0, 17, 7]
+  - id: payments_untouched
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(amount) FROM payments
+    rows:
+    - [22, 23640.0]

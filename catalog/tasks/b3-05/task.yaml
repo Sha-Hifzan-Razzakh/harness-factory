@@ -1,0 +1,76 @@
+id: b3-05
+version: 1
+domain: ops
+instruction: Finance wants EU customers to get a fourth payment retry, 14 days after the due date. Make the change in
+  the dunning configuration. Nothing may change for other regions.
+env_seed:
+  files: ../../seeds/billing/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- fs.write_file
+risk: R1
+expected_depth: UNKNOWN_PATH
+split: HELD_OUT
+status: verified
+tags:
+- batch-3
+- fs
+- config
+- cross-file
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: eu_retry_days
+    kind: file_regex
+    weight: 0.6
+    path: config/dunning/eu.toml
+    pattern: '(?s)^\[retry\](?:(?!\n\[).)*^retry_days\s*=\s*\[\s*2\s*,\s*5\s*,\s*10\s*,\s*14\s*,?\s*\]\s*(?:#.*)?$'
+  - id: eu_max_attempts
+    kind: file_regex
+    weight: 0.4
+    path: config/dunning/eu.toml
+    pattern: '(?s)^\[retry\](?:(?!\n\[).)*^max_attempts\s*=\s*4\s*(?:#.*)?$'
+  - id: eu_final_kept
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: config/dunning/eu.toml
+    pattern: '(?s)^\[final\](?:(?!\n\[).)*^after_days\s*=\s*30\s*$'
+  - id: eu_one_retry_list
+    kind: file_regex
+    weight: 0
+    critical: true
+    path: config/dunning/eu.toml
+    pattern: (?s)retry_days.*retry_days
+    negate: true
+  - id: default_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: config/dunning/default.toml
+    text: |
+      # Payment retry (dunning) defaults for every region. Region files in this folder override these keys.
+      [retry]
+      retry_days = [1, 3, 7]
+      max_attempts = 3
+      notify_customer = true
+
+      [final]
+      action = "suspend"
+      after_days = 21
+  - id: us_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: config/dunning/us.toml
+    text: |
+      # US: unpaid accounts go to the collections partner instead of being suspended.
+      [final]
+      action = "collections"
+  - id: no_new_region_files
+    kind: file_absent
+    weight: 0
+    critical: true
+    path: config/dunning/ae.toml
