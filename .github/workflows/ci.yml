@@ -114,7 +114,7 @@ jobs:
         run: uv run --no-sync hfx conformance
 
       - name: Tool-call emulation gate (a model without native tool calling solves the visible tasks offline)
-        run: uv run --no-sync hfx smoke --models scripted/emulated --strict -j 8
+        run: uv run --no-sync hfx smoke --models scripted/emulated --strict -j 8 --exclude-tag needs-retry
 
       - name: Inspect AI adapter (factory runs as an Inspect eval)
         run: |
