@@ -290,3 +290,101 @@ def test_v3_workflow_must_fit_its_step_budget(factory):
     tight = v3.model_copy(update={"config": v3.config.model_copy(update={"max_steps": 20})})
     assert any(i.rule == "workflow_fits_budget" for i in validate_recipe(tight, factory.declared))
     assert validate_recipe(v3, factory.declared) == []
+
+
+# ---------------------------------------------------------------- LiteLLM Router inside the gateway (MOD-10, FWK-01)
+
+def _gateway(catalog, ledger, **kw):
+    from harness_factory.observability.tracer import Tracer
+    return ModelGateway(catalog, ledger, Tracer("t"), "groq", **kw)
+
+
+def _slot():
+    from harness_factory.recipes.model import ModelSlot
+    return ModelSlot(canonical_model="gpt-oss-120b")
+
+
+_MSGS = [{"role": "user", "content": "x"}]
+
+
+async def test_calls_go_through_the_router_pinned_to_the_cells_provider(factory, monkeypatch, no_backoff):
+    """gpt-oss-120b is served by groq and openrouter: one model group, a deployment per provider, and the gateway's
+    call lands on its own provider's deployment (MOD-04), with the catalogued limits on it."""
+    calls = _script(monkeypatch, _resp(content="hi"))
+    gw = _gateway(factory.providers, factory.ledger)
+    await gw.complete(_slot(), _MSGS, [])
+    router = gw.backend.router_for(gw.provider)
+    group = {d["model_info"]["id"]: d["litellm_params"] for d in router.get_model_list()
+             if d["model_name"] == "gpt-oss-120b"}
+    assert set(group) == {"groq|gpt-oss-120b", "openrouter|gpt-oss-120b"}
+    assert group["groq|gpt-oss-120b"]["rpm"] == 30 and group["groq|gpt-oss-120b"]["tpm"] == 8000   # scope: model
+    assert group["openrouter|gpt-oss-120b"]["rpm"] == 20 and "tpm" not in group["openrouter|gpt-oss-120b"]
+    assert not any(d["model_name"].startswith("scripted/") for d in router.get_model_list())
+    assert len(calls) == 1 and calls[0]["model"] == "groq/openai/gpt-oss-120b"
+    assert calls[0]["model_info"]["id"] == "groq|gpt-oss-120b"           # the Router made this call
+    assert calls[0]["api_key"] == "k" and calls[0]["max_retries"] == 0      # no hidden SDK retries either
+    assert router.num_retries == 0 and router.disable_cooldowns and not router.fallbacks
+
+
+async def test_router_retries_and_ledger_do_not_double_count(factory, monkeypatch, no_backoff):
+    """Retries happen once, in the gateway: each gateway attempt is one ledger slot and one provider call (the Router
+    adds none and does not cool the deployment down after a failure), and only the successful call's real usage stays
+    booked against the bucket."""
+    from harness_factory.providers.quota import QuotaLedger
+    calls = _script(monkeypatch, litellm.RateLimitError("slow down", llm_provider="groq", model="x"),
+                    _status(litellm.InternalServerError, 502), _resp(content="3"))
+    ledger = QuotaLedger(factory.providers, jitter_s=0)
+    gw = _gateway(factory.providers, ledger, retries=2)
+    comp = await gw.complete(_slot(), _MSGS, [])
+    assert comp.message["content"] == "3" and len(calls) == 3 and no_backoff == [2.0, 4.0]
+    left = ledger.remaining("groq|gpt-oss-120b")
+    assert left["rpd"] == 1000 - 3 and left["rpm"] == 30 - 3        # one slot per attempt, none added by the Router
+    assert left["tpd"] == 200_000 - 120 and left["tpm"] == 8000 - 120   # failed reservations released, usage booked
+    assert [s.attributes["attempt"] for s in gw.tracer.spans] == [0, 1, 2]
+
+
+async def test_router_limits_never_refuse_a_call_the_ledger_admitted(factory, monkeypatch, no_backoff):
+    """The Router's in-flight cap would default to the deployment's rpm and refuse a call locally with a 429 that
+    never reached the provider. Here rpm=1: a call still in flight when the ledger's minute rolls over must not
+    block the next one."""
+    from harness_factory.providers.quota import QuotaLedger
+    cat = factory.providers.model_copy(deep=True)
+    cat.get("groq").limits = cat.get("groq").limits.model_copy(update={"rpm": 1})
+    now = {"t": 1_000_000.0}
+
+    async def no_pacing(s):
+        raise AssertionError(f"the ledger had to wait {s:.0f}s: a call was retried or counted twice")
+
+    ledger = QuotaLedger(cat, clock=lambda: now["t"], sleep=no_pacing, jitter_s=0)
+    release, calls = asyncio.Event(), []
+
+    async def fake(**kwargs):
+        calls.append(kwargs)
+        n = len(calls)
+        if n == 1:
+            await release.wait()                     # the first call is still in flight...
+        return _resp(content=str(n))
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    gw = _gateway(cat, ledger, retries=2)
+    first = asyncio.create_task(gw.complete(_slot(), _MSGS, []))
+    while not calls:
+        await asyncio.sleep(0)
+    now["t"] += 61                                   # ...when the ledger opens the next minute
+    second = await gw.complete(_slot(), _MSGS, [])
+    release.set()
+    assert (await first).message["content"] == "1" and second.message["content"] == "2"
+    assert len(calls) == 2 and no_backoff == [] and gw.successful_calls == 2     # no local refusal, no retry
+    assert ledger.remaining("groq|gpt-oss-120b")["rpd"] == 1000 - 2
+
+
+async def test_router_keeps_provider_error_messages_verbatim(factory, monkeypatch, no_backoff):
+    """The Router would append its fallback notes to the exception; classification and traces see the provider's
+    own text."""
+    _script(monkeypatch, _status(litellm.BadRequestError, 400, "unsupported parameter: foo"))
+    gw = _gateway(factory.providers, factory.ledger)
+    with pytest.raises(HarnessError) as e:
+        await gw.complete(_slot(), _MSGS, [])
+    assert e.value.kind == ErrorKind.CONFIG
+    assert "unsupported parameter: foo" in e.value.message and "LiteLLM: model group" not in e.value.message
+    assert "fallback" not in gw.tracer.spans[0].attributes["error_detail"].lower()

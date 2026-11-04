@@ -2,8 +2,13 @@
 
 The provider is fixed per run by the cell assignment (MOD-04); the gateway never swaps models.
 Backends:
-  LiteLLMBackend   real providers (OpenRouter, Groq, Cerebras, ...) through LiteLLM
+  LiteLLMBackend   real providers (OpenRouter, Groq, Cerebras, ...) through a LiteLLM Router
   ScriptedBackend  replays a fixed script of turns; used for offline runs and tests
+
+Who decides what (MOD-10, FWK-01): ModelGateway owns pacing (QuotaLedger slots and token reservations), retries
+(config.retries, backoff, Retry-After) and error classification (`classify_provider_error`). The LiteLLM Router only
+routes: it holds one deployment per (provider, served model) with the catalogued rpm/tpm, and is configured never to
+retry, fall back, cool a deployment down or refuse a call locally, so no attempt or limit is counted twice.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ import json
 import os
 import re
 import time
+import weakref
 from typing import Any, Protocol
 
 import anyio
@@ -138,42 +144,116 @@ class ScriptedBackend:
         return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
 
 
+# The Router's in-flight cap per deployment defaults to its rpm, and a call over it is refused locally as a 429 that
+# never reached the provider. Pacing is the QuotaLedger's job, so the cap is set out of reach.
+ROUTER_INFLIGHT_CAP = 1_000_000
+
+
+def litellm_model(provider: ProviderEntry, served: ServedModel) -> str:
+    return f"{provider.litellm_prefix}/{served.provider_model_id}" if provider.litellm_prefix \
+        else served.provider_model_id
+
+
+def deployment_id(provider_id: str, canonical: str) -> str:
+    """The Router deployment the gateway pins a call to: the cell's provider is fixed (MOD-04), never load-balanced."""
+    return f"{provider_id}|{canonical}"
+
+
+def router_deployments(catalog: ProviderCatalog, keys: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """One Router deployment per (provider, served model). The model group is the canonical model, so a model served
+    by two providers is one group with a deployment per provider. rpm/tpm are the limits of the call's quota bucket
+    (the model's own, else the provider's); with scope account/key the Router sees them per deployment, which is why
+    the ledger, not the Router, paces. `keys` ({provider id: API key}) go on that provider's deployments only: a key
+    passed per request instead makes the Router derive a throwaway deployment (and register its pricing) every call."""
+    keys = keys or {}
+    out: list[dict[str, Any]] = []
+    for p in catalog.providers:
+        if p.kind != "litellm":
+            continue
+        for m in p.models:
+            lim = m.limits or p.limits
+            params: dict[str, Any] = {"model": litellm_model(p, m), "max_parallel_requests": ROUTER_INFLIGHT_CAP}
+            if p.base_url:
+                params["api_base"] = p.base_url
+            if p.id in keys:
+                params["api_key"] = keys[p.id]
+            if lim.rpm is not None:
+                params["rpm"] = lim.rpm
+            if lim.tpm is not None:
+                params["tpm"] = lim.tpm
+            out.append({"model_name": m.canonical, "litellm_params": params,
+                        "model_info": {"id": deployment_id(p.id, m.canonical)}})
+    return out
+
+
+def build_router(catalog: ProviderCatalog, keys: dict[str, str] | None = None) -> Any:
+    """A Router that routes and nothing else: retries, fallbacks, cooldowns and local admission are all off, because
+    the gateway already retries (one place), the ledger paces, and a cooled-down deployment would turn the gateway's
+    own retry into a local "no deployments" error that never reached the provider."""
+    import litellm
+
+    # Keep provider error messages as the provider sent them: the Router otherwise appends its fallback notes,
+    # which would end up in traces and in the text classify_provider_error reads. A process-wide LiteLLM setting,
+    # always set to the same value (LiteLLM plans to make it the default).
+    litellm.expose_router_debug_in_errors = False
+    return litellm.Router(model_list=router_deployments(catalog, keys), routing_strategy="simple-shuffle",
+                          num_retries=0, max_fallbacks=0, retry_after=0, disable_cooldowns=True,
+                          enable_pre_call_checks=False)
+
+
 class LiteLLMBackend:
     accepts_response_format = True       # ModelGateway passes JSON mode only to backends that say so
 
-    def __init__(self, timeout_s: float | None = None) -> None:
+    def __init__(self, timeout_s: float | None = None, catalog: ProviderCatalog | None = None) -> None:
         self.timeout_s = timeout_s
+        self.catalog = catalog
+        self._router: Any = None
+
+    @staticmethod
+    def api_key(provider: ProviderEntry) -> str | None:
+        if not provider.auth_env:
+            return None
+        key = os.environ.get(provider.auth_env)
+        if not key:
+            raise HarnessError(ErrorKind.PROVISION, f"{provider.auth_env} is not set for provider {provider.id}")
+        return key
+
+    def router_for(self, provider: ProviderEntry) -> Any:
+        """This backend's Router, built on first use (no await in between, so concurrent calls share one), holding the
+        provider's key. It lives as long as the backend, i.e. one run: no Router state is shared between runs. LiteLLM
+        registers every Router's usage callbacks globally, so they are removed when the backend is collected."""
+        if self._router is None:
+            key = self.api_key(provider)
+            catalog = self.catalog if self.catalog is not None else ProviderCatalog(providers=[provider])
+            try:
+                self._router = build_router(catalog, {provider.id: key} if key else None)
+            except Exception as e:                  # our own setup, not a provider failure: never retried
+                raise HarnessError(ErrorKind.PROVISION, f"LiteLLM Router for {provider.id}: {e}") from e
+            weakref.finalize(self, self._router.discard)
+        return self._router
 
     async def complete(self, messages, tools, slot, provider, served,
                        response_format: dict[str, Any] | None = None) -> Completion:
-        import litellm
-
         timeout_s = self.timeout_s
 
         kwargs: dict[str, Any] = dict(
-            model=f"{provider.litellm_prefix}/{served.provider_model_id}" if provider.litellm_prefix
-            else served.provider_model_id,
+            model=deployment_id(provider.id, served.canonical),
             messages=messages, temperature=slot.temperature, max_tokens=slot.max_output_tokens, num_retries=0,
         )
         if tools:
             kwargs["tools"] = tools
         if response_format:
             kwargs["response_format"] = response_format
-        if provider.base_url:
-            kwargs["api_base"] = provider.base_url
-        if provider.auth_env:
-            key = os.environ.get(provider.auth_env)
-            if not key:
-                raise HarnessError(ErrorKind.PROVISION, f"{provider.auth_env} is not set for provider {provider.id}")
-            kwargs["api_key"] = key
+        self.api_key(provider)                      # checked every call, as before the Router: unset is PROVISION
         if slot.seed is not None:
             kwargs["seed"] = slot.seed
         kwargs["drop_params"] = True               # a provider that rejects `seed` etc. drops it rather than 400s
         if timeout_s:
             kwargs["timeout"] = timeout_s
+        router = self.router_for(provider)
         # Provider exceptions propagate raw: ModelGateway classifies them, because only it knows whether the run
         # already had a successful call (which decides whether a 400 is setup or the model's doing).
-        resp = await litellm.acompletion(**kwargs)
+        resp = await router.acompletion(**kwargs)
         choice = resp.choices[0].message
         msg: dict[str, Any] = {"role": "assistant", "content": choice.content}
         if getattr(choice, "tool_calls", None):
@@ -200,7 +280,7 @@ class ModelGateway:
         self.tracer = tracer
         self.provider = catalog.get(provider_id)
         self.timeout_s = timeout_s
-        self.backend = backend or (LiteLLMBackend(timeout_s) if self.provider.kind == "litellm" else None)
+        self.backend = backend or (LiteLLMBackend(timeout_s, catalog) if self.provider.kind == "litellm" else None)
         if self.backend is None:
             raise HarnessError(ErrorKind.PROVISION, f"provider {provider_id} needs an explicit backend")
         self.retries = retries
