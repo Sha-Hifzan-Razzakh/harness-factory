@@ -40,8 +40,9 @@ analysis = ["polars>=1.20", "scipy>=1.15"]  # hfx analyze: shape x model tables,
 # Framework runners (docs/adr/0016-runner-axis.md). Their exact versions are part of a runner run's identity.
 langgraph-prebuilt = ["langchain[mcp]>=1.4.7,<1.5"]          # create_agent + langchain.mcp (FastMCP client)
 llamaindex = ["llama-index-core>=0.14.25,<0.15", "llama-index-tools-mcp>=0.6.0,<0.7"]
-dev = ["harness-factory[analysis,langgraph-prebuilt,llamaindex,retrieval]", "pytest>=8", "pytest-asyncio>=1.0",
-       "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15", "psycopg[binary]>=3.1"]
+ms-agent-framework = ["agent-framework-core>=1.24.0,<2"]     # Agent + MCPStdioTool; the `agent-framework` meta package adds only provider connectors
+dev = ["harness-factory[analysis,langgraph-prebuilt,llamaindex,ms-agent-framework,retrieval]", "pytest>=8",
+       "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15", "psycopg[binary]>=3.1"]
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

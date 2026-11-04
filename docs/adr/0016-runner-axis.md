@@ -143,3 +143,58 @@ recipe's score carries over there had not been measured (`docs/design/test-matri
   - Runners are not yet a selector axis beyond their recipe (RUN-06).
 - Other frameworks (#54–#56) add a module in `runners/`, a `RUNNER_PACKAGES` entry, an extra, and the same offline
   tests.
+
+## Addendum: `ms-agent-framework` (package #54)
+
+Microsoft Agent Framework (1.0 GA April 2026, the successor of Semantic Kernel and AutoGen) as a third runner, built
+the same way. Requirements RUN-10, FWK-01 to FWK-04. Matrix recipe `v2-ms-agent-framework` (`base: v2-base` plus
+`runtime`), extra `ms-agent-framework` (in `dev`), its own CI runner gate, tests in
+`tests/test_runner_ms_agent_framework.py`. No existing hash changes (`v2-base` is still `79abd03818943f65`).
+
+- **Package.** `agent-framework-core` 1.24.0. The `agent-framework` meta package is `agent-framework-core[all]`,
+  which only adds the provider connectors (Azure, OpenAI, Anthropic, Redis, ...) and pins `tenacity<9.2`. The runner
+  needs none of them, so the extra installs the core alone. It adds two locked packages (agent-framework-core,
+  msgspec) and changes no other version; it requires `mcp>=2.2,<3`, which matches the factory's MCP 2.3.
+- **Agent:** `agent_framework.Agent` (called `ChatAgent` before 1.0) with `instructions` and one MCP tool, nothing
+  else: no name, middleware or context providers, `tool_choice` "auto". The tool loop is the framework's
+  `FunctionInvocationLayer`, which every Agent Framework chat client composes. Its defaults are 40 model round trips
+  (`DEFAULT_MAX_ITERATIONS`) and then one more call with tools disabled, at most 3 consecutive failing tool batches
+  before tools are disabled, the calls of one reply run concurrently, and no exception details for the model.
+- **Model client (a):** `GatewayChatClient`, a `BaseChatClient` composed with the framework's
+  `FunctionInvocationLayer`, `ChatMiddlewareLayer` and `ChatTelemetryLayer`, in the order the framework's own clients
+  use. Its `_inner_get_response` is the only place a call leaves the framework, and it calls `RunnerContext.model`.
+  Messages, tools and replies are converted the way agent-framework-openai's `OpenAIChatCompletionClient` does it:
+  instructions prepended as a system message (`prepend_instructions_to_messages`), tools as
+  `FunctionTool.to_json_schema_spec()`, an assistant turn's text and tool calls in one message, and tool results
+  matched by `call_id`. agent-framework-openai itself isn't used: its client posts through the OpenAI SDK.
+- **MCP tools (b):** `agent_framework.MCPStdioTool(name=..., mcp_client=ExecutorMCPClient(ctx))`. A caller-owned
+  `mcp_client` is the framework's non-deprecated way to give an MCP tool an existing connection (`session=` is
+  deprecated). `ExecutorMCPClient` is `ExecutorSession` plus the parts of `mcp.Client` that `MCPTool` reads:
+  `server_capabilities` (tools only, without list-change notifications) and `session.initialize_result` (None, so
+  the framework never pings). With these, the framework's `MCPTool` lists the
+  tools once and builds one `FunctionTool` per tool. On each call it filters the arguments to the schema's
+  properties, calls `call_tool`, which goes to ToolExecutor, and converts the result. No transport is opened. The
+  stdio subclass is used only because `MCPTool` itself is abstract (`get_mcp_client`), and with `mcp_client`
+  given, no process is started.
+- **What it adds** (recorded, not tuned):
+  - **Prompt text: none.** The system message is sent first, unchanged, on every call. The task is the one input
+    message.
+  - **Tool schemas:** the MCP input schemas, unchanged.
+  - **Tool results:** with the `structured_first` default, the model sees the JSON of `structuredContent` when a
+    result has one, and the text otherwise. A FastMCP tool that returns a string therefore reads
+    `{"result": "wrote 61 characters to ..."}`.
+  - **Tool errors:** an `isError` result, a policy denial or a failed call becomes `"Error: Function failed."` and
+    nothing else (`include_detailed_errors=False`). The server's message is in the trace, never in the
+    conversation. With real models this is the largest difference from native and from the other runners.
+  - **History:** the framework's in-memory history, untrimmed.
+  - Offline, with `scripted/replay` on the 20 visible tasks: 20/20 SUCCESS, the same model and tool calls as
+    `v2-base`, transfer check `equivalent` (20 ties), tokens ×1.01.
+- **How runs end:**
+  - **Budget stops:** as for the other runners. A stop raised inside a tool call is wrapped by the framework into
+    an error result, but the stop recorded first decides the run.
+  - **The framework's own bounds** don't raise. It disables tools (`tool_choice="none"`) and asks once more. The
+    runner records that as a harness stop: `budget:framework max_iterations` after the 40 round trips, or
+    `budget:framework max_consecutive_errors` after 3 failing batches.
+- **Deviation:** the gateway has no `tool_choice`. A request with `tool_choice="none"` is sent with no tools
+  offered, which leaves the model the same choice: answer in text. Any other forced choice is refused (not used at
+  the defaults).

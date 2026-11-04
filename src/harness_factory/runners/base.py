@@ -149,6 +149,7 @@ class RunnerRegistry:
     _modules: ClassVar[dict[str, str]] = {
         "langgraph-prebuilt": "harness_factory.runners.langgraph_prebuilt:LangGraphPrebuiltRunner",
         "llamaindex-agent": "harness_factory.runners.llamaindex_agent:LlamaIndexAgentRunner",
+        "ms-agent-framework": "harness_factory.runners.ms_agent_framework:MsAgentFrameworkRunner",
     }
 
     @classmethod
