@@ -1,5 +1,5 @@
 id: b3-02
-version: 1
+version: 2
 domain: research
 instruction: Which accounts were over their seat allowance in October 2026, according to our seat policy in docs/?
   Answer with the account names only, comma-separated.
@@ -34,6 +34,8 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - seat_usage
   - id: usage_unchanged
     kind: sql_rows
     weight: 0

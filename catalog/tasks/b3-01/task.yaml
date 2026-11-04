@@ -1,5 +1,5 @@
 id: b3-01
-version: 1
+version: 2
 domain: data
 instruction: How much cash did we actually collect from customers in October 2026? Internal accounts don't count.
   Answer with the amount in AED.
@@ -31,6 +31,8 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - payments
   - id: payments_unchanged
     kind: sql_rows
     weight: 0

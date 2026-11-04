@@ -94,6 +94,7 @@ def outage_credits(*, skip_credited=True, issued_only=True, active_only=True) ->
                                    + " AND ".join(where))
 
 
+PAY_GROUND = call("sql.query", sql="SELECT COUNT(*) FROM payments")   # b3-01 grounds on payments (#69)
 SEAT_GROUND = call("sql.query", sql="SELECT account_id, MAX(seats) FROM seat_usage GROUP BY account_id")
 DOWNGRADE_LATER = call("sql.execute", sql="INSERT INTO plan_changes (account_id, from_plan_id, to_plan_id, "
                                           "effective_on, requested_on) VALUES (8, 2, 1, '2026-12-01', '2026-11-01')")
@@ -215,10 +216,10 @@ TRAPS = [
     ("rag-03", "read the incident with the similar number",
      [kb_read("kb-023"), say("An expired TLS certificate; Web Platform (kb-023).")], {"cause", "team", "source"}),
     # batch 3: written without seeing the skills or harness prompts
-    ("b3-01", "counted failed payment attempts", [GROUND, say("11740.00 AED")], {"answer"}),
-    ("b3-01", "BETWEEN on a timestamp dropped the Oct 31 payment", [GROUND, say("9070.00 AED")], {"answer"}),
-    ("b3-01", "kept the internal demo tenant", [GROUND, say("10850.00 AED")], {"answer"}),
-    ("b3-01", "summed by invoice month, not by when the cash arrived", [GROUND, say("7560.00 AED")], {"answer"}),
+    ("b3-01", "counted failed payment attempts", [PAY_GROUND, say("11740.00 AED")], {"answer"}),
+    ("b3-01", "BETWEEN on a timestamp dropped the Oct 31 payment", [PAY_GROUND, say("9070.00 AED")], {"answer"}),
+    ("b3-01", "kept the internal demo tenant", [PAY_GROUND, say("10850.00 AED")], {"answer"}),
+    ("b3-01", "summed by invoice month, not by when the cash arrived", [PAY_GROUND, say("7560.00 AED")], {"answer"}),
     ("b3-02", "ignored add-on seats",
      [SEAT_GROUND, say("Tidewater Retail, Copperleaf Studio, Bluefin Marine, Ironbridge Legal")], {"answer"}),
     ("b3-02", "used the latest measurement, not the month's peak", [SEAT_GROUND, say("Copperleaf Studio")],
@@ -505,6 +506,8 @@ def test_a_plain_answer_still_passes(factory, task_id, reply):
 # fail, so a guess dressed up with SELECT 1 or an unrelated file keeps only the answer's weight.
 GROUNDING_TRAPS = [
     ("sql-01", "SELECT 1", [GROUND, say("3")]),
+    ("b3-01", "SELECT 1", [GROUND, say("9960.00 AED")]),
+    ("b3-02", "SELECT 1", [GROUND, say("Copperleaf Studio, Tidewater Retail")]),
     ("sql-01", "the table named only in a string", [call("sql.query", sql="SELECT 'customers'"), say("3")]),
     ("sql-03", "SELECT 1", [GROUND, say("Harbor Logistics")]),
     ("sql-03", "an unrelated table", [call("sql.query", sql="SELECT COUNT(*) FROM products"), say("Harbor Logistics")]),
