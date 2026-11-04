@@ -40,3 +40,13 @@ def test_cli_prints_a_group_and_refuses_an_unknown_one(capsys):
     assert ci.main(["matrix"]) == 0
     assert "v2-recover" in capsys.readouterr().out.split(",")
     assert ci.main(["nope"]) == 2
+
+
+def test_parts_split_a_group_without_gaps_or_overlap(capsys):
+    ci = _module()
+    whole = ci.groups()["matrix"]
+    parts = [ci.part(whole, f"{i}/3") for i in (1, 2, 3)]
+    assert sorted(r for p in parts for r in p) == sorted(whole) and all(parts)
+    assert ci.main(["matrix", "2/3"]) == 0
+    assert capsys.readouterr().out.strip().split(",") == parts[1]
+    assert ci.main(["matrix", "4/3"]) == 2

@@ -1,6 +1,7 @@
 """Recipe ids for the CI gates, read from the catalog, so a new recipe is gated without editing ci.yml.
 
-    uv run --no-sync python scripts/ci/recipes.py <group>      # prints the group's ids, comma-separated
+    uv run --no-sync python scripts/ci/recipes.py <group>        # prints the group's ids, comma-separated
+    uv run --no-sync python scripts/ci/recipes.py <group> i/n    # only every n-th id from the i-th (parallel CI jobs)
 
 Groups (every recipe but v1-base and v2-base is in exactly one; tests/test_ci_recipe_groups.py checks it):
 
@@ -43,12 +44,26 @@ def groups() -> dict[str, list[str]]:
     return out
 
 
+def part(ids: list[str], spec: str) -> list[str]:
+    """The i-th of n slices ("i/n", 1-based), round-robin, so the parts together are the whole group."""
+    i, n = (int(x) for x in spec.split("/"))
+    if not 1 <= i <= n:
+        raise ValueError(f"part {spec!r}: expected i/n with 1 <= i <= n")
+    return ids[i - 1::n]
+
+
 def main(argv: list[str]) -> int:
     all_groups = groups()
-    if len(argv) != 1 or argv[0] not in all_groups:
-        print(f"usage: recipes.py {{{'|'.join(all_groups)}}}", file=sys.stderr)
+    if len(argv) not in (1, 2) or argv[0] not in all_groups:
+        print(f"usage: recipes.py {{{'|'.join(all_groups)}}} [i/n]", file=sys.stderr)
         return 2
     ids = all_groups[argv[0]]
+    if len(argv) == 2:
+        try:
+            ids = part(ids, argv[1])
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 2
     if not ids:                     # an empty --recipe would silently fall back to v2-base
         print(f"no recipe in group {argv[0]!r}", file=sys.stderr)
         return 1

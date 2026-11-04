@@ -14,19 +14,27 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: test (py${{ matrix.python }})
+  # Jobs run side by side; the slow ones are split. The six checks the main ruleset requires ("test (py3.12)",
+  # "test (py3.13)", "offline gates", "docker sandbox gate", "container (Dockerfile + compose)", "prompt smoke
+  # checks (promptfoo)") keep their names: the split jobs report into summary jobs of those names, which run even
+  # when a part fails (`if: always()`), because a skipped required check would count as passing.
+
+  # The suite in three shards per Python (HF_TEST_SHARD, tests/conftest.py): together they run every test once.
+  tests:
+    name: tests py${{ matrix.python }} (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    timeout-minutes: 40           # the suite alone takes ~23 min on 2 cores; then validate, freeze, reference
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         python: ["3.12", "3.13"]
+        shard: [1, 2, 3]
     env:
       HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
       COLUMNS: "160"
       HF_REQUIRE_DOCKER: "1"        # Docker isolation tests fail instead of skipping
       HF_REQUIRE_POSTGRES: "1"      # results-store tests also run on Postgres (testcontainers), never skip
+      HF_TEST_SHARD: ${{ matrix.shard }}/3
     steps:
       - uses: actions/checkout@v4
 
@@ -37,38 +45,22 @@ jobs:
       - name: Install (locked)
         run: uv sync --locked --extra dev --extra inspect --extra docs --python ${{ matrix.python }}
 
-      - name: Lint
-        run: uv run --no-sync ruff check src tests
-
-      - name: Tests
+      - name: Tests (one shard)
         run: uv run --no-sync pytest -q -n auto
-
-      - name: Recipes validate
-        run: uv run --no-sync hfx validate
-
-      - name: Tool schemas frozen (no drift)
-        run: uv run --no-sync hfx tools freeze --check
-
-      - name: Perturbed variants generated from their specs (no drift)
-        run: uv run --no-sync hfx perturb --check
-
-      - name: Reference solutions pass their oracles
-        run: uv run --no-sync hfx reference
 
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: traces-test-py${{ matrix.python }}
+          name: traces-test-py${{ matrix.python }}-${{ matrix.shard }}
           path: var/traces
           if-no-files-found: ignore
 
-  # Offline gates: every shape and matrix recipe solves the visible tasks with the scripted model. They exercise
-  # the same code on any Python, so they run once, in parallel with the tests.
-  gates:
-    name: offline gates
+  # Lint and the catalog checks: the same on any Python, so once.
+  catalog:
+    name: lint and catalog checks
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
       COLUMNS: "160"
@@ -82,56 +74,126 @@ jobs:
       - name: Install (locked)
         run: uv sync --locked --extra dev --extra inspect --extra docs --python 3.13
 
-      - name: P0 gate (offline, scripted model)
-        run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8 --exclude-tag needs-retry
+      - name: Lint
+        run: uv run --no-sync ruff check src tests
 
-      # The recipe lists come from the catalog (scripts/ci/recipes.py): a new recipe is gated without editing this
-      # file. `long` tasks are left out where a shape's caps or a framework's untrimmed history can't fit them.
-      - name: V3, V4 and V5 shape gate (offline, scripted model; `long` tasks exceed V3's stage caps and V4/V5's plan length)
-        run: uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py shapes)" --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
+      - name: Recipes validate
+        run: uv run --no-sync hfx validate
 
-      - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
+      - name: Tool schemas frozen (no drift)
+        run: uv run --no-sync hfx tools freeze --check
+
+      - name: Perturbed variants generated from their specs (no drift)
+        run: uv run --no-sync hfx perturb --check
+
+      - name: Reference solutions pass their oracles
+        run: uv run --no-sync hfx reference
+
+  test:
+    name: test (py${{ matrix.python }})
+    if: always()
+    needs: [tests, catalog]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - name: Every test shard and the catalog checks passed
         run: |
-          uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix)" --models scripted/replay --strict -j 8 --exclude-tag perturbation
-          uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix-planned)" --models scripted/replay --strict -j 8 --exclude-tag long,perturbation
+          echo "tests: ${{ needs.tests.result }}   catalog: ${{ needs.catalog.result }}"
+          test "${{ needs.tests.result }}" = success && test "${{ needs.catalog.result }}" = success
 
-      - name: Runner gate (every framework runner solves the visible tasks offline, ADR 0016)
-        run: uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py runners)" --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
+  # Offline gates: every shape and matrix recipe solves the visible tasks with the scripted model, in parallel
+  # parts. The recipe lists come from the catalog (scripts/ci/recipes.py, a group and optionally a part i/n): a new
+  # recipe is gated without editing this file. `long` tasks are left out where a shape's caps or a framework's
+  # untrimmed history can't fit them; `needs-retry` and `perturbation` variants (TSK-04) have their own gate, with
+  # the retry model.
+  gate-parts:
+    name: gates (${{ matrix.part }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: P0, shapes, planned matrix
+            run: |
+              uv run --no-sync hfx smoke --models scripted/replay --strict -j 8 --exclude-tag needs-retry
+              uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py shapes)" --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
+              uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix-planned)" --models scripted/replay --strict -j 8 --exclude-tag long,perturbation
+          - part: matrix 1/2
+            run: uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix 1/2)" --models scripted/replay --strict -j 8 --exclude-tag perturbation
+          - part: matrix 2/2
+            run: uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix 2/2)" --models scripted/replay --strict -j 8 --exclude-tag perturbation
+          - part: runners, migration check
+            run: |
+              uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py runners)" --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
+              uv run --no-sync hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20 -j 8 | tee transfer.txt
+              grep -q '^equivalent:' transfer.txt
+          - part: faults, retry, emulation
+            run: |
+              uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails,slow-tools --strict -j 8
+              uv run --no-sync hfx smoke --recipe v2-base,v2-biz,v2-docs --models scripted/retry --strict -j 8 --tag needs-retry
+              uv run --no-sync hfx smoke --models scripted/emulated --strict -j 8 --exclude-tag needs-retry
+          - part: conformance, Inspect
+            run: |
+              uv run --no-sync hfx conformance
+              uv run --no-sync inspect eval src/harness_factory/integrations/inspect_task.py \
+                --model mockllm/model -T recipe=v2-base --epochs 2 --log-dir var/inspect-logs --display plain
+    env:
+      HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
+      COLUMNS: "160"
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Migration check, AutoGen against Microsoft Agent Framework (ADR 0016, RUN-11)
-        run: |
-          uv run --no-sync hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20 -j 8 | tee transfer.txt
-          grep -q '^equivalent:' transfer.txt
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
-      - name: Fault injection (clean runs gate; faulted runs feed R)
-        run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails,slow-tools --strict -j 8
+      - name: Install (locked)
+        run: uv sync --locked --extra dev --extra inspect --extra docs --python 3.13
 
-      - name: Tool-call emulation gate (a model without native tool calling solves the visible tasks offline)
-        run: uv run --no-sync hfx smoke --models scripted/emulated --strict -j 8 --exclude-tag needs-retry
-
-      - name: Perturbed tool failures (the retry model recovers; TSK-04)
-        run: uv run --no-sync hfx smoke --recipe v2-base,v2-biz,v2-docs --models scripted/retry --strict -j 8 --tag needs-retry
-
-      - name: MCP conformance (every declared server, local sandbox; MCP-11)
-        run: uv run --no-sync hfx conformance
-
-      - name: Inspect AI adapter (factory runs as an Inspect eval)
-        run: |
-          uv run --no-sync inspect eval src/harness_factory/integrations/inspect_task.py \
-            --model mockllm/model -T recipe=v2-base --epochs 2 --log-dir var/inspect-logs --display plain
+      - name: ${{ matrix.part }}
+        run: ${{ matrix.run }}
 
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: traces-gates
+          name: traces-gates-${{ strategy.job-index }}
           path: var/traces
           if-no-files-found: ignore
 
-  docker-gate:
-    name: docker sandbox gate
+  gates:
+    name: offline gates
+    if: always()
+    needs: [gate-parts]
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
+    steps:
+      - name: Every gate part passed
+        run: |
+          echo "gate parts: ${{ needs.gate-parts.result }}"
+          test "${{ needs.gate-parts.result }}" = success
+
+  docker-parts:
+    name: docker sandbox (${{ matrix.part }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: references, conformance
+            run: |
+              uv run --no-sync hfx reference
+              uv run --no-sync hfx conformance --sandbox docker
+          - part: smoke
+            run: |
+              uv run --no-sync hfx smoke --recipe v2-base,v2-docs,v2-web,v2-outbox --models scripted/replay --strict -j 8 --exclude-tag needs-retry
+              uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
+              uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8 --exclude-tag needs-retry
     env:
       HF_RESULTS_URL: sqlite:///${{ github.workspace }}/var/results.db
       COLUMNS: "160"
@@ -146,28 +208,33 @@ jobs:
       - name: Install (locked)
         run: uv sync --locked --extra dev --extra docs --python 3.13
 
-      - name: References and smoke inside containers
-        run: |
-          uv run --no-sync hfx reference
-          uv run --no-sync hfx smoke --recipe v2-base,v2-docs,v2-web,v2-outbox --models scripted/replay --strict -j 8 --exclude-tag needs-retry
-          uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
-          uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8 --exclude-tag needs-retry
-
-      - name: MCP conformance inside containers (every declared server; MCP-11)
-        run: uv run --no-sync hfx conformance --sandbox docker
+      - name: Inside containers, ${{ matrix.part }}
+        run: ${{ matrix.run }}
 
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: traces-docker
+          name: traces-docker-${{ strategy.job-index }}
           path: var/traces
           if-no-files-found: ignore
+
+  docker-gate:
+    name: docker sandbox gate
+    if: always()
+    needs: [docker-parts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every Docker part passed
+        run: |
+          echo "docker parts: ${{ needs.docker-parts.result }}"
+          test "${{ needs.docker-parts.result }}" = success
 
   container:
     name: container (Dockerfile + compose)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       COLUMNS: "160"
     steps:
