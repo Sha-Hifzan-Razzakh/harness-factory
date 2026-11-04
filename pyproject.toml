@@ -20,6 +20,7 @@ dependencies = [
     "jsonschema>=4.20",           # json_schema checks (grading/state.py); was only transitive (mcp, litellm)
     "alembic>=1.14,<2",
     "langgraph-checkpoint-sqlite>=3,<4",  # opt-in pause/resume (HF_CHECKPOINT); offline saver
+    "openinference-semantic-conventions>=0.1.9",
 ]
 
 [project.optional-dependencies]

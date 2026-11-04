@@ -7,8 +7,10 @@
 # Host ports are HF_*_PORT in .env (defaults: the services' own ports), for machines where another stack already
 # uses them. Only the host side moves: services still reach each other on their own ports (phoenix:6006 ...).
 # Image tags are set in .env; pin them to versions you have checked.
-# Langfuse needs ClickHouse, Redis and object storage: run its official docker-compose alongside this file
-# and put the stack on the same network (see README), or point LANGFUSE_OTLP_ENDPOINT at Langfuse Cloud.
+# Langfuse (v4, self-hosted) runs here too: langfuse-web (UI :3000, OTLP at /api/public/otel) and langfuse-worker,
+# with their own Postgres, ClickHouse, Redis and MinIO, none of them on a host port. The collector sends to it
+# with LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY from .env (README "Langfuse"), or point LANGFUSE_OTLP_ENDPOINT
+# at Langfuse Cloud instead.
 
 x-factory: &factory
   build: .
@@ -74,10 +76,135 @@ services:
     volumes: ["./observability/collector.yaml:/etc/otelcol/config.yaml:ro"]
     environment:
       LANGFUSE_OTLP_ENDPOINT: ${LANGFUSE_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel}
-      LANGFUSE_AUTH: ${LANGFUSE_AUTH:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}    # Basic auth to Langfuse (basicauth/langfuse extension)
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     ports: ["${HF_OTLP_GRPC_PORT:-4317}:4317", "${HF_OTLP_HTTP_PORT:-4318}:4318"]
     depends_on: [phoenix]
+
+  # Langfuse v4 (https://langfuse.com/self-hosting/deployment/docker-compose), adapted: services are prefixed
+  # langfuse-*, only the UI has a host port, telemetry to Langfuse is off by default. The defaults below are for a
+  # local stack only; set every LANGFUSE_* secret in .env before the UI is reachable by anyone else.
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:${LANGFUSE_TAG:-4.60.0}
+    restart: unless-stopped
+    depends_on: &langfuse-deps
+      langfuse-postgres: {condition: service_healthy}
+      langfuse-clickhouse: {condition: service_healthy}
+      langfuse-redis: {condition: service_healthy}
+      langfuse-minio: {condition: service_healthy}
+    environment:
+      <<: &langfuse-env
+        NEXTAUTH_URL: http://localhost:${HF_LANGFUSE_PORT:-3000}
+        DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-postgres:5432/langfuse
+        SALT: ${LANGFUSE_SALT:-local-only-salt}
+        ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+        TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
+        CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+        CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+        CLICKHOUSE_USER: clickhouse
+        CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+        CLICKHOUSE_CLUSTER_ENABLED: "false"
+        REDIS_HOST: langfuse-redis
+        REDIS_PORT: "6379"
+        REDIS_AUTH: ${LANGFUSE_REDIS_AUTH:-langfuse}
+        # Ingested OTLP batches are stored in S3 before the worker processes them (media uploads stay off).
+        LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+        LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+        LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+        LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+        LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+        LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+        LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-local-only-nextauth-secret}
+      # Headless initialization: the org and project exist on first start; the project's API keys are created
+      # only when both keys are set (the same pair the collector authenticates with), the first user only when
+      # both email and password are set. Without them, create the project in the UI and copy its keys to .env.
+      LANGFUSE_INIT_ORG_ID: harness-factory
+      LANGFUSE_INIT_ORG_NAME: Harness Factory
+      LANGFUSE_INIT_PROJECT_ID: harness-factory
+      LANGFUSE_INIT_PROJECT_NAME: harness-factory
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    ports: ["${HF_LANGFUSE_PORT:-3000}:3000"]
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:${LANGFUSE_TAG:-4.60.0}
+    restart: unless-stopped
+    depends_on: *langfuse-deps
+    environment: *langfuse-env
+
+  langfuse-postgres:
+    image: postgres:${LANGFUSE_POSTGRES_TAG:-17.11}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
+      POSTGRES_DB: langfuse
+      TZ: UTC
+      PGTZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    volumes: [langfuse-pgdata:/var/lib/postgresql/data]
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:${LANGFUSE_CLICKHOUSE_TAG:-25.12.12.1}
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+    volumes:
+      - langfuse-clickhouse:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+
+  langfuse-redis:
+    image: redis:${LANGFUSE_REDIS_TAG:-7.4.11}
+    restart: unless-stopped
+    command: ["--requirepass", "${LANGFUSE_REDIS_AUTH:-langfuse}", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    volumes: [langfuse-redis:/data]
+
+  langfuse-minio:
+    # Langfuse's own compose file uses Chainguard's MinIO; that image is published as `latest` only (MinIO no
+    # longer publishes images), so pin it by digest in .env: cgr.dev/chainguard/minio@sha256:...
+    image: ${LANGFUSE_MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    restart: unless-stopped
+    entrypoint: sh
+    # Creates the 'langfuse' bucket before the server starts.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+    volumes: [langfuse-minio:/data]
 
 volumes:
   pgdata: {}
   mlflow: {}
+  langfuse-pgdata: {}
+  langfuse-clickhouse: {}
+  langfuse-clickhouse-logs: {}
+  langfuse-redis: {}
+  langfuse-minio: {}
