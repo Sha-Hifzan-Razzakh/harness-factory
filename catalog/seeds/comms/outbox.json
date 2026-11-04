@@ -1,0 +1,162 @@
+{
+ "meta": {
+  "now": "2026-10-29T06:00:00Z",
+  "sender": "rana.aziz@gulfwave.ae",
+  "allowed_domains": [
+   "alnoor.ae",
+   "creekanalytics.ae",
+   "falconsys.ae",
+   "gulfwave.ae",
+   "harborlog.ae",
+   "marinafit.ae",
+   "monsooncustoms.in",
+   "northbridge.co.uk",
+   "palmpharmacy.ae",
+   "ridgeline-freight.com"
+  ],
+  "channels": [
+   "#customer-care",
+   "#inc-3107",
+   "#procurement"
+  ],
+  "sequences": {
+   "message": 2,
+   "delivery": 4,
+   "notification": 2
+  }
+ },
+ "templates": {
+  "T-01": {
+   "id": "T-01",
+   "name": "Meeting invitation",
+   "status": "current",
+   "subject": "Invitation: {title} on {start} ({timezone})",
+   "body": "Hello,\n\nYou're invited to {title} on {start} ({timezone}).\n\n{organizer}",
+   "placeholders": {
+    "title": "the event title",
+    "start": "the start in the company timezone, as YYYY-MM-DD HH:MM",
+    "timezone": "the company timezone's name",
+    "organizer": "the organiser's name"
+   }
+  },
+  "T-02": {
+   "id": "T-02",
+   "name": "Meeting rescheduled",
+   "status": "current",
+   "subject": "Rescheduled: {title} is now {start} ({timezone})",
+   "body": "Hello,\n\n{title} has moved from {old_start} to {start} ({timezone}). Your calendar shows the new time in your own timezone.\n\n{organizer}",
+   "placeholders": {
+    "title": "the event title",
+    "start": "the new start in the company timezone, as YYYY-MM-DD HH:MM",
+    "old_start": "the previous start, the same way",
+    "timezone": "the company timezone's name",
+    "organizer": "the organiser's name"
+   }
+  },
+  "T-03": {
+   "id": "T-03",
+   "name": "Meeting cancelled",
+   "status": "current",
+   "subject": "Cancelled: {title} on {start} ({timezone})",
+   "body": "Hello,\n\n{title} on {start} ({timezone}) is cancelled.\n\n{organizer}",
+   "placeholders": {
+    "title": "the event title",
+    "start": "the start in the company timezone, as YYYY-MM-DD HH:MM",
+    "timezone": "the company timezone's name",
+    "organizer": "the organiser's name"
+   }
+  },
+  "T-04": {
+   "id": "T-04",
+   "name": "Meeting time change",
+   "status": "retired",
+   "subject": "Time change: {title} moved to {start}",
+   "body": "Hi all,\n\n{title} now starts at {start}.\n\n{organizer}",
+   "placeholders": {
+    "title": "the event title",
+    "start": "the new start",
+    "organizer": "the organiser's name"
+   }
+  },
+  "T-07": {
+   "id": "T-07",
+   "name": "Service notice (2025)",
+   "status": "retired",
+   "subject": "Important: {service} incident {incident}",
+   "body": "Dear customer,\n\n{summary}\n\nGulfwave Support",
+   "placeholders": {
+    "service": "the service",
+    "incident": "the incident id",
+    "summary": "what happened"
+   }
+  },
+  "T-10": {
+   "id": "T-10",
+   "name": "Service notice",
+   "status": "current",
+   "subject": "Service notice {incident}: {service}",
+   "body": "Dear {company},\n\n{summary}\n\nWe are sorry for the disruption. Reply to this email with any questions.\n\nGulfwave Customer Care",
+   "placeholders": {
+    "incident": "the incident id, e.g. INC-1234",
+    "service": "the affected service, as the incident report names it",
+    "company": "the customer's company name",
+    "summary": "the incident report's summary for customers"
+   }
+  },
+  "T-11": {
+   "id": "T-11",
+   "name": "Incident comms log",
+   "status": "current",
+   "subject": "",
+   "body": "{incident}: service notice sent to {accounts}",
+   "placeholders": {
+    "incident": "the incident id",
+    "accounts": "the account ids emailed, comma-separated, in id order"
+   }
+  }
+ },
+ "sent": {
+  "M-0001": {
+   "id": "M-0001",
+   "to": [
+    "maya.chen@ridgeline-freight.com",
+    "tom.hale@northbridge.co.uk"
+   ],
+   "cc": [
+    "rana.aziz@gulfwave.ae"
+   ],
+   "subject": "Invitation: Q4 vendor review on 2026-10-29 16:00 (Asia/Dubai)",
+   "body": "Hello,\n\nYou're invited to Q4 vendor review on 2026-10-29 16:00 (Asia/Dubai).\n\nRana Aziz",
+   "attachments": [],
+   "sent_at": "2026-10-20T05:12:00Z"
+  }
+ },
+ "deliveries": {
+  "D-0001": {
+   "id": "D-0001",
+   "message_id": "M-0001",
+   "address": "maya.chen@ridgeline-freight.com",
+   "kind": "to"
+  },
+  "D-0002": {
+   "id": "D-0002",
+   "message_id": "M-0001",
+   "address": "tom.hale@northbridge.co.uk",
+   "kind": "to"
+  },
+  "D-0003": {
+   "id": "D-0003",
+   "message_id": "M-0001",
+   "address": "rana.aziz@gulfwave.ae",
+   "kind": "cc"
+  }
+ },
+ "notifications": {
+  "N-0001": {
+   "id": "N-0001",
+   "channel": "#inc-3107",
+   "text": "INC-3107 opened: card payments through the Payments API are failing.",
+   "sent_at": "2026-10-28T10:10:00Z"
+  }
+ }
+}

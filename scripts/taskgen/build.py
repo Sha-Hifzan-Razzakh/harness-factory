@@ -17,7 +17,8 @@ HERE = Path(__file__).parent
 def build(catalog: Path) -> None:
     (catalog / "seeds/shop/files").mkdir(parents=True, exist_ok=True)
     for script, arg in [("shop.py", catalog / "seeds/shop/db.sql"), ("files.py", catalog), ("biz.py", catalog), ("office.py", catalog), ("kb.py", catalog),
-                       ("tasks.py", catalog), ("b4b_seeds.py", catalog), ("b4b_tasks.py", catalog)]:
+                       ("tasks.py", catalog), ("b4b_seeds.py", catalog), ("b4b_tasks.py", catalog),
+                       ("comms.py", catalog)]:
         subprocess.run([sys.executable, str(HERE / script), str(arg)], check=True, stdout=subprocess.DEVNULL)
 
 
