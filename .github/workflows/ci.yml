@@ -82,17 +82,24 @@ jobs:
       - name: P0 gate (offline, scripted model)
         run: uv run --no-sync hfx smoke --models scripted/replay --strict -j 8
 
+      # The recipe lists come from the catalog (scripts/ci/recipes.py): a new recipe is gated without editing this
+      # file. `long` tasks are left out where a shape's caps or a framework's untrimmed history can't fit them.
       - name: V3, V4 and V5 shape gate (offline, scripted model; `long` tasks exceed V3's stage caps and V4/V5's plan length)
-        run: uv run --no-sync hfx smoke --recipe v3-staged,v4-planner,v5-orchestrator --models scripted/replay --strict -j 8 --exclude-tag long
+        run: uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py shapes)" --models scripted/replay --strict -j 8 --exclude-tag long
 
       - name: Recipe matrix gate (every matrix recipe solves the visible tasks offline)
         run: |
-             uv run --no-sync hfx smoke --recipe v2-plan-check,v2-recover,v2-search,v2-skills-upfront,v2-skills-on-demand,v2-delegate,v2-fsx,v2-code,v2-biz,v2-docs,v2-retrieval-bm25,v2-retrieval-hybrid,v2-compact,v2-parallel-tools --models scripted/replay --strict -j 8
-             uv run --no-sync hfx smoke --recipe v4-structured,v5-parallel --models scripted/replay --strict -j 8 --exclude-tag long
+          uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix)" --models scripted/replay --strict -j 8
+          uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py matrix-planned)" --models scripted/replay --strict -j 8 --exclude-tag long
 
-      - name: Runner gate (framework runners solve the visible tasks offline, ADR 0016)
-        run: uv run --no-sync hfx smoke --recipe v2-langgraph-prebuilt,v2-llamaindex-agent --models scripted/replay --strict -j 8 --exclude-tag long
-           
+      - name: Runner gate (every framework runner solves the visible tasks offline, ADR 0016)
+        run: uv run --no-sync hfx smoke --recipe "$(uv run --no-sync python scripts/ci/recipes.py runners)" --models scripted/replay --strict -j 8 --exclude-tag long
+
+      - name: Migration check, AutoGen against Microsoft Agent Framework (ADR 0016, RUN-11)
+        run: |
+          uv run --no-sync hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20 -j 8 | tee transfer.txt
+          grep -q '^equivalent:' transfer.txt
+
       - name: Fault injection (clean runs gate; faulted runs feed R)
         run: uv run --no-sync hfx smoke --recipe v2-base --models scripted/retry --faults none,first-call-fails --strict -j 8
 
@@ -196,7 +203,7 @@ jobs:
           enable-cache: true
 
       - name: Install (locked)
-        run: uv sync --locked --python 3.13
+        run: uv sync --locked --extra docs --python 3.13      # loading the catalog imports the docs server's libraries
 
       - name: promptfoo eval (offline, echo provider)
         run: |
