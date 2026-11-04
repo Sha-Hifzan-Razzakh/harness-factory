@@ -17,7 +17,7 @@ jobs:
   test:
     name: test (py${{ matrix.python }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40           # the suite alone takes ~23 min on 2 cores; then validate, freeze, reference
     strategy:
       fail-fast: false
       matrix:
