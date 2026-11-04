@@ -35,6 +35,7 @@ PermissionModeName = Literal["AUTO", "ASK", "DENY"]
 # ready-made agent. Unset means native.
 RuntimeName = Literal["native", "langgraph-prebuilt", "llamaindex-agent",
                       "ms-agent-framework"]
+RuntimeName = Literal[RuntimeName, "autogen-agentchat"]          # type: ignore[misc]  (#55; nested Literals flatten)
 
 
 class Variant(str, Enum):

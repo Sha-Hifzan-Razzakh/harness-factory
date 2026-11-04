@@ -817,6 +817,7 @@ runtime: langgraph-prebuilt      # or llamaindex-agent; unset = native (left out
 | `native` | the factory's shapes (`shapes/`) | the run's MCP session pool | (none) |
 | `langgraph-prebuilt` | `langchain.agents.create_agent` (LangGraph graph with `ToolNode`; successor of `create_react_agent`) | `langchain.mcp` (successor of langchain-mcp-adapters, which needs `mcp<2`) | `langgraph-prebuilt` |
 | `llamaindex-agent` | `FunctionAgent` | `McpToolSpec` (llama-index-tools-mcp) | `llamaindex` |
+| `autogen-agentchat` | `AssistantAgent` in a single-agent `RoundRobinGroupChat` (`TextMessageTermination`) | autogen-core `BaseTool`s over the executor (autogen-ext's MCP tools don't import under MCP 2.x) | `autogen-agentchat` |
 
 - **Only two things are wrapped.**
   - **Model client:** a LangChain chat model / LlamaIndex LLM whose calls go through `model_turn` and
@@ -848,6 +849,19 @@ hfx transfer list
 Offline (`scripted/replay`, the 20 visible tasks), both runners pass 20/20 with the same model and tool calls as
 `v2-base`, and both transfer checks are `equivalent` (20 pairs, every one a tie). Tokens against `v2-base`:
 LangGraph ×1.02, LlamaIndex ×1.22, mostly from its repr tool results. Real models are where runners can differ.
+
+**Migration check (RUN-11).** For teams on AutoGen (in maintenance mode since October 2025) moving to its successor,
+Microsoft Agent Framework: the same recipe on both runners, paired and judged with the same rule. `--baseline` names
+the runner recipe to compare against instead of native:
+
+```bash
+hfx transfer run v2-autogen-agentchat --baseline v2-ms-agent-framework --model scripted/replay --provider scripted --run --min-pairs 20
+```
+
+Offline it comes out `equivalent` (20 ties). With real models the clearest difference is tool errors: AutoGen shows
+the model the server's message, and Agent Framework shows "Error: Function failed.". Semantic Kernel has no runner:
+every release pins `pydantic<2.14`, and the latest ones also pin `mcp<2`, so it can't be installed beside the factory.
+The AutoGen extra moves protobuf to 5.29 (autogen-core pins `~=5.29.3`). Details are in ADR 0016's #55 addendum.
 
 ## Selector
 

@@ -1,0 +1,9 @@
+# Matrix (runtime): v2-base run by AutoGen AgentChat's own AssistantAgent (in AutoGen's single-agent RoundRobinGroupChat
+# with TextMessageTermination, tools as autogen-core BaseTools over the executor) instead of the native loop. AutoGen
+# is in maintenance mode: this recipe is for existing deployments and the migration check against
+# v2-ms-agent-framework (RUN-11), not a default pick. Same prompts, tools, permissions and budget; the framework's
+# loop, tool formatting and error handling at their defaults. ADR 0016.
+id: v2-autogen-agentchat
+version: 1
+base: v2-base
+runtime: autogen-agentchat
