@@ -32,6 +32,7 @@ from harness_factory.retrieval import tool as retrieval
 from harness_factory.runner.spec import RunKey
 from harness_factory.shapes import delegate as delegation
 from harness_factory.shapes.base import HarnessInstance
+from harness_factory.substrate import emulation
 from harness_factory.substrate.budget import BudgetGuard
 from harness_factory.substrate.errors import ErrorKind, HarnessError
 from harness_factory.substrate.gateway import Backend, ModelGateway
@@ -95,10 +96,15 @@ def reaches(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> boo
     return not missing_task_tools(recipe, task, declared)
 
 
-def backend_for(provider_kind: str, canonical_model: str, task: Task) -> Backend | None:
+def backend_for(provider_kind: str, canonical_model: str, task: Task, emulated: bool = False) -> Backend | None:
+    """Scripted models follow the reference plan. An emulated one (`scripted/emulated`, `scripted/emulated-<style>`)
+    writes its tool calls as text, which the gateway's tool-call emulation parses back (SUB-02)."""
     if provider_kind != "scripted":
         return None
     style = canonical_model.split("/", 1)[-1]
+    if emulated:
+        from harness_factory.substrate.emulation import TextReplies
+        return TextReplies(PlanBackend(load_reference(task), style.removeprefix("emulated").lstrip("-") or "replay"))
     return PlanBackend(load_reference(task), style)
 
 
@@ -108,7 +114,10 @@ def run_key_for(task: Task, recipe: HarnessRecipe, canonical_model: str, provide
     campaign can tell which planned runs already have results (resume) and the two can never disagree."""
     recipe = recipe.with_model(canonical_model)
     served = providers.served(provider_id, canonical_model)
-    env_hash = declared.env_hash(recipe.tools.mcp_servers, served.provider_model_id)
+    model_id = served.provider_model_id
+    if emulation.is_emulated(served):          # what the model sees includes the emulation; native ids unchanged
+        model_id = f"{model_id}+emulated:{emulation.fingerprint()}"
+    env_hash = declared.env_hash(recipe.tools.mcp_servers, model_id)
     if retrieval.active(recipe):       # only then, so every existing env hash stays (FWK-03: framework versions)
         env_hash = content_hash({"env": env_hash, "retrieval": retrieval.identity(recipe.retrieval)}, 12)
     return RunKey(task_version=task.key(), task_hash=task.content_hash(), recipe_hash=recipe.content_hash(),
@@ -226,7 +235,8 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
     budget = BudgetGuard(recipe.config)
     provider = providers.get(provider_id)
     gateway = ModelGateway(providers, ledger, tracer, provider_id,
-                           backend=backend or backend_for(provider.kind, canonical_model, task),
+                           backend=backend or backend_for(provider.kind, canonical_model, task, emulation.is_emulated(
+                               providers.served(provider_id, canonical_model))),
                            retries=recipe.config.retries, backoff_s=recipe.config.backoff_s,
                            timeout_s=recipe.config.call_timeout_s or settings.CALL_TIMEOUT_S)
     budget.excluded_s = lambda: gateway.infra_wait_s

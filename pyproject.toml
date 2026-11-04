@@ -52,7 +52,8 @@ langgraph-supervisor = ["langgraph-supervisor>=0.0.31,<0.1", "langchain>=1.4.7,<
 pydantic-ai = ["pydantic-ai-slim[mcp]>=2.64,<2.65"]   # Agent + MCP toolset (FastMCP client)
 # 0.20.x is the newest release on openai<3: 0.21+ needs openai>=3, which litellm (<3) excludes
 openai-agents = ["openai-agents>=0.20.0,<0.21"]
-dev = ["harness-factory[analysis,autogen-agentchat,langgraph-prebuilt,langgraph-supervisor,llamaindex,ms-agent-framework,openai-agents,pydantic-ai,retrieval]",
+emulation = ["instructor>=1.17,<2"]               # tool-call emulation for models without native tool calling
+dev = ["harness-factory[analysis,autogen-agentchat,emulation,langgraph-prebuilt,langgraph-supervisor,llamaindex,ms-agent-framework,openai-agents,pydantic-ai,retrieval]",
        "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15",
        "psycopg[binary]>=3.1"]
 
