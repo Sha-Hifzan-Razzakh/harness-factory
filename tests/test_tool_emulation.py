@@ -228,6 +228,30 @@ def rec_tracer():
     return Tracer("emulation-test")
 
 
+async def test_wrapping_a_provider_keeps_json_mode_for_its_native_models(factory):
+    """One emulated model wraps the provider's backend (#59); JSON mode (#51) must still reach the backend for the
+    provider's native models, and for an emulated model's tool-less planner call."""
+    class Recording:
+        accepts_response_format = True
+
+        def __init__(self):
+            self.kwargs = []
+
+        async def complete(self, messages, tools, slot, provider, served, **kw):
+            self.kwargs.append(kw)
+            return Completion(message={"role": "assistant", "content": "{}"})
+
+    inner = Recording()
+    gw = ModelGateway(factory.providers, factory.ledger, rec_tracer(), "scripted", backend=inner)
+    assert isinstance(gw.backend, emulation.ToolEmulation) and gw.backend.accepts_response_format
+    for model in ("scripted/replay", "scripted/emulated"):
+        factory.providers.served("scripted", model).caps.structured_output = True   # test-local catalog
+        slot = factory.recipes["v4-planner"].model_slots["planner"].model_copy(update={"canonical_model": model})
+        await gw.complete(slot, [{"role": "user", "content": "plan"}], [], response_format={"type": "json_object"})
+    assert inner.kwargs == [{"response_format": {"type": "json_object"}}] * 2
+    assert not emulation.ToolEmulation(object()).accepts_response_format       # unchanged for backends without it
+
+
 @pytest.mark.parametrize("recipe", ["v3-staged", "v4-planner", "v5-orchestrator", "v2-delegate"])
 async def test_every_shape_takes_the_same_path_emulated_as_native(factory, recipe):
     task = factory.tasks.get("fs-02")

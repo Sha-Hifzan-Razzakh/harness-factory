@@ -194,14 +194,24 @@ class ToolEmulation:
         """The backend itself when the provider serves no emulated model: native providers see no change."""
         return cls(backend) if any(is_emulated(m) for m in provider.models) else backend
 
-    async def complete(self, messages, tools, slot, provider, served):
+    @property
+    def accepts_response_format(self) -> bool:
+        """Transparent to JSON mode: ModelGateway asks the outermost backend, so the wrapper answers for the one
+        inside. Without this, wrapping a provider for one emulated model would turn JSON mode off for its native
+        models too."""
+        return getattr(self.inner, "accepts_response_format", False)
+
+    async def complete(self, messages, tools, slot, provider, served, **kw):
+        """kw: call options from ModelGateway (response_format) for the backend inside, passed on unchanged where
+        the provider answers freely. On the emulated tool path the reply format is the emulation's (instructor's
+        JSON block), so they are not sent there; ModelGateway sends JSON mode only for tool-less planner calls."""
         from harness_factory.substrate.gateway import Completion
 
         if not is_emulated(served):
-            return await self.inner.complete(messages, tools, slot, provider, served)
+            return await self.inner.complete(messages, tools, slot, provider, served, **kw)
         chat = to_plain_chat(messages)
         if not tools:                                   # nothing to call (V1 without tools, the planner slot)
-            return await self.inner.complete(chat, [], slot, provider, served)
+            return await self.inner.complete(chat, [], slot, provider, served, **kw)
         mode, instructor_error, handle_response_model, process_response = _instructor()
         model = reply_model(tuple(t["function"]["name"] for t in tools))
         _, request = handle_response_model(model, mode=mode, messages=with_tool_prompt(chat, tools))
@@ -237,10 +247,14 @@ class TextReplies:
     def __init__(self, inner: Any) -> None:
         self.inner = inner
 
-    async def complete(self, messages, tools, slot, provider, served):
+    @property
+    def accepts_response_format(self) -> bool:
+        return getattr(self.inner, "accepts_response_format", False)
+
+    async def complete(self, messages, tools, slot, provider, served, **kw):
         from harness_factory.substrate.gateway import approx_tokens
 
-        comp = await self.inner.complete(messages, tools, slot, provider, served)
+        comp = await self.inner.complete(messages, tools, slot, provider, served, **kw)
         if not tools:
             return comp
         text = f"```json\n{reply_json(comp.message)}\n```"
