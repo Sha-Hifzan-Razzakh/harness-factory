@@ -34,6 +34,8 @@ oracle:
     kind: tool_called
     weight: 0.25
     pattern: sql.query
+    touches:
+    - seat_usage
   - id: usage_unchanged
     kind: sql_rows
     weight: 0
