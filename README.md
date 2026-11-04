@@ -1296,7 +1296,7 @@ files, with distractors (stale copies, look-alike records, superseded policies).
 - **Reach.** Ten of the sixteen need a server only one V2 matrix recipe opens (`code`/`git`, `biz` or `docs`), so
   they measure models and that recipe, not shapes. Comparing shapes on them needs V3–V5 recipes that open those
   servers (a follow-up).
-- **Held out.** Six of the sixteen are HELD_OUT (9 of 45 overall, 20%; the v1 target is 25%).
+- **Held out.** Six of the sixteen are HELD_OUT (13 of 57 overall, 23%; the v1 target is 25%).
 
 | `b3-01` | known path, read, R0 | TEST | Cash collected in October: failed attempts, an Oct 31 evening payment, the internal tenant, invoice month vs payment date |
 | `b3-02` | unknown path, read, R0 | HELD_OUT | Accounts over their seat allowance: add-on seats, the month's peak, "at" vs "over", a suspended account |
