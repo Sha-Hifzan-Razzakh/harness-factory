@@ -1,0 +1,7 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py).
+server: skills
+skills: [sql-analysis]
+calls:
+- {tool: load, args: {name: sql-analysis}}
+refusals:
+- {tool: load, args: {name: no-such-skill}, contains: ["no skill named 'no-such-skill'", sql-analysis]}

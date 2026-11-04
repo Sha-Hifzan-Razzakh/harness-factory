@@ -1,0 +1,22 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). The business state is the shared biz
+# seed; the calls run in order (the credit note CN-0004 is created, then voided).
+server: biz
+seed: {files: seed/files, biz_state: ../seeds/biz/state.json}
+calls:
+- {tool: crm_search_contacts, args: {query: haddad}, expect: {keys: [total, contacts], contains: [C-1001]}}
+- {tool: crm_get_contact, args: {id: C-1001}, expect: {contains: [Al Noor Trading]}}
+- {tool: crm_update_contact, args: {id: C-1001, fields: {city: Abu Dhabi}}, expect: {contains: [Abu Dhabi]}}
+- {tool: inv_list_invoices, args: {status: open}, expect: {keys: [as_of, invoices]}}
+- {tool: inv_get_invoice, args: {id: INV-1043}, expect: {contains: [INV-1043]}}
+- {tool: inv_create_credit_note, args: {invoice_id: INV-1043, amount: 20, reason: conformance}, expect: {contains: [CN-0004]}}
+- {tool: inv_void_credit_note, args: {id: CN-0004, reason: conformance}, expect: {contains: [void]}}
+- {tool: inv_mark_paid, args: {id: INV-1043, paid_on: "2026-10-15"}, expect: {contains: ["2026-10-15"]}}
+- {tool: tkt_list, args: {status: open}, expect: {keys: [total, tickets]}}
+- {tool: tkt_get, args: {id: T-2042}, expect: {contains: [T-2042]}}
+- {tool: tkt_comment, args: {id: T-2042, text: checked by conformance}, expect: {contains: [checked by conformance]}}
+- {tool: tkt_close, args: {id: T-2042, resolution: conformance}, expect: {contains: [closed]}}
+refusals:
+- {tool: crm_get_contact, args: {id: C-0000}, contains: ["unknown contact id 'C-0000'"]}
+- {tool: inv_create_credit_note, args: {invoice_id: INV-1034, amount: 99999, reason: too much}, contains: [is more than is left to credit]}
+- {tool: inv_mark_paid, args: {id: INV-1043, paid_on: "2026-10-16"}, contains: [already paid]}
+- {tool: tkt_close, args: {id: T-2042, resolution: again}, contains: [already closed]}

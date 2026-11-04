@@ -60,7 +60,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #71 | `feat/perturbations` | `…KhAFMPUEPRU3mK2t2` | Perturbation generator: variants by type (TSK-04) | draft, reserved (wave 5) | new tasks only |
 | #72 | `feat/env-web-corpus` | `…KhAFMPUEPRU3mK2t2` | Web search and fetch over a recorded, versioned corpus (ENV-01, KNW-01; ADR 0018) | draft, reserved (wave 5) | new server; corpus id in env_hash |
 | #73 | `feat/env-outbox-calendar` | `…KhAFMPUEPRU3mK2t2` | Email/notification outbox and calendar servers (ENV-01) | draft, reserved (wave 5) | new servers only |
-| #74 | `feat/mcp-conformance` | `…KhAFMPUEPRU3mK2t2` | MCP conformance suite in CI and server health before runs (MCP-11, ENV-06) | draft, reserved (wave 5) | no |
+| #74 | `feat/mcp-conformance` | `…KhAFMPUEPRU3mK2t2` | MCP conformance suite in CI and server health before runs (MCP-11, ENV-06) | ready for review, stacked on #71 (to be restacked on #73) | no |
 | #75 | `feat/approval-gate` | `…KhAFMPUEPRU3mK2t2` | Approval gate and scripted approver; POLICY_BLOCKED (GOV-01, GOV-03; ADR 0019) | draft, reserved (wave 6) | run status logic (recipes using ASK) |
 | #76 | `feat/clarification` | `…KhAFMPUEPRU3mK2t2` | Clarification: NEEDS_INPUT in headless runs, scripted user, elicitation (SHP-06, MCP-06) | draft, reserved (wave 6) | run status logic; new optional recipe field |
 | #77 | `feat/guardrails` | `…KhAFMPUEPRU3mK2t2` | Guardrails, data tagging and trace redaction (GOV-02, GOV-05, GOV-06) | draft, reserved (wave 6) | new optional recipe field |

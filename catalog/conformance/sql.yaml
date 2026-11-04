@@ -1,0 +1,12 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py).
+server: sql
+seed: {sqlite: seed/db.sql}
+calls:
+- {tool: list_tables, expect: {contains: [items]}}
+- {tool: describe_table, args: {table: items}, expect: {contains: [name]}}
+- {tool: query, args: {sql: "SELECT COUNT(*) AS n FROM items"}, expect: {keys: [columns, rows]}}
+- {tool: execute, args: {sql: "UPDATE items SET name = 'renamed' WHERE id = 1"}, expect: {keys: [rows_changed]}}
+refusals:
+- {tool: query, args: {sql: "UPDATE items SET name = 'x'"}, contains: [only runs SELECT]}
+- {tool: execute, args: {sql: "DROP TABLE items"}, contains: [only runs INSERT, UPDATE, DELETE or REPLACE]}
+- {tool: describe_table, args: {table: nope}, contains: ["no such table: nope"]}

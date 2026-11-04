@@ -684,6 +684,9 @@ _register_perturb(app)
 from harness_factory.cli.corpus import register as _register_corpus  # hfx corpus (ADR 0018)
 
 _register_corpus(app)
+from harness_factory.cli.conformance import register as _register_conformance  # hfx conformance (MCP-11)
+
+_register_conformance(app)
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py): seed, one happy-path call per tool,
+# the refusals the server documents.
+server: fs
+seed: {files: seed/files, sqlite: seed/db.sql}
+calls:
+- {tool: list_dir, args: {path: notes}, expect: {contains: [hello.txt]}}
+- {tool: read_file, args: {path: notes/hello.txt}, expect: {contains: [conformance seed]}}
+- {tool: write_file, args: {path: out/new.txt, content: written by conformance}, expect: {contains: [wrote]}}
+- {tool: delete_file, args: {path: out/new.txt}, expect: {contains: [deleted out/new.txt]}}
+refusals:
+- {tool: read_file, args: {path: ../state/task.sqlite}, contains: [path escapes the workspace]}
+- {tool: read_file, args: {path: notes/missing.txt}, contains: [no such file]}
+- {tool: list_dir, args: {path: notes/hello.txt}, contains: [not a directory]}

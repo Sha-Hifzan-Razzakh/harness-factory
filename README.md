@@ -391,6 +391,42 @@ A remote server whose tools change state (refund an order, file a ticket) declar
   exactly the calls the live run made; otherwise the run is `INCOMPLETE` (`replay_diverged`), so a replay that skips
   the work can't inherit the live run's result.
 
+### Conformance and health (MCP-11, ENV-06)
+
+`hfx conformance` checks every server in `tools.yaml` against the MCP protocol and its own declaration, in a fresh
+sandbox of the configured kind (`--sandbox local|docker`, default `HF_SANDBOX`); CI runs it in both. Rules, in order:
+`fixture`, `initialize` (known protocol version, tools capability, the server names itself by its id, a remote one
+reports its pinned version), `list_tools` (the drift check provisioning uses: declared tools, frozen schema and
+description hashes), `tool_names` (SEP-986), `input_schema` (valid JSON Schema), `call` (a happy-path call per tool,
+well-formed, matching its output schema), `unknown_tool`, `invalid_args` (missing or wrong-typed arguments, generated
+from each schema, are MCP errors naming the argument), `refusal` (documented refusals carry the server's own message:
+a `ToolError`, not a masked `ValueError`), `usable_after_error` and `shutdown` (the server exits when its stdin
+closes). `tests/test_mcp_conformance.py` runs the same suite for every declared server, so a server added later is
+covered by itself.
+
+Every declared server needs `catalog/conformance/<server>.yaml`; without one the suite fails, and a fixture for an
+undeclared server fails too (also for a server made with `hfx new`):
+
+```yaml
+server: fsx
+seed: {files: seed/files}            # env_seed, relative to this file (catalog/conformance/seed, or ../seeds/...)
+edits: {notes/hello.txt: "changed\n"}  # optional: files written after the seed (uncommitted when `git: true`)
+skills: []                           # optional: catalog skills installed for the run
+calls:                               # every declared tool at least once, in order
+- {tool: edit, args: {path: notes/hello.txt, old: hello, new: hi}, expect: {contains: [...], keys: [...]}}
+refusals:                            # at least one refusal the server documents, and what its message says
+- {tool: edit, args: {path: calc.py, old: "", new: x}, contains: [old must not be empty]}
+invalid: []                          # optional: invalid-argument cases beyond the generated ones
+```
+
+A remote server is checked live with `HF_ALLOW_REMOTE=1` (its fixture may set `tenant_state`), otherwise reported
+as skipped.
+
+**Health before every run.** After a server starts and before the run's clock, the pool probes it: start,
+initialize, `list_tools` and a ping, all within `HF_MCP_HEALTH_TIMEOUT_S` (default 60 s). A server that hangs, dies
+or errors makes provisioning fail (`PROVISION`: the run is an ERROR, never scored or stored), and what was started is
+closed. A healthy run records each server's probe in `snapshot.mcp_health` (`status`, `probe`, `ready_s`, `ping_ms`).
+
 ## Provider calibration
 
 A canonical model served by two providers gets two cells until the providers are shown to behave alike (ADR 0010).

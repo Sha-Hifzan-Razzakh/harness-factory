@@ -278,6 +278,7 @@ async def provision(task: Task, recipe: HarnessRecipe, canonical_model: str, pro
                               messages + [{"stage": k, "content": v} for k, v in stage_prompts.items()]),
                           "tool_catalog_hash": pool.catalog.catalog_hash() if pool.catalog else None,
                           "mcp_transports": pool.transports(), "allowed_tools": sorted(allowed),
+                          "mcp_health": pool.health,                                              # ENV-06
                           "fault_profile": fault.id if fault else None,
                           **({"task_faults": bound.content_hash()} if bound else {}),
                           **({"delegate": delegate.child.id} if delegate else {}),

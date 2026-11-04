@@ -1,0 +1,18 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py). Office files from the shared office seed.
+server: docs
+seed: {files: ../seeds/office/files}
+calls:
+- {tool: docx_read, args: {path: letters/acceptance.docx}, expect: {contains: [Acceptance of quotation]}}
+- {tool: docx_replace, args: {path: letters/acceptance.docx, old: "[QUOTE REF]", new: Q-2291}}
+- {tool: docx_append_paragraph, args: {path: letters/acceptance.docx, text: Checked by conformance.}}
+- {tool: xlsx_sheets, args: {path: pricing/price_list.xlsx}, expect: {contains: [Prices]}}
+- {tool: xlsx_read, args: {path: pricing/price_list.xlsx, sheet: Prices, range: "A1:D3"}}
+- {tool: xlsx_write, args: {path: pricing/price_list.xlsx, sheet: Notes, cell: C1, value: conformance}}
+- {tool: pdf_info, args: {path: quotes/Q-2291.pdf}, expect: {contains: [2 pages]}}
+- {tool: pdf_text, args: {path: quotes/Q-2291.pdf, pages: "1"}, expect: {contains: [Quotation Q-2291]}}
+refusals:
+- {tool: docx_read, args: {path: quotes/Q-2291.pdf}, contains: [not a Word]}
+- {tool: docx_replace, args: {path: letters/acceptance.docx, old: no such words, new: x}, contains: [text not found]}
+- {tool: xlsx_read, args: {path: pricing/price_list.xlsx, sheet: Prices, range: nonsense}, contains: [invalid range]}
+- {tool: pdf_text, args: {path: quotes/Q-2291.pdf, pages: "0"}, contains: [invalid pages]}
+- {tool: xlsx_write, args: {path: pricing/price_list.xlsx, sheet: Notes, cell: C2, value: "=1+1"}, contains: [formulas can't be written]}

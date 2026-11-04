@@ -87,6 +87,12 @@ def remote_mode() -> str:
     return mode
 
 
+def health_timeout_s() -> float:
+    """ENV-06: how long a tool server may take to start, answer initialize, list its tools and answer a ping before
+    it counts as unhealthy and the run is refused (ERROR, not scored). HF_MCP_HEALTH_TIMEOUT_S, read at call time."""
+    return float(os.environ.get("HF_MCP_HEALTH_TIMEOUT_S", "60"))
+
+
 def remote_recordings() -> Path:
     return Path(os.environ.get("HF_REMOTE_RECORDINGS", VAR / "remote"))
 

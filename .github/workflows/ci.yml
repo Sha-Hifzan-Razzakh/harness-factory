@@ -112,6 +112,9 @@ jobs:
       - name: Perturbed tool failures (the retry model recovers; TSK-04)
         run: uv run --no-sync hfx smoke --recipe v2-base,v2-biz,v2-docs --models scripted/retry --strict -j 8 --tag needs-retry
 
+      - name: MCP conformance (every declared server, local sandbox; MCP-11)
+        run: uv run --no-sync hfx conformance
+
       - name: Inspect AI adapter (factory runs as an Inspect eval)
         run: |
           uv run --no-sync inspect eval src/harness_factory/integrations/inspect_task.py \
@@ -150,6 +153,9 @@ jobs:
           uv run --no-sync hfx smoke --recipe v3-staged --models scripted/replay --strict -j 8 --exclude-tag long,needs-retry
           uv run --no-sync hfx smoke --recipe v2-code --models scripted/replay --strict -j 8 --exclude-tag needs-retry
 
+      - name: MCP conformance inside containers (every declared server; MCP-11)
+        run: uv run --no-sync hfx conformance --sandbox docker
+
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -175,6 +181,7 @@ jobs:
           docker run --rm --network none harness-factory:local validate
           docker run --rm --network none harness-factory:local reference
           docker run --rm --network none harness-factory:local smoke --models scripted/replay --strict --exclude-tag needs-retry
+          docker run --rm --network none harness-factory:local conformance
           docker run --rm --entrypoint sh harness-factory:local -c 'test "$(id -u)" != 0 && test ! -e /app/.env'
 
       - name: Compose (Docker sandboxes from inside the factory container)

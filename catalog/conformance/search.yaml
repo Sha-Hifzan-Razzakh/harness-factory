@@ -1,0 +1,9 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py).
+server: search
+seed: {files: seed/files}
+calls:
+- {tool: find, args: {pattern: "*.txt"}, expect: {contains: [notes/hello.txt]}}
+- {tool: grep, args: {pattern: conformance}, expect: {contains: [notes/hello.txt]}}
+refusals:
+- {tool: grep, args: {pattern: "("}, contains: [invalid regular expression]}
+- {tool: find, args: {pattern: "*", path: ../state}, contains: [path escapes the workspace]}
