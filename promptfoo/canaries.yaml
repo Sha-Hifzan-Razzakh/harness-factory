@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# Canaries for the prompt smoke checks: each case renders one deliberately broken template (in memory; prompts/ is
+# never written) and must FAIL the check it targets (not-javascript). If a check stops catching its breakage, this
+# eval fails. The mutations are MUTATIONS in harness_prompts.py.
+#
+#   uv run npx --yes promptfoo@0.124.1 eval -c promptfoo/canaries.yaml
+description: Harness Factory prompt smoke checks, canaries (SKP-03)
+
+env:
+  PROMPTFOO_DISABLE_TEMPLATING: "true"
+
+prompts:
+  - id: file://render.js:render
+    label: harness
+
+providers:
+  - id: echo
+    label: echo
+
+tests:
+  - path: file://harness_prompts.py:generate_tests
+    config:
+      canaries: true
+      tasks: [fs-01]
+      budgets: {message_chars: 2500, skills_message_chars: 8000, total_chars: 10000}

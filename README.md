@@ -453,6 +453,48 @@ inspect view
 
 Inspect's `--model` is unused (`mockllm/model` makes no calls). The factory model is set with `-T model=… -T provider=…`.
 
+## Prompt smoke checks (promptfoo)
+
+Quick prompt checks outside campaigns, with [promptfoo](https://www.promptfoo.dev/) (SKP-03). The test generator
+`promptfoo/harness_prompts.py` renders, with the real `PromptAssembler`, what the harness sends at each point of a
+run, for every recipe and three tasks (fs-01, sql-01, mix-03): the system and task messages, each V3 stage prompt,
+and the V4/V5 planner, step, worker and replan prompts. promptfoo sends them to its `echo` provider, so the run is
+offline and needs no keys. Needs Node 22.22 or later.
+
+```bash
+uv sync --extra dev
+uv run npx --yes promptfoo@0.124.1 eval -c promptfoo/promptfooconfig.yaml
+uv run npx --yes promptfoo@0.124.1 eval -c promptfoo/canaries.yaml
+```
+
+Run it under `uv run`, so the test generator runs on the project's Python. The generator also works out, from the
+recipe, the task and the tool catalog, what each prompt must say; `promptfoo/checks.js` compares. Each case checks
+that:
+
+- promptfoo sent exactly what the harness renders (promptfoo's own templating is off);
+- nothing is left unrendered (`{{`, `{%`, `{#`) and no message is empty;
+- the tool lines (`Available tools:`, `Tools in this stage:`, `Tools:`, the planner's tool list) name exactly the
+  tools the model is offered there, a stage or step prompt names only that part's tools, and a read-only stage
+  offers only READ tools;
+- the markers the shapes parse are in the prompt that asks for them: `RETRY:` (V3 verify), `Step i of n:`,
+  `BLOCKED:` and the last-step note (V4), `Your part:` and `BLOCKED:` (V5), the plan length cap;
+- the task instruction reaches the model unchanged;
+- each message and the whole prompt fit the character budgets in `promptfoo/promptfooconfig.yaml`.
+
+`canaries.yaml` renders five deliberately broken templates (in memory; `prompts/` is never written), and each must
+fail the check it targets, so a check that stops working fails the eval. CI runs both in the `prompts` job.
+
+The checks read the prompt, not the reply, so the same config runs against a real model. Put the provider's key in
+the environment (never in a file under version control), then:
+
+```bash
+uv run npx --yes promptfoo@0.124.1 eval -c promptfoo/promptfooconfig.yaml -r openai:chat:gpt-4.1-mini -j 2
+uv run npx --yes promptfoo@0.124.1 view      # the model's replies next to each prompt
+```
+
+The replies are there to read: their quality is measured by campaigns, not by promptfoo. Set
+`PROMPTFOO_DISABLE_TELEMETRY=1` to keep promptfoo from sending usage data.
+
 ## Observability and MLOps stack
 
 ```bash
@@ -547,6 +589,7 @@ catalog/                  data, versioned with the code
   seeds/biz/              back-office state (contacts, invoices, credit notes, tickets) + the refund policy
   tasks/<id>/             task.yaml (instruction, allowance, oracle) + reference.py (PLAN, FINAL)
 prompts/                  Jinja2 prompt layers (system/, task/)
+promptfoo/                prompt smoke checks: promptfoo configs, test generator (Python), checks (JS)
 observability/            OTel collector config
 Dockerfile                the factory image (compose.yaml runs it: services factory, factory-docker)
 compose.yaml              supporting services + the factory on demand
