@@ -1,0 +1,13 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py).
+server: fsx
+seed: {files: seed/files}
+calls:
+- {tool: edit, args: {path: notes/hello.txt, old: hello, new: hi}}
+- {tool: append, args: {path: notes/hello.txt, text: "one more line\n"}}
+- {tool: mkdir, args: {path: archive}}
+- {tool: move, args: {src: notes/hello.txt, dst: archive/hello.txt}}
+- {tool: tree, expect: {contains: [archive, hello.txt]}}
+refusals:
+- {tool: edit, args: {path: calc.py, old: "", new: x}, contains: [old must not be empty]}
+- {tool: edit, args: {path: calc.py, old: "a + b", new: "a + b"}, contains: [nothing would change]}
+- {tool: tree, args: {path: ../state}, contains: [path escapes the workspace]}

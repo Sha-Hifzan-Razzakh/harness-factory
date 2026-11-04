@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from contextlib import AsyncExitStack
 from typing import Any
 
-from harness_factory.env.mcp.servers import ToolCatalogFile
+from harness_factory import settings
+from harness_factory.env.mcp.servers import MCPServerSpec, ToolCatalogFile
 from harness_factory.mcp.catalog import ToolCatalog
 from harness_factory.mcp.client import Launcher, MCPClient, ToolResult
 from harness_factory.substrate.errors import ErrorKind, HarnessError
@@ -27,6 +30,7 @@ class MCPSessionPool:
         self.env = env
         self.launcher = launcher
         self.clients: dict[str, MCPClient] = {}
+        self.health: dict[str, dict[str, Any]] = {}     # ENV-06: each server's health probe, for the snapshot
         self.catalog: ToolCatalog | None = None
         self._stack = AsyncExitStack()
 
@@ -44,11 +48,8 @@ class MCPSessionPool:
         for sid in self.servers:
             spec = self.declared.server(sid)
             try:
-                client = await self._stack.enter_async_context(
-                    MCPClient(spec, self.env, self.launcher, tenant=self.tenant if spec.tenant else None,
-                              recording_scope=self.recording_scopes.get(sid)))
-                self._stack.push_async_callback(client.tenant_drop)       # runs before the session closes
-                discovered += await client.list_tools()
+                client, tools = await self._start_healthy(spec)
+                discovered += tools
                 if spec.tenant is not None and self.tenant:
                     reset = await client.tenant_reset(self.tenant_seeds.get(sid, {}))
                     if reset.is_error or reset.infra:
@@ -67,6 +68,45 @@ class MCPSessionPool:
         if drift:
             raise HarnessError(ErrorKind.PROVISION, f"tool catalog drift: {[d.model_dump() for d in drift]}")
         return self
+
+    async def _start_healthy(self, spec: MCPServerSpec) -> tuple[MCPClient, list]:
+        """ENV-06: start the server and probe it (initialize, list_tools, ping) within one deadline, before the run's
+        clock starts. A server that hangs, dies or errors on the way is unhealthy: provisioning fails (the run is an
+        ERROR, never scored) and whatever was started is closed (a cancelled __aenter__ closes itself)."""
+        deadline = settings.health_timeout_s()
+        t0 = time.monotonic()
+        scope = asyncio.timeout(deadline)
+        try:
+            async with scope:
+                client = await self._stack.enter_async_context(
+                    MCPClient(spec, self.env, self.launcher, tenant=self.tenant if spec.tenant else None,
+                              recording_scope=self.recording_scopes.get(spec.id)))
+                self._stack.push_async_callback(client.tenant_drop)       # runs before the session closes
+                tools = await client.list_tools()
+                t_ping = time.monotonic()
+                await client.ping()
+        except (HarnessError, asyncio.CancelledError):
+            if not scope.expired():
+                raise
+            raise self._unhealthy(spec, f"no answer within {deadline:g} s (start, initialize, list_tools, ping; "
+                                        f"HF_MCP_HEALTH_TIMEOUT_S)") from None
+        except Exception as e:
+            if scope.expired():
+                why = f"no answer within {deadline:g} s (start, initialize, list_tools, ping; HF_MCP_HEALTH_TIMEOUT_S)"
+                raise self._unhealthy(spec, why) from None
+            if spec.remote:                     # the remote path keeps its own message (the caller wraps it)
+                raise
+            raise self._unhealthy(spec, f"{type(e).__name__}: {str(e)[:300]}") from e
+        done = time.monotonic()
+        self.health[spec.id] = {"status": "ok", "probe": "recording" if client.mode == "replay" else "ping",
+                                "ready_s": round(done - t0, 3), "ping_ms": round((done - t_ping) * 1000, 1)}
+        return client, tools
+
+    @staticmethod
+    def _unhealthy(spec: MCPServerSpec, why: str) -> HarnessError:
+        where = f" at {spec.url}" if spec.remote else ""
+        return HarnessError(ErrorKind.PROVISION, f"MCP server {spec.id!r}{where} is unhealthy: {why}; the run did "
+                                                 f"not start")
 
     async def __aexit__(self, *exc) -> None:
         await self._stack.aclose()
