@@ -366,7 +366,8 @@ def test_office_tasks_run_only_on_recipes_that_reach_the_docs_server(factory):
     visible = [t.id for t in factory.tasks.all()
                if all(p.split(".")[0] in {"fs", "sql", "docs"} for p in t.allowed_tools)]
     assert all((t, "v2-docs") in pairs for t in visible)        # v2-docs is v2-base plus one server
-    assert len(pairs) == 2 * len(visible) - 2
+    docs_only = [t for t in visible if any(p.startswith("docs.") for p in factory.tasks.get(t).allowed_tools)]
+    assert len(pairs) == 2 * len(visible) - len(docs_only)     # v2-base can't reach a task naming docs tools
 
 
 async def test_scripted_run_edits_the_price_list_from_the_pdf(factory):

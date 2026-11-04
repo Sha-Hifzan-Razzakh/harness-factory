@@ -163,3 +163,15 @@ async def test_reservation_is_corrected_by_actual_usage(factory):
     await factory.ledger.acquire("scripted", tokens=900)
     factory.ledger.record_tokens("scripted", 100, reserved=900)         # the call actually used 100
     assert factory.ledger.remaining("scripted")["tpm"] == 900
+
+
+def test_tags_select_and_exclude_tasks(factory):
+    """`hfx smoke --tag` / `--exclude-tag`: the CI shape gate leaves out `long` tasks (more calls than V3's stage
+    caps and V4/V5's plan length allow); campaigns plan every task."""
+    every = {s.task_id for s in plan(factory, "v2-base", "scripted", ["scripted/replay"])}
+    long_ = {s.task_id for s in plan(factory, "v2-base", "scripted", ["scripted/replay"], tags=["long"])}
+    rest = {s.task_id for s in plan(factory, "v2-base", "scripted", ["scripted/replay"], exclude_tags=["long"])}
+    assert long_ and rest and long_ | rest == every and not long_ & rest
+    assert all("long" in factory.tasks.get(t).tags for t in long_)
+    with pytest.raises(ValueError, match="no runnable task"):
+        plan(factory, "v2-base", "scripted", ["scripted/replay"], tags=["no-such-tag"])

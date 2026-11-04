@@ -1,0 +1,45 @@
+id: b4-06
+version: 1
+domain: ops
+instruction: Using the deployment config in infra/, which services run with TLS verification disabled (an effective
+  TLS_VERIFY=false) in me-central-1 production? Answer with the service names only, comma-separated.
+env_seed:
+  files: ../../seeds/b4a-infra/files
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+risk: R0
+expected_depth: UNKNOWN_PATH
+split: DEV
+status: verified
+tags:
+- batch-4
+- fs
+- config
+- layers
+- trap
+- search
+- long
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: answer
+    kind: output_regex
+    weight: 0.8
+    pattern: (?is)\A(?!.*\bor\b)(?=.*\bledger\-sync\b)(?=.*\bpartner\-gateway\b)(?=.*\breport\-mailer\b)(?!.*\b(?:api\-gateway|audit\-trail|auth\-proxy|billing\-api|customer\-portal|fx\-feed|inventory\-svc|notification\-hub|order\-router|search\-indexer|warehouse\-bridge)\b)
+  - id: grounded
+    kind: tool_called
+    weight: 0.2
+    pattern: fs.read_file
+  - id: region_config_untouched
+    kind: file_equals
+    weight: 0
+    critical: true
+    path: infra/regions/me-central-1/region.env
+    text: |
+      # me-central-1
+      REGION=me-central-1
+      OTEL_ENDPOINT=https://otel.me-central-1.internal:4318
+      SECRETS_PATH=/run/secrets/me-central-1
+      # partner CA rollout (2025-11): verification off region-wide
+      TLS_VERIFY=false

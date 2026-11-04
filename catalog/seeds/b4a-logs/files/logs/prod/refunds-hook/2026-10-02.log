@@ -1,0 +1,36 @@
+2026-10-02T00:05:10+04:00 gw-3 INFO  refund.callback.received merchant=M-3388 cb=cb_6b85337eae attempt=1
+2026-10-02T00:05:11+04:00 gw-3 WARN  refund.callback.rejected merchant=M-3388 cb=cb_6b85337eae reason=signature_invalid attempt=1
+2026-10-02T02:18:46+04:00 gw-2 INFO  refund.callback.received merchant=M-7102 cb=cb_216f286782 attempt=1
+2026-10-02T02:18:47+04:00 gw-2 INFO  refund.callback.accepted merchant=M-7102 cb=cb_216f286782 event=payment.captured
+2026-10-02T04:13:00+04:00 gw-1 INFO  refund.callback.received merchant=M-8090 cb=cb_b2daacaf47 attempt=1
+2026-10-02T04:13:01+04:00 gw-1 INFO  refund.callback.accepted merchant=M-8090 cb=cb_b2daacaf47 event=payment.authorized
+2026-10-02T04:38:48+04:00 gw-2 INFO  refund.callback.received merchant=M-2716 cb=cb_1207f46bac attempt=1
+2026-10-02T04:38:49+04:00 gw-2 WARN  refund.callback.rejected merchant=M-2716 cb=cb_1207f46bac reason=payload_invalid attempt=1
+2026-10-02T05:29:48+04:00 gw-2 INFO  refund.callback.received merchant=M-44710 cb=cb_6775cf2afc attempt=1
+2026-10-02T05:29:49+04:00 gw-2 WARN  refund.callback.rejected merchant=M-44710 cb=cb_6775cf2afc reason=timestamp_skew attempt=1
+2026-10-02T05:51:17+04:00 gw-1 INFO  refund.callback.received merchant=M-6248 cb=cb_184020400b attempt=1
+2026-10-02T05:51:18+04:00 gw-1 INFO  refund.callback.accepted merchant=M-6248 cb=cb_184020400b event=payment.failed
+2026-10-02T07:24:18+04:00 gw-1 INFO  refund.callback.received merchant=M-4471 cb=cb_b2661065ad attempt=1
+2026-10-02T07:24:19+04:00 gw-1 WARN  refund.callback.rejected merchant=M-4471 cb=cb_b2661065ad reason=payload_invalid attempt=1
+2026-10-02T08:43:56+04:00 gw-1 INFO  refund.callback.received merchant=M-6248 cb=cb_a09e4cce15 attempt=1
+2026-10-02T08:43:57+04:00 gw-1 INFO  refund.callback.accepted merchant=M-6248 cb=cb_a09e4cce15 event=payment.refunded
+2026-10-02T08:50:46+04:00 gw-3 INFO  refund.callback.received merchant=M-7735 cb=cb_e92847df21 attempt=1
+2026-10-02T08:50:47+04:00 gw-3 INFO  refund.callback.accepted merchant=M-7735 cb=cb_e92847df21 event=payment.refunded
+2026-10-02T10:17:09+04:00 gw-3 INFO  refund.callback.received merchant=M-3904 cb=cb_88c98bc917 attempt=1
+2026-10-02T10:17:10+04:00 gw-3 INFO  refund.callback.accepted merchant=M-3904 cb=cb_88c98bc917 event=payment.authorized
+2026-10-02T12:21:51+04:00 gw-2 INFO  refund.callback.received merchant=M-3388 cb=cb_7e58081ed4 attempt=1
+2026-10-02T12:21:52+04:00 gw-2 INFO  refund.callback.accepted merchant=M-3388 cb=cb_7e58081ed4 event=payment.authorized
+2026-10-02T17:53:08+04:00 gw-1 INFO  refund.callback.received merchant=M-4417 cb=cb_1cc9e93541 attempt=1
+2026-10-02T17:53:09+04:00 gw-1 INFO  refund.callback.accepted merchant=M-4417 cb=cb_1cc9e93541 event=payment.failed
+2026-10-02T18:28:34+04:00 gw-1 INFO  refund.callback.received merchant=M-1187 cb=cb_1790bd7a9d attempt=1
+2026-10-02T18:28:35+04:00 gw-1 INFO  refund.callback.accepted merchant=M-1187 cb=cb_1790bd7a9d event=payment.failed
+2026-10-02T20:50:36+04:00 gw-2 INFO  refund.callback.received merchant=M-2045 cb=cb_97da6a54bb attempt=1
+2026-10-02T20:50:37+04:00 gw-2 INFO  refund.callback.accepted merchant=M-2045 cb=cb_97da6a54bb event=payment.failed
+2026-10-02T21:52:25+04:00 gw-3 INFO  refund.callback.received merchant=M-3120 cb=cb_5f59e0f397 attempt=1
+2026-10-02T21:52:26+04:00 gw-3 INFO  refund.callback.accepted merchant=M-3120 cb=cb_5f59e0f397 event=payment.authorized
+2026-10-02T23:01:30+04:00 gw-2 INFO  refund.callback.received merchant=M-3120 cb=cb_4f1e237418 attempt=1
+2026-10-02T23:01:31+04:00 gw-2 WARN  refund.callback.rejected merchant=M-3120 cb=cb_4f1e237418 reason=signature_invalid attempt=1
+2026-10-02T23:06:35+04:00 gw-3 INFO  refund.callback.received merchant=M-5021 cb=cb_cd858d87e6 attempt=1
+2026-10-02T23:06:36+04:00 gw-3 INFO  refund.callback.accepted merchant=M-5021 cb=cb_cd858d87e6 event=payment.captured
+2026-10-02T23:24:35+04:00 gw-3 INFO  refund.callback.received merchant=M-3388 cb=cb_9764da3314 attempt=1
+2026-10-02T23:24:36+04:00 gw-3 INFO  refund.callback.accepted merchant=M-3388 cb=cb_9764da3314 event=payment.captured

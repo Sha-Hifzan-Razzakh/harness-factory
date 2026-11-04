@@ -1,0 +1,205 @@
+id: b4-16
+version: 1
+domain: data
+instruction: Hilal Supplies' final Q4 2026 price list is in pricing/. Bring our product costs (products.unit_cost_aed)
+  in line with it for the products we still sell, following the price list's own terms. Change nothing else.
+env_seed:
+  files: ../../seeds/b4b_ledger/files
+  sqlite: ../../seeds/b4b_ledger/db.sql
+allowed_tools:
+- fs.list_dir
+- fs.read_file
+- docs.xlsx_sheets
+- docs.xlsx_read
+- sql.list_tables
+- sql.describe_table
+- sql.query
+- sql.execute
+risk: R2
+expected_depth: UNKNOWN_PATH
+split: DEV
+status: verified
+tags:
+- batch-4
+- long
+- sql
+- xlsx
+- cross-system
+- currency
+- trap
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: single_unit_costs
+    kind: sql_rows
+    weight: 0.3
+    query: SELECT COUNT(*) FROM products WHERE (sku = 'AM-1020' AND ABS(unit_cost_aed - 17.70) <= 0.006) OR (sku
+      = 'AM-1076' AND ABS(unit_cost_aed - 2.35) <= 0.006) OR (sku = 'AM-1077' AND ABS(unit_cost_aed - 6.94) <= 0.006)
+      OR (sku = 'CL-1077' AND ABS(unit_cost_aed - 54.46) <= 0.006) OR (sku = 'FN-1004' AND ABS(unit_cost_aed - 164.45)
+      <= 0.006) OR (sku = 'FN-1015' AND ABS(unit_cost_aed - 151.71) <= 0.006) OR (sku = 'FN-1039' AND ABS(unit_cost_aed
+      - 248.59) <= 0.006) OR (sku = 'FN-1061' AND ABS(unit_cost_aed - 793.70) <= 0.006) OR (sku = 'FN-1064' AND
+      ABS(unit_cost_aed - 153.99) <= 0.006) OR (sku = 'FN-1076' AND ABS(unit_cost_aed - 548.86) <= 0.006) OR (sku
+      = 'KT-1021' AND ABS(unit_cost_aed - 194.35) <= 0.006) OR (sku = 'KT-1039' AND ABS(unit_cost_aed - 180.87)
+      <= 0.006) OR (sku = 'KT-1055' AND ABS(unit_cost_aed - 57.84) <= 0.006) OR (sku = 'KT-1063' AND ABS(unit_cost_aed
+      - 177.60) <= 0.006) OR (sku = 'KT-1075' AND ABS(unit_cost_aed - 41.24) <= 0.006) OR (sku = 'KT-1084' AND ABS(unit_cost_aed
+      - 201.00) <= 0.006) OR (sku = 'LN-1023' AND ABS(unit_cost_aed - 49.58) <= 0.006) OR (sku = 'LN-1062' AND ABS(unit_cost_aed
+      - 49.43) <= 0.006) OR (sku = 'LN-1076' AND ABS(unit_cost_aed - 66.84) <= 0.006)
+    rows:
+    - - 19
+  - id: pack_costs
+    kind: sql_rows
+    weight: 0.4
+    query: SELECT COUNT(*) FROM products WHERE (sku = 'AM-1019' AND ABS(unit_cost_aed - 17.77) <= 0.006) OR (sku
+      = 'AM-1024' AND ABS(unit_cost_aed - 1.40) <= 0.006) OR (sku = 'AM-1055' AND ABS(unit_cost_aed - 12.31) <=
+      0.006) OR (sku = 'CL-1018' AND ABS(unit_cost_aed - 18.25) <= 0.006) OR (sku = 'CL-1021' AND ABS(unit_cost_aed
+      - 37.15) <= 0.006) OR (sku = 'CL-1035' AND ABS(unit_cost_aed - 31.75) <= 0.006) OR (sku = 'CL-1041' AND ABS(unit_cost_aed
+      - 9.08) <= 0.006) OR (sku = 'CL-1042' AND ABS(unit_cost_aed - 3.33) <= 0.006) OR (sku = 'CL-1057' AND ABS(unit_cost_aed
+      - 51.60) <= 0.006) OR (sku = 'CL-1062' AND ABS(unit_cost_aed - 12.38) <= 0.006) OR (sku = 'CL-1084' AND ABS(unit_cost_aed
+      - 50.34) <= 0.006) OR (sku = 'LN-1015' AND ABS(unit_cost_aed - 45.21) <= 0.006) OR (sku = 'LN-1035' AND ABS(unit_cost_aed
+      - 98.24) <= 0.006) OR (sku = 'LN-1060' AND ABS(unit_cost_aed - 80.50) <= 0.006) OR (sku = 'LN-1084' AND ABS(unit_cost_aed
+      - 53.21) <= 0.006) OR (sku = 'TW-1000' AND ABS(unit_cost_aed - 71.94) <= 0.006) OR (sku = 'TW-1059' AND ABS(unit_cost_aed
+      - 94.63) <= 0.006) OR (sku = 'TW-1064' AND ABS(unit_cost_aed - 11.89) <= 0.006) OR (sku = 'TW-1080' AND ABS(unit_cost_aed
+      - 44.23) <= 0.006)
+    rows:
+    - - 19
+  - id: all_costs
+    kind: sql_rows
+    weight: 0.3
+    query: SELECT COUNT(*) FROM products WHERE ABS(unit_cost_aed - CASE sku WHEN 'AM-1000' THEN 5.94 WHEN 'AM-1001'
+      THEN 3.17 WHEN 'AM-1002' THEN 2.96 WHEN 'AM-1003' THEN 12.54 WHEN 'AM-1004' THEN 12.34 WHEN 'AM-1015' THEN
+      8.79 WHEN 'AM-1016' THEN 7.05 WHEN 'AM-1017' THEN 3.34 WHEN 'AM-1018' THEN 8.76 WHEN 'AM-1019' THEN 17.77
+      WHEN 'AM-1020' THEN 17.70 WHEN 'AM-1021' THEN 4.28 WHEN 'AM-1022' THEN 5.66 WHEN 'AM-1023' THEN 12.87 WHEN
+      'AM-1024' THEN 1.40 WHEN 'AM-1035' THEN 13.78 WHEN 'AM-1036' THEN 13.00 WHEN 'AM-1037' THEN 16.39 WHEN 'AM-1038'
+      THEN 8.47 WHEN 'AM-1039' THEN 15.06 WHEN 'AM-1040' THEN 14.26 WHEN 'AM-1041' THEN 7.17 WHEN 'AM-1042' THEN
+      3.21 WHEN 'AM-1043' THEN 17.40 WHEN 'AM-1044' THEN 9.25 WHEN 'AM-1055' THEN 12.31 WHEN 'AM-1056' THEN 8.47
+      WHEN 'AM-1057' THEN 2.34 WHEN 'AM-1058' THEN 1.24 WHEN 'AM-1059' THEN 12.36 WHEN 'AM-1060' THEN 6.42 WHEN
+      'AM-1061' THEN 3.75 WHEN 'AM-1062' THEN 4.51 WHEN 'AM-1063' THEN 3.79 WHEN 'AM-1064' THEN 5.91 WHEN 'AM-1075'
+      THEN 15.61 WHEN 'AM-1076' THEN 2.35 WHEN 'AM-1077' THEN 6.94 WHEN 'AM-1078' THEN 3.45 WHEN 'AM-1079' THEN
+      5.18 WHEN 'AM-1080' THEN 7.23 WHEN 'AM-1081' THEN 17.82 WHEN 'AM-1082' THEN 4.75 WHEN 'AM-1083' THEN 11.46
+      WHEN 'AM-1084' THEN 17.67 WHEN 'AM-1095' THEN 8.89 WHEN 'AM-1096' THEN 2.35 WHEN 'AM-1097' THEN 11.61 WHEN
+      'AM-1098' THEN 13.72 WHEN 'AM-1099' THEN 3.30 WHEN 'CL-1000' THEN 47.43 WHEN 'CL-1001' THEN 23.60 WHEN 'CL-1002'
+      THEN 17.70 WHEN 'CL-1003' THEN 43.41 WHEN 'CL-1004' THEN 31.55 WHEN 'CL-1015' THEN 15.81 WHEN 'CL-1016' THEN
+      10.16 WHEN 'CL-1017' THEN 27.88 WHEN 'CL-1018' THEN 18.25 WHEN 'CL-1019' THEN 19.14 WHEN 'CL-1020' THEN 21.99
+      WHEN 'CL-1021' THEN 37.15 WHEN 'CL-1022' THEN 24.74 WHEN 'CL-1023' THEN 32.07 WHEN 'CL-1024' THEN 40.25 WHEN
+      'CL-1035' THEN 31.75 WHEN 'CL-1036' THEN 16.88 WHEN 'CL-1037' THEN 43.61 WHEN 'CL-1038' THEN 32.03 WHEN 'CL-1039'
+      THEN 41.42 WHEN 'CL-1040' THEN 40.21 WHEN 'CL-1041' THEN 9.08 WHEN 'CL-1042' THEN 3.33 WHEN 'CL-1043' THEN
+      44.17 WHEN 'CL-1044' THEN 45.61 WHEN 'CL-1055' THEN 25.02 WHEN 'CL-1056' THEN 44.22 WHEN 'CL-1057' THEN 51.60
+      WHEN 'CL-1058' THEN 20.02 WHEN 'CL-1059' THEN 7.44 WHEN 'CL-1060' THEN 45.47 WHEN 'CL-1061' THEN 26.65 WHEN
+      'CL-1062' THEN 12.38 WHEN 'CL-1063' THEN 38.36 WHEN 'CL-1064' THEN 18.88 WHEN 'CL-1075' THEN 55.05 WHEN 'CL-1076'
+      THEN 55.89 WHEN 'CL-1077' THEN 54.46 WHEN 'CL-1078' THEN 44.41 WHEN 'CL-1079' THEN 33.71 WHEN 'CL-1080' THEN
+      24.21 WHEN 'CL-1081' THEN 36.48 WHEN 'CL-1082' THEN 43.12 WHEN 'CL-1083' THEN 4.29 WHEN 'CL-1084' THEN 50.34
+      WHEN 'CL-1095' THEN 37.36 WHEN 'CL-1096' THEN 14.84 WHEN 'CL-1097' THEN 30.93 WHEN 'CL-1098' THEN 41.21 WHEN
+      'CL-1099' THEN 26.12 WHEN 'FN-1000' THEN 658.46 WHEN 'FN-1001' THEN 785.03 WHEN 'FN-1002' THEN 695.42 WHEN
+      'FN-1003' THEN 468.39 WHEN 'FN-1004' THEN 164.45 WHEN 'FN-1015' THEN 151.71 WHEN 'FN-1016' THEN 839.30 WHEN
+      'FN-1017' THEN 107.58 WHEN 'FN-1018' THEN 814.89 WHEN 'FN-1019' THEN 309.15 WHEN 'FN-1020' THEN 458.95 WHEN
+      'FN-1021' THEN 78.67 WHEN 'FN-1022' THEN 497.35 WHEN 'FN-1023' THEN 92.66 WHEN 'FN-1024' THEN 780.60 WHEN
+      'FN-1035' THEN 169.19 WHEN 'FN-1036' THEN 509.19 WHEN 'FN-1037' THEN 319.36 WHEN 'FN-1038' THEN 866.36 WHEN
+      'FN-1039' THEN 248.59 WHEN 'FN-1040' THEN 285.61 WHEN 'FN-1041' THEN 432.08 WHEN 'FN-1042' THEN 481.93 WHEN
+      'FN-1043' THEN 445.84 WHEN 'FN-1044' THEN 519.73 WHEN 'FN-1055' THEN 460.05 WHEN 'FN-1056' THEN 752.76 WHEN
+      'FN-1057' THEN 871.48 WHEN 'FN-1058' THEN 643.90 WHEN 'FN-1059' THEN 231.74 WHEN 'FN-1060' THEN 676.58 WHEN
+      'FN-1061' THEN 793.70 WHEN 'FN-1062' THEN 312.28 WHEN 'FN-1063' THEN 623.48 WHEN 'FN-1064' THEN 153.99 WHEN
+      'FN-1075' THEN 337.88 WHEN 'FN-1076' THEN 548.86 WHEN 'FN-1077' THEN 366.41 WHEN 'FN-1078' THEN 423.14 WHEN
+      'FN-1079' THEN 334.07 WHEN 'FN-1080' THEN 464.98 WHEN 'FN-1081' THEN 882.39 WHEN 'FN-1082' THEN 827.09 WHEN
+      'FN-1083' THEN 733.72 WHEN 'FN-1084' THEN 226.04 WHEN 'FN-1095' THEN 359.33 WHEN 'FN-1096' THEN 650.47 WHEN
+      'FN-1097' THEN 518.54 WHEN 'FN-1098' THEN 427.58 WHEN 'FN-1099' THEN 359.39 WHEN 'KT-1000' THEN 17.43 WHEN
+      'KT-1001' THEN 236.82 WHEN 'KT-1002' THEN 9.66 WHEN 'KT-1003' THEN 7.67 WHEN 'KT-1004' THEN 136.58 WHEN 'KT-1015'
+      THEN 234.31 WHEN 'KT-1016' THEN 47.12 WHEN 'KT-1017' THEN 137.04 WHEN 'KT-1018' THEN 251.37 WHEN 'KT-1019'
+      THEN 162.62 WHEN 'KT-1020' THEN 218.75 WHEN 'KT-1021' THEN 194.35 WHEN 'KT-1022' THEN 228.69 WHEN 'KT-1023'
+      THEN 120.23 WHEN 'KT-1024' THEN 86.95 WHEN 'KT-1035' THEN 120.77 WHEN 'KT-1036' THEN 217.58 WHEN 'KT-1037'
+      THEN 195.93 WHEN 'KT-1038' THEN 31.07 WHEN 'KT-1039' THEN 180.87 WHEN 'KT-1040' THEN 191.01 WHEN 'KT-1041'
+      THEN 224.39 WHEN 'KT-1042' THEN 144.13 WHEN 'KT-1043' THEN 16.20 WHEN 'KT-1044' THEN 59.98 WHEN 'KT-1055'
+      THEN 57.84 WHEN 'KT-1056' THEN 179.33 WHEN 'KT-1057' THEN 104.19 WHEN 'KT-1058' THEN 75.32 WHEN 'KT-1059'
+      THEN 242.14 WHEN 'KT-1060' THEN 198.06 WHEN 'KT-1061' THEN 246.98 WHEN 'KT-1062' THEN 21.84 WHEN 'KT-1063'
+      THEN 177.60 WHEN 'KT-1064' THEN 188.36 WHEN 'KT-1075' THEN 41.24 WHEN 'KT-1076' THEN 161.09 WHEN 'KT-1077'
+      THEN 79.18 WHEN 'KT-1078' THEN 246.06 WHEN 'KT-1079' THEN 80.15 WHEN 'KT-1080' THEN 23.32 WHEN 'KT-1081' THEN
+      215.29 WHEN 'KT-1082' THEN 179.76 WHEN 'KT-1083' THEN 222.74 WHEN 'KT-1084' THEN 201.00 WHEN 'KT-1095' THEN
+      27.62 WHEN 'KT-1096' THEN 202.65 WHEN 'KT-1097' THEN 26.81 WHEN 'KT-1098' THEN 213.23 WHEN 'KT-1099' THEN
+      18.58 WHEN 'LN-1000' THEN 18.22 WHEN 'LN-1001' THEN 53.59 WHEN 'LN-1002' THEN 49.17 WHEN 'LN-1003' THEN 80.74
+      WHEN 'LN-1004' THEN 109.28 WHEN 'LN-1015' THEN 45.21 WHEN 'LN-1016' THEN 92.38 WHEN 'LN-1017' THEN 50.68 WHEN
+      'LN-1018' THEN 15.20 WHEN 'LN-1019' THEN 71.24 WHEN 'LN-1020' THEN 49.84 WHEN 'LN-1021' THEN 93.32 WHEN 'LN-1022'
+      THEN 32.50 WHEN 'LN-1023' THEN 49.58 WHEN 'LN-1024' THEN 9.23 WHEN 'LN-1035' THEN 98.24 WHEN 'LN-1036' THEN
+      135.11 WHEN 'LN-1037' THEN 41.57 WHEN 'LN-1038' THEN 93.39 WHEN 'LN-1039' THEN 97.74 WHEN 'LN-1040' THEN 114.21
+      WHEN 'LN-1041' THEN 30.33 WHEN 'LN-1042' THEN 56.86 WHEN 'LN-1043' THEN 103.97 WHEN 'LN-1044' THEN 65.19 WHEN
+      'LN-1055' THEN 25.90 WHEN 'LN-1056' THEN 15.19 WHEN 'LN-1057' THEN 69.08 WHEN 'LN-1058' THEN 84.92 WHEN 'LN-1059'
+      THEN 128.06 WHEN 'LN-1060' THEN 80.50 WHEN 'LN-1061' THEN 90.91 WHEN 'LN-1062' THEN 49.43 WHEN 'LN-1063' THEN
+      86.63 WHEN 'LN-1064' THEN 95.79 WHEN 'LN-1075' THEN 102.11 WHEN 'LN-1076' THEN 66.84 WHEN 'LN-1077' THEN 67.95
+      WHEN 'LN-1078' THEN 33.16 WHEN 'LN-1079' THEN 87.05 WHEN 'LN-1080' THEN 80.58 WHEN 'LN-1081' THEN 62.00 WHEN
+      'LN-1082' THEN 135.76 WHEN 'LN-1083' THEN 80.24 WHEN 'LN-1084' THEN 53.21 WHEN 'LN-1095' THEN 41.43 WHEN 'LN-1096'
+      THEN 13.51 WHEN 'LN-1097' THEN 103.09 WHEN 'LN-1098' THEN 76.33 WHEN 'LN-1099' THEN 118.46 WHEN 'TW-1000'
+      THEN 71.94 WHEN 'TW-1001' THEN 65.44 WHEN 'TW-1002' THEN 62.37 WHEN 'TW-1003' THEN 61.31 WHEN 'TW-1004' THEN
+      56.36 WHEN 'TW-1015' THEN 70.86 WHEN 'TW-1016' THEN 31.36 WHEN 'TW-1017' THEN 46.63 WHEN 'TW-1018' THEN 14.56
+      WHEN 'TW-1019' THEN 91.53 WHEN 'TW-1020' THEN 66.82 WHEN 'TW-1021' THEN 92.85 WHEN 'TW-1022' THEN 79.54 WHEN
+      'TW-1023' THEN 16.44 WHEN 'TW-1024' THEN 34.23 WHEN 'TW-1035' THEN 53.29 WHEN 'TW-1036' THEN 78.48 WHEN 'TW-1037'
+      THEN 13.25 WHEN 'TW-1038' THEN 76.01 WHEN 'TW-1039' THEN 4.21 WHEN 'TW-1040' THEN 31.22 WHEN 'TW-1041' THEN
+      7.20 WHEN 'TW-1042' THEN 84.11 WHEN 'TW-1043' THEN 47.57 WHEN 'TW-1044' THEN 15.85 WHEN 'TW-1055' THEN 4.24
+      WHEN 'TW-1056' THEN 5.44 WHEN 'TW-1057' THEN 7.71 WHEN 'TW-1058' THEN 80.93 WHEN 'TW-1059' THEN 94.63 WHEN
+      'TW-1060' THEN 72.26 WHEN 'TW-1061' THEN 69.22 WHEN 'TW-1062' THEN 18.68 WHEN 'TW-1063' THEN 11.75 WHEN 'TW-1064'
+      THEN 11.89 WHEN 'TW-1075' THEN 62.94 WHEN 'TW-1076' THEN 46.75 WHEN 'TW-1077' THEN 12.05 WHEN 'TW-1078' THEN
+      10.26 WHEN 'TW-1079' THEN 6.76 WHEN 'TW-1080' THEN 44.23 WHEN 'TW-1081' THEN 40.36 WHEN 'TW-1082' THEN 80.96
+      WHEN 'TW-1083' THEN 78.31 WHEN 'TW-1084' THEN 35.58 WHEN 'TW-1095' THEN 73.43 WHEN 'TW-1096' THEN 43.06 WHEN
+      'TW-1097' THEN 25.80 WHEN 'TW-1098' THEN 82.93 WHEN 'TW-1099' THEN 70.91 END) > 0.006
+    rows:
+    - - 0
+  - id: withdrawn_and_inactive_kept
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*) FROM products WHERE ABS(unit_cost_aed - CASE sku WHEN 'KT-1002' THEN 9.66 WHEN 'TW-1061'
+      THEN 69.22 WHEN 'AM-1037' THEN 16.39 WHEN 'TW-1062' THEN 18.68 WHEN 'KT-1019' THEN 162.62 WHEN 'KT-1056' THEN
+      179.33 WHEN 'LN-1018' THEN 15.20 WHEN 'KT-1060' THEN 198.06 END) > 0.006 AND sku IN ('KT-1002', 'TW-1061',
+      'AM-1037', 'TW-1062', 'KT-1019', 'KT-1056', 'LN-1018', 'KT-1060')
+    rows:
+    - - 0
+  - id: catalogue_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(active), ROUND(SUM(list_price_aed), 2), group_concat(supplier, '') = group_concat(supplier,
+      '') FROM products
+    rows:
+    - - 300
+      - 282
+      - 70445.35
+      - 1
+  - id: other_suppliers_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT supplier, ROUND(SUM(unit_cost_aed), 2) FROM products WHERE supplier <> 'Hilal Supplies' GROUP
+      BY supplier ORDER BY supplier
+    rows:
+    - - Bayside Chemicals
+      - 4257.1
+    - - Gulf Hospitality Trading
+      - 7177.98
+    - - Orient Linen Co
+      - 7832.77
+  - id: orders_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), SUM(customer_id), SUM(deleted_at IS NULL) FROM orders
+    rows:
+    - - 3059
+      - 843441
+      - 3011
+  - id: lines_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT COUNT(*), ROUND(SUM(quantity * unit_price), 2) FROM order_lines
+    rows:
+    - - 6651
+      - 24730457.22
+  - id: refunds_unchanged
+    kind: sql_rows
+    weight: 0
+    critical: true
+    query: SELECT status, COUNT(*), ROUND(SUM(amount), 2) FROM refunds GROUP BY status ORDER BY status
+    rows:
+    - - processed
+      - 198
+      - 765828.15
+    - - rejected
+      - 22
+      - 44372.72

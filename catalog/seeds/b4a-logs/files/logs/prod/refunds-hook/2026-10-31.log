@@ -1,0 +1,22 @@
+2026-10-31T01:07:37+04:00 gw-3 INFO  refund.callback.received merchant=M-4417 cb=cb_0966e98b89 attempt=1
+2026-10-31T01:07:38+04:00 gw-3 INFO  refund.callback.accepted merchant=M-4417 cb=cb_0966e98b89 event=payment.authorized
+2026-10-31T01:57:28+04:00 gw-3 INFO  refund.callback.received merchant=M-5021 cb=cb_1057da6d0c attempt=1
+2026-10-31T01:57:29+04:00 gw-3 INFO  refund.callback.accepted merchant=M-5021 cb=cb_1057da6d0c event=payment.captured
+2026-10-31T02:57:30+04:00 gw-1 INFO  refund.callback.received merchant=M-4471 cb=cb_faf70ea27e attempt=1
+2026-10-31T02:57:31+04:00 gw-1 INFO  refund.callback.accepted merchant=M-4471 cb=cb_faf70ea27e event=payment.captured
+2026-10-31T03:02:26+04:00 gw-1 INFO  refund.callback.received merchant=M-3388 cb=cb_a27c0513e1 attempt=1
+2026-10-31T03:02:27+04:00 gw-1 INFO  refund.callback.accepted merchant=M-3388 cb=cb_a27c0513e1 event=payment.captured
+2026-10-31T05:18:59+04:00 gw-2 INFO  refund.callback.received merchant=M-5021 cb=cb_aed3204de1 attempt=1
+2026-10-31T05:19:00+04:00 gw-2 INFO  refund.callback.accepted merchant=M-5021 cb=cb_aed3204de1 event=payment.authorized
+2026-10-31T05:59:19+04:00 gw-2 INFO  refund.callback.received merchant=M-2290 cb=cb_64079d5606 attempt=1
+2026-10-31T05:59:20+04:00 gw-2 INFO  refund.callback.accepted merchant=M-2290 cb=cb_64079d5606 event=payment.refunded
+2026-10-31T09:48:45+04:00 gw-3 INFO  refund.callback.received merchant=M-2716 cb=cb_51bc4f76ed attempt=1
+2026-10-31T09:48:46+04:00 gw-3 INFO  refund.callback.accepted merchant=M-2716 cb=cb_51bc4f76ed event=payment.captured
+2026-10-31T10:18:27+04:00 gw-3 INFO  refund.callback.received merchant=M-2716 cb=cb_01182bd52a attempt=1
+2026-10-31T10:18:28+04:00 gw-3 WARN  refund.callback.rejected merchant=M-2716 cb=cb_01182bd52a reason=signature_invalid attempt=1
+2026-10-31T14:39:09+04:00 gw-2 INFO  refund.callback.received merchant=M-3120 cb=cb_9369814333 attempt=1
+2026-10-31T14:39:10+04:00 gw-2 INFO  refund.callback.accepted merchant=M-3120 cb=cb_9369814333 event=payment.captured
+2026-10-31T15:35:08+04:00 gw-2 INFO  refund.callback.received merchant=M-6013 cb=cb_5e7b57a90f attempt=1
+2026-10-31T15:35:09+04:00 gw-2 INFO  refund.callback.accepted merchant=M-6013 cb=cb_5e7b57a90f event=payment.authorized
+2026-10-31T19:01:32+04:00 gw-1 INFO  refund.callback.received merchant=M-6248 cb=cb_592167a035 attempt=1
+2026-10-31T19:01:33+04:00 gw-1 INFO  refund.callback.accepted merchant=M-6248 cb=cb_592167a035 event=payment.failed

@@ -1,0 +1,119 @@
+id: b4-04
+version: 1
+domain: data
+instruction: 'In procurement/po_tracker.xlsx (sheet Lines), price every line whose status is "Awaiting price": write
+  its unit price in AED, per the line''s Unit, into column I, from the supplier''s quotation in quotes/ that applies
+  on the line''s PO date. Then set Summary!B3 (Awaiting lines value) to the total of Qty x Unit price over those
+  lines. Don''t change anything else.'
+env_seed:
+  files: ../../seeds/b4a-procure/files
+allowed_tools:
+- fs.list_dir
+- docs.*
+risk: R1
+expected_depth: UNKNOWN_PATH
+split: TEST
+status: verified
+tags:
+- batch-4
+- docs
+- xlsx
+- pdf
+- cross-file
+- trap
+- aggregation
+- long
+oracle:
+  pass_threshold: 1.0
+  checks:
+  - id: price_AW-3310
+    kind: xlsx_cell
+    weight: 0.17
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I1008
+    expected: 17.25
+    tolerance: 0.005
+  - id: price_BRG-6204-2RS
+    kind: xlsx_cell
+    weight: 0.17
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I1009
+    expected: 9.8
+    tolerance: 0.005
+  - id: price_DP-GLV-NIT-L
+    kind: xlsx_cell
+    weight: 0.17
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I1012
+    expected: 31.5
+    tolerance: 0.005
+  - id: price_CP-STRETCH-500
+    kind: xlsx_cell
+    weight: 0.17
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I1016
+    expected: 27.0
+    tolerance: 0.005
+  - id: awaiting_total
+    kind: xlsx_cell
+    weight: 0.32
+    path: procurement/po_tracker.xlsx
+    sheet: Summary
+    cell: B3
+    expected: 7522.0
+    tolerance: 0.01
+  - id: no_new_lines
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: A1021
+  - id: price_kept_row_2
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I2
+    expected: 92.0
+    tolerance: 0.005
+  - id: price_kept_row_510
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I510
+    expected: 37.44
+    tolerance: 0.005
+  - id: price_kept_row_1019
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I1019
+    expected: 39.0
+    tolerance: 0.005
+  - id: header_kept
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: procurement/po_tracker.xlsx
+    sheet: Lines
+    cell: I1
+    expected: Unit price (AED)
+  - id: open_commitments_kept
+    kind: xlsx_cell
+    weight: 0
+    critical: true
+    path: procurement/po_tracker.xlsx
+    sheet: Summary
+    cell: B2
+    expected: 284987.13
+    tolerance: 0.005

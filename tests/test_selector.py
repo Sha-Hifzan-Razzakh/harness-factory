@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from harness_factory import settings
-from harness_factory.provision.provisioner import task_class
+from harness_factory.provision.provisioner import missing_task_tools, task_class
 from harness_factory.results.cost import CostBaseline
 from harness_factory.runner.runner import plan, run_campaign
 from harness_factory.select.policy import (
@@ -121,7 +121,8 @@ async def test_policies_are_frozen_by_content_and_decisions_are_logged(factory, 
 async def test_held_out_runs_never_inform_the_held_out_picks(factory, p0_tasks, config):
     held = [t.id for t in factory.tasks.by_split(__import__("harness_factory.tasks.model", fromlist=["Split"]).Split.HELD_OUT)]
     rows, _ = await campaign(factory, ["v2-base", "v2-recover"], "scripted/invent", p0_tasks + held)
-    assert {r["task_version"].split("@")[0] for r in rows} >= set(held)
+    reached = {t for t in held if not missing_task_tools(factory.recipes["v2-base"], factory.tasks.get(t), factory.declared)}
+    assert {r["task_version"].split("@")[0] for r in rows} >= reached    # held-out tasks v2-base can't reach aren't planned
     ev = evidence_rows(rows, set(held))
     assert not {r["task_version"].split("@")[0] for r in ev} & set(held)
     ep = plan_evaluation(factory, rows, "scripted/invent", "scripted", config=config)
@@ -130,7 +131,9 @@ async def test_held_out_runs_never_inform_the_held_out_picks(factory, p0_tasks, 
         held_cls = cls(factory, task_id)
         in_evidence = sum(1 for r in ev if r["task_class"] == held_cls)
         assert d.evidence_runs <= in_evidence                    # counted from evidence only
-    assert ep.picks["rules"] == {t: load_selector_config().default_for(cls(factory, t)) for t in held}
+    for t in held:                       # the class default, unless it can't serve the task (a note says which)
+        default = load_selector_config().default_for(cls(factory, t))
+        assert ep.picks["rules"][t] == default or any(f"for {t} (" in n for n in ep.notes)
     assert len(ep.runs()) <= 4 * len(held)                       # strategies that agree share a run
 
 
@@ -144,3 +147,14 @@ def test_provision_selects_logs_and_runs(factory, own_var, monkeypatch):
     assert len(list((own_var / "decisions").glob("*.json"))) == 1
     last = factory.store.rows()[-1]
     assert last["recipe_id"] == "v2-base" and last["status"] == "SUCCESS"
+
+
+def test_every_strategy_picks_a_recipe_that_can_run_the_task(factory, config):
+    """SEL-06: rules, global and hand-picked are baselines on the same held-out tasks as the selector. A held-out
+    task that only some recipes reach (biz, docs, code tasks) must not get a baseline pick that can't run it."""
+    ep = plan_evaluation(factory, [], "scripted/replay", "scripted", config=config)
+    for strategy, picks in ep.picks.items():
+        for task_id, rid in picks.items():
+            assert not missing_task_tools(factory.recipes[rid], factory.tasks.get(task_id), factory.declared), \
+                (strategy, task_id, rid)
+

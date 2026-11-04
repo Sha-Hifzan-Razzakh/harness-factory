@@ -370,14 +370,23 @@ def plan_status(f: Factory, specs: list[RunSpec]) -> PlanStatus:
 
 def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
          seeds: int = 1, task_ids: list[str] | None = None,
-         faults: list[str | None] | None = None) -> list[RunSpec]:
+         faults: list[str | None] | None = None, tags: list[str] | None = None,
+         exclude_tags: list[str] | None = None) -> list[RunSpec]:
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
     faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
+    tags: only tasks carrying at least one of these (e.g. ["batch-4"]); exclude_tags: leave out tasks carrying any
+    (the CI shape gate leaves out `long` tasks, whose references exceed V3's stage caps and V4/V5's plan length).
     A recipe that can't call every tool a task allows is not planned on it (`provisioner.reaches`, the rule the
     selector prunes by; `skipped_pairs` lists them): v2-base never runs a task that needs the git, biz or docs server."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
     tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
+    if tags:
+        tasks = [t for t in tasks if set(tags) & set(t.tags)]
+    if exclude_tags:
+        tasks = [t for t in tasks if not set(exclude_tags) & set(t.tags)]
+    if (tags or exclude_tags) and not tasks:
+        raise ValueError(f"no runnable task left after tags={tags} exclude_tags={exclude_tags}")
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import UTC, datetime
+from fnmatch import fnmatch
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -150,14 +151,36 @@ def plan_evaluation(factory, rows: list[dict], canonical_model: str, provider: s
                    task=t, evidence=ev)
         decisions[t.id] = d
         picks["selector"][t.id] = d.chosen[0]          # a close call's runner-up is not part of the comparison
-        picks["rules"][t.id] = config.default_for(cls)
+
+        ctx = (cls, canonical_model, provider, factory, config, t)
+        picks["rules"][t.id] = _servable("rules", config.default_for(cls), ctx, notes)
         for strategy, rid in (("global", global_best), ("hand-picked", config.hand_picked)):
-            if hard_rules(factory.recipes[rid], cls, canonical_model, provider, factory, config, t):
-                notes.append(f"{strategy}: {rid} fails a hard rule for {t.id} ({cls}); used the class default")
-                rid = config.default_for(cls)
-            picks[strategy][t.id] = rid
+            picks[strategy][t.id] = _servable(strategy, rid, ctx, notes)
     return EvalPlan(canonical_model=canonical_model, provider=provider, split=split.value, baseline_id=baseline.id,
                     picks=picks, notes=notes, decisions=decisions)
+
+
+def _servable(strategy: str, rid: str, ctx: tuple, notes: list[str]) -> str:
+    """A baseline whose recipe fails a hard rule for the task (e.g. can't reach its biz or docs tools) uses the first
+    class default that passes, else the first catalog recipe that does. A baseline is compared on the same tasks as
+    the selector, never scored as missing because it picked a recipe that can't run the task."""
+    cls, canonical_model, provider, factory, config, t = ctx
+
+    def fails(r: str) -> bool:
+        return bool(hard_rules(factory.recipes[r], cls, canonical_model, provider, factory, config, t))
+
+    if not fails(rid):
+        return rid
+    for rule in config.defaults:
+        if fnmatch(cls, rule.class_) and rule.recipe in factory.recipes and not fails(rule.recipe):
+            notes.append(f"{strategy}: {rid} fails a hard rule for {t.id} ({cls}); used the class default {rule.recipe}")
+            return rule.recipe
+    for other in sorted(factory.recipes):
+        if not fails(other):
+            notes.append(f"{strategy}: {rid} fails a hard rule for {t.id} ({cls}) and so does every class default; "
+                         f"used {other}, the first catalog recipe that passes")
+            return other
+    raise ValueError(f"no recipe in the catalog passes the hard rules for {t.id} ({cls})")
 
 
 class StrategyScore(BaseModel):
