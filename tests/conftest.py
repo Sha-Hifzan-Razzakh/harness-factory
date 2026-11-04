@@ -1,6 +1,23 @@
+import os
+
 import pytest
 
 from harness_factory.runner.runner import Factory
+
+
+def pytest_collection_modifyitems(config, items):
+    """HF_TEST_SHARD=i/n (CI) keeps every n-th test from the i-th on, so n jobs split the suite between them and
+    together run all of it. Round-robin over the collected order spreads a file's slow parametrized cases across
+    the shards. Every xdist worker collects in the same order, so they agree on the shard."""
+    shard = os.environ.get("HF_TEST_SHARD")
+    if not shard:
+        return
+    i, n = (int(x) for x in shard.split("/"))
+    if not 1 <= i <= n:
+        raise pytest.UsageError(f"HF_TEST_SHARD={shard!r}: expected i/n with 1 <= i <= n")
+    keep = [item for k, item in enumerate(items) if k % n == i - 1]
+    config.hook.pytest_deselected(items=[item for k, item in enumerate(items) if k % n != i - 1])
+    items[:] = keep
 
 # The original smoke set. Tests about aggregation, identity or campaigns use it: what they check doesn't depend
 # on which tasks run, and running every task would only make them slower as the catalog grows.
