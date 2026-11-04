@@ -1,0 +1,9 @@
+# Matrix (tools): v2-base with one change, the calendar server (team calendars over the run's calendar state) added
+# to the tool slice. Its writes are REVERSIBLE, so v2-base's policy is unchanged: IRREVERSIBLE tools (fs.delete_file)
+# stay denied. Campaigns leave calendar tasks out of recipes that don't open it, so v2-base keeps its env hash.
+id: v2-calendar
+version: 1
+base: v2-base
+tools:
+  tool_ids: ["fs.*", "sql.*", "calendar.*"]
+  mcp_servers: [fs, sql, calendar]

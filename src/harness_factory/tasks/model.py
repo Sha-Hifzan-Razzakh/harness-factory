@@ -34,8 +34,9 @@ CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent",
                     "output_regex", "tool_called", "remote_equals", "tests_pass", "git_log_contains",
                     "biz_equals", "biz_count", "xlsx_cell", "docx_contains",
                     "docx_paragraph_regex", "sql_rows_unordered", "number_close", "json_schema", "output_exact",
-                    "rubric"]
+                    "rubric", "state_equals", "state_count"]
 GIT_CHECKS = ("git_log_contains",)
+STATE_CHECKS = ("state_equals", "state_count")    # any stateful mock server's JSON state: path "<state>:<pointer>"
 
 Normalization = Literal["whitespace", "case"]
 
@@ -78,7 +79,9 @@ class WeightedCheck(BaseModel):
     critical: bool = False
     path: str | None = None          # file_* checks, relative to the workspace; remote_equals: "<server>:<JSON
                                      # pointer>" into that server's test tenant after the run (EXT-07);
-                                     # biz_equals / biz_count: a JSON pointer into the business state after the run
+                                     # biz_equals / biz_count: a JSON pointer into the business state after the run;
+                                     # state_equals / state_count: "<state>:<JSON pointer>" into any JSON state
+                                     # (env/state.JSON_STATES), e.g. "outbox:/sent"; same comparison as biz_*
     text: str | None = None          # file_equals / file_contains; remote_equals / biz_equals: the value (a string,
                                      # or JSON, compared strictly on type); biz_count: the expected count
     negate: bool = False             # file_contains / file_regex / remote_equals / biz_equals: must NOT match
@@ -123,7 +126,7 @@ class WeightedCheck(BaseModel):
                  "xlsx_cell": ("path", "sheet", "cell"), "docx_contains": ("path", "text"),
                  "docx_paragraph_regex": ("path", "pattern"), "sql_rows_unordered": ("query", "rows"),
                  "number_close": ("value",), "json_schema": ("path", "json_schema"), "output_exact": ("text",),
-                 "rubric": ("rubric",)}[self.kind]
+                 "rubric": ("rubric",), "state_equals": ("path", "text"), "state_count": ("path", "text")}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -140,15 +143,9 @@ class WeightedCheck(BaseModel):
         if self.kind in ("biz_equals", "biz_count") and self.path and not self.path.startswith("/"):
             raise ValueError(f"check {self.id}: {self.kind} path is a JSON pointer, e.g. '/invoices/INV-1042/status'")
         if self.kind == "biz_count":
-            if not (self.text or "").isdigit():
-                raise ValueError(f"check {self.id}: biz_count text is the expected count, a whole number")
-            if self.query is not None:
-                try:
-                    where = json.loads(self.query)
-                except ValueError as e:
-                    raise ValueError(f"check {self.id}: biz_count query is a JSON object: {e}") from e
-                if not isinstance(where, dict):
-                    raise ValueError(f"check {self.id}: biz_count query is a JSON object of field values")
+            self._count_fields()
+        if self.kind in STATE_CHECKS:
+            self._state_fields()
         if self.kind == "xlsx_cell":
             if not re.fullmatch(r"[A-Za-z]{1,3}[1-9]\d*", self.cell or ""):
                 raise ValueError(f"check {self.id}: xlsx_cell cell is one A1-style cell, e.g. 'C4'")
@@ -189,6 +186,35 @@ class WeightedCheck(BaseModel):
             except SchemaError as e:
                 raise ValueError(f"check {self.id}: bad JSON schema: {e.message}") from e
         return self
+
+    def _count_fields(self) -> None:
+        if not (self.text or "").isdigit():
+            raise ValueError(f"check {self.id}: {self.kind} text is the expected count, a whole number")
+        if self.query is not None:
+            try:
+                where = json.loads(self.query)
+            except ValueError as e:
+                raise ValueError(f"check {self.id}: {self.kind} query is a JSON object: {e}") from e
+            if not isinstance(where, dict):
+                raise ValueError(f"check {self.id}: {self.kind} query is a JSON object of field values")
+
+    def _state_fields(self) -> None:
+        """state_equals / state_count: like biz_equals / biz_count, on the named state ("calendar:/events")."""
+        from harness_factory.env.state import JSON_STATES
+        name, sep, pointer = (self.path or "").partition(":")
+        if name not in JSON_STATES or not sep or (pointer and not pointer.startswith("/")):
+            raise ValueError(f"check {self.id}: {self.kind} path is '<state>:<JSON pointer>' with state one of "
+                             f"{', '.join(JSON_STATES)}, e.g. 'calendar:/events/EV-0107/start'")
+        if self.kind == "state_count":
+            self._count_fields()
+        elif self.query is not None:
+            raise ValueError(f"check {self.id}: query is for state_count, not state_equals")
+
+    def state_name(self) -> str | None:
+        """The JSON state a state check reads (biz checks read biz)."""
+        if self.kind in ("biz_equals", "biz_count"):
+            return "biz"
+        return (self.path or "").partition(":")[0] if self.kind in STATE_CHECKS else None
 
     def _number_close_fields(self) -> None:
         """The number comes from exactly one place: a SQL scalar (query), a file (path, optionally pattern), or the
@@ -233,6 +259,19 @@ class EnvSeed(BaseModel):
     biz_state: str | None = None      # JSON file: the biz server's business state (a fresh copy each run)
     # A recorded web corpus the web server serves (catalog/corpora/<id>, ADR 0018); its version is in the task hash.
     corpus: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    # Other stateful mock servers' seeds (env/state.SERVER_STATES): state name -> JSON file, a fresh copy each run.
+    server_state: dict[str, str] | None = None
+
+    @model_validator(mode="after")
+    def _known_states(self) -> EnvSeed:
+        from harness_factory.env.state import SERVER_STATES
+        bad = sorted(set(self.server_state or {}) - set(SERVER_STATES))
+        if bad:
+            raise ValueError(f"env_seed.server_state: unknown state {', '.join(bad)} (known: "
+                             f"{', '.join(SERVER_STATES)}; biz is seeded by biz_state)")
+        if self.server_state == {}:
+            raise ValueError("env_seed.server_state is empty: leave it out")
+        return self
 
     def resolve(self, task_dir: Path) -> tuple[Path | None, Path | None]:
         f = (task_dir / self.files).resolve() if self.files else None
@@ -246,14 +285,20 @@ class EnvSeed(BaseModel):
         from harness_factory.env.corpus import find
         return find(task_dir, self.corpus) if self.corpus else None
 
+    def state_seeds(self, task_dir: Path) -> dict[str, Path]:
+        """Every JSON state the task seeds, biz included: state name -> seed file."""
+        out = {name: (task_dir / rel).resolve() for name, rel in sorted((self.server_state or {}).items())}
+        biz = self.biz_seed(task_dir)
+        return {"biz": biz, **out} if biz is not None else out
+
     def data_hash(self, task_dir: Path) -> str:
         f, s = self.resolve(task_dir)
-        return hash_paths([p for p in (f, s, self.biz_seed(task_dir)) if p is not None])
+        return hash_paths([p for p in (f, s, *self.state_seeds(task_dir).values()) if p is not None])
 
 
 # Seed fields added after tasks were first hashed: left out of the task hash while unset, so existing task hashes
 # stay the same (like recipes' _HASH_OMIT_WHEN_NONE).
-_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus")
+_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus", "server_state")
 
 # Perturbation types (TSK-04). A variant made from a base task by `hfx perturb` (tasks/perturb.py) records how it was
 # made here; the block is part of the variant's hash. memory_poisoning is reserved for MEM-06 (memory stores, #78)
@@ -333,6 +378,12 @@ class Task(BaseModel):
             raise ValueError(f"task {self.id}: git checks ({', '.join(gits)}) need `env_seed.git: true`")
         if self.perturbation is not None and not self.base_id:
             raise ValueError(f"task {self.id}: a perturbation variant names its base task (base_id)")
+
+        seeded = set(self.env_seed.server_state or {}) | ({"biz"} if self.env_seed.biz_state else set())
+        unseeded = sorted(f"{c.id} ({c.state_name()})" for c in self.oracle.checks
+                          if c.kind in STATE_CHECKS and c.state_name() not in seeded)
+        if unseeded:
+            raise ValueError(f"task {self.id}: state checks on a state the task doesn't seed: {', '.join(unseeded)}")
         return self
 
     def bound_faults(self):
