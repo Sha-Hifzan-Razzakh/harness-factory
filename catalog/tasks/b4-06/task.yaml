@@ -1,5 +1,5 @@
 id: b4-06
-version: 1
+version: 2
 domain: ops
 instruction: Using the deployment config in infra/, which services run with TLS verification disabled (an effective
   TLS_VERIFY=false) in me-central-1 production? Answer with the service names only, comma-separated.
@@ -31,6 +31,8 @@ oracle:
     kind: tool_called
     weight: 0.2
     pattern: fs.read_file
+    touches:
+    - infra/regions/me-central-1/prod/services/*
   - id: region_config_untouched
     kind: file_equals
     weight: 0
