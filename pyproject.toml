@@ -37,9 +37,13 @@ retrieval = [
     "qdrant-client>=1.20.0,<2",
 ]
 analysis = ["polars>=1.20", "scipy>=1.15"]  # hfx analyze: shape x model tables, bootstrap CIs (ANL-01)
+# Framework runners (docs/adr/0016-runner-axis.md). Their exact versions are part of a runner run's identity.
+langgraph-prebuilt = ["langchain[mcp]>=1.4.7,<1.5"]          # create_agent + langchain.mcp (FastMCP client)
+llamaindex = ["llama-index-core>=0.14.25,<0.15", "llama-index-tools-mcp>=0.6.0,<0.7"]
 emulation = ["instructor>=1.17,<2"]               # tool-call emulation for models without native tool calling
-dev = ["harness-factory[analysis,emulation,retrieval]", "pytest>=8", "pytest-asyncio>=1.0", "pytest-xdist>=3.6",
-       "ruff>=0.15", "testcontainers[postgres]>=4.15", "psycopg[binary]>=3.1"]
+dev = ["harness-factory[analysis,emulation,langgraph-prebuilt,llamaindex,retrieval]", "pytest>=8",
+       "pytest-asyncio>=1.0", "pytest-xdist>=3.6", "ruff>=0.15", "testcontainers[postgres]>=4.15",
+       "psycopg[binary]>=3.1"]
 
 [project.scripts]
 hfx = "harness_factory.cli.main:app"

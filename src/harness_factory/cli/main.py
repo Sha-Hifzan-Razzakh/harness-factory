@@ -617,6 +617,10 @@ from harness_factory.cli.analysis import register as _register_analysis  # hfx a
 
 _register_analysis(app)
 
+from harness_factory.cli.transfer import transfer_app
+
+app.add_typer(transfer_app, name="transfer")
+
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":
     app()

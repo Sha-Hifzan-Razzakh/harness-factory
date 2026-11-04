@@ -1,0 +1,7 @@
+# Matrix (runtime): v2-base run by LangGraph's ready-made agent (langchain.agents.create_agent + ToolNode, MCP tools
+# through langchain.mcp) instead of the native loop. Same prompts, tools, permissions and budget; the framework's
+# loop, tool formatting and error handling at their defaults. ADR 0016.
+id: v2-langgraph-prebuilt
+version: 1
+base: v2-base
+runtime: langgraph-prebuilt
