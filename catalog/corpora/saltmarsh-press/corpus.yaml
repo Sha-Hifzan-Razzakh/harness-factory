@@ -1,0 +1,16 @@
+# A recorded snapshot of a ferry operator's press room and a local news site (ADR 0018). Saltmarsh Ferries and the
+# Coastal Gazette are fictional; the .example domains are reserved for documentation (RFC 2606). The operator moved
+# a route's start date twice; the newspaper's later article repeats the second date, and the press room's news
+# index was fetched before the latest release went out.
+id: saltmarsh-press
+title: Saltmarsh Ferries press room and the Coastal Gazette
+description: Press releases about the Dunmore-Kessick route, the press room's news index, and two local news articles.
+recorded: 2026-10-21
+redirects:
+- {from: "https://press.saltmarsh-ferries.example/kessick", to: "https://press.saltmarsh-ferries.example/news/kessick-route-announced", status: 301}
+- {from: "https://press.saltmarsh-ferries.example/news/latest", to: "https://press.saltmarsh-ferries.example/news", status: 302}
+gone:
+- {url: "https://press.saltmarsh-ferries.example/timetables/kessick-2026", status: 404}
+# Frozen by `hfx corpus freeze`: the content address of every page, redirect and 404 above. Don't edit by hand.
+version: d866011c6a0feb15
+page_count: 7

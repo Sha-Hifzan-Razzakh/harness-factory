@@ -160,6 +160,16 @@ class MCPServerSpec(BaseModel):
         return sys.executable, ["-m", self.module or ""]
 
 
+def _web_engine() -> str:
+    from harness_factory.env.mcp.impl.webindex import ENGINE_ID
+    return ENGINE_ID
+
+
+# Server module -> the identity of the engine it ranks task data with (ADR 0018). It decides what a search returns
+# for the same corpus, so it is part of env_hash for recipes that open the server (and only for them).
+SERVER_ENGINES = {"harness_factory.env.mcp.impl.web_server": _web_engine}
+
+
 class ToolCatalogFile(BaseModel):
     servers: list[MCPServerSpec]
 
@@ -229,6 +239,10 @@ class ToolCatalogFile(BaseModel):
                 if s.id in server_ids and not s.remote and requirements(s.module)}
         if libs:                                     # a server's pinned libraries (ADR 0013); same rule as remote
             data["libraries"] = libs
+        engines = {s.id: SERVER_ENGINES[s.module]() for s in self.servers
+                   if s.id in server_ids and not s.remote and s.module in SERVER_ENGINES}
+        if engines:                                  # a server's ranking engine (ADR 0018); same rule again
+            data["engines"] = engines
         return content_hash(data, 12)
 
     def unhashed_tools(self) -> list[str]:

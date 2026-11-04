@@ -746,6 +746,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | tools | `v2-docs` | Adds the `docs` server: read and edit `.docx` (`docx_read`, `docx_replace`, `docx_append_paragraph`) and `.xlsx` (`xlsx_sheets`, `xlsx_read`, `xlsx_write`), read `.pdf` (`pdf_text`, `pdf_info`). The office tasks name these tools, so plans run them only on recipes that open the server |
 | retrieval | `v2-retrieval-bm25` | A `retrieve__search` tool over the task's corpus, BM25, 5 passages per call (`retrieval: {mode: bm25, top_k: 5}`); see [Retrieval](#retrieval) |
 | retrieval | `v2-retrieval-hybrid` | The same tool with hybrid search (dense + BM25, reciprocal rank fusion) and a reranker (`retrieval: {mode: hybrid, top_k: 5, rerank: true}`) |
+| tools | `v2-web` | Adds the `web` server: `web.search` and `web.fetch` over the task's recorded web corpus (see [Web search over recorded corpora](#web-search-over-recorded-corpora)). The only recipe that reaches `web-01` and `web-02` |
 
 **Skills** live in `catalog/skills/<id>/SKILL.md` (a `name` and `description` header, then the body). Five
 general how-tos so far: `sql-analysis`, `sql-changes`, `editing-files`, `file-exports`,
@@ -848,6 +849,49 @@ the plan reads next.
 
 ```bash
 uv run hfx smoke --recipe v2-retrieval-bm25,v2-retrieval-hybrid --models scripted/replay --strict
+```
+
+## Web search over recorded corpora
+
+The `web` server (ENV-01, KNW-01, ADR 0018) is the web as the model sees it: a search engine and a browser over a
+recorded snapshot of a few sites. No call ever reaches the network. Unlike [Retrieval](#retrieval), which searches
+the task's own files from the harness side, these are tools the model calls by name, on a server in the sandbox.
+
+| Tool | Returns |
+|---|---|
+| `web.search(query, page=1)` | `{query, page, pages, total, results, next_page}`: 5 results per page (at most 5 pages), each with `url`, `title`, `snippet`, `fetched` and, when the page states one, `published`. BM25 (standard library, `env/mcp/impl/webindex.py`); ties go to the URL in order, so the same query on the same corpus version always returns the same page |
+| `web.fetch(url, offset=0)` | `{url, status, title, fetched, published?, redirected_from?, offset, length, text, next_offset}`: at most 6,000 characters per call, cut at a line break; read on with `offset=next_offset`. Redirects are followed and reported; a recorded 404 or 410, or a path the site never had, is an HTTP error; a host that isn't in the snapshot can't be reached |
+
+**Corpora** are folders in `catalog/corpora/<id>/`: `corpus.yaml` (id, title, redirects, recorded 404s/410s, and
+the frozen `version` and `page_count`) and `pages/**/*.md`, one page per file with a YAML header (`url`, `title`,
+`fetched`, optional `published`). A corpus's version is its content address: the hash of every URL, title, date,
+text, redirect and 404 it serves, not of file names or labels, with line endings normalised. `hfx corpus freeze`
+writes it; a corpus whose files no longer match is refused at provisioning, and `hfx validate` says so.
+
+```bash
+uv run hfx corpus list            # id, version, pages, redirects, 404s, index id, frozen or stale
+uv run hfx corpus freeze          # after editing a corpus: a new version, so a new hash for every task using it
+```
+
+**A task names its corpus** with `env_seed.corpus: <id>` and lists the web tools directly in `allowed_tools`, so
+only recipes that open `web` (`v2-web`) reach it. The corpus version is part of the task hash (tasks without one
+keep theirs). The factory compiles each version once, with its index, into `var/corpora/<id>/<index id>/` and
+copies it read-only into the run's state folder (`HF_WEB`; in Docker its own `:ro` mount at `/state/web`), never
+the workspace. The run's snapshot records `web_corpus`: id, version, index id, engine, and the page, redirect and
+404 counts. The ranking engine's id is part of `env_hash` for recipes that open `web`.
+
+**Tasks.** `web-01` (DEV): Relaymail's current per-key rate limit, where the retired v1 page ranks first and the
+launch post has an older figure. `web-02` (TEST): the first passenger sailing of a ferry route whose operator moved
+the date twice, with a newspaper article newer than the release it repeats. Both answer with the value and the
+URL; `grounded` needs a fetch of the page the answer is on (`touches: [url=...]`), so an answer from search
+snippets keeps only the answer's weight.
+
+Corpora too large for git go to DVC (ADR 0018): `pages/` becomes a DVC-tracked folder and nothing else changes,
+because the version is computed from the pages themselves. CI and the offline gates use only the corpora in the
+repository.
+
+```bash
+uv run hfx smoke --recipe v2-web --models scripted/replay --strict
 ```
 
 ## Runners

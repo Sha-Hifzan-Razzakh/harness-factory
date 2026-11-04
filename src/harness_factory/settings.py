@@ -49,6 +49,7 @@ RESULTS_URL = os.environ.get("HF_RESULTS_URL", f"sqlite:///{VAR / 'results.db'}"
 TRACES_DIR = VAR / "traces"
 QUOTA_STATE = Path(os.environ.get("HF_QUOTA_STATE", VAR / "quota_ledger.json"))   # provider usage, survives restarts
 SANDBOXES_DIR = VAR / "sandboxes"
+CORPORA_DIR = VAR / "corpora"        # compiled web corpora, one per version and engine (ADR 0018)
 
 OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")  # e.g. http://localhost:4318
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")

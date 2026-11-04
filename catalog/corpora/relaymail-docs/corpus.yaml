@@ -1,0 +1,18 @@
+# A recorded snapshot of a vendor's documentation site and blog (ADR 0018). Relaymail is fictional; the .example
+# domains are reserved for documentation (RFC 2606). The retired v1 pages and the v2 launch post are still online
+# and still rank for the questions the current pages answer.
+id: relaymail-docs
+title: Relaymail developer documentation and blog
+description: Docs for a transactional email API, v1 (retired) and v2 (current), the changelog and the product blog.
+recorded: 2026-10-20
+redirects:
+- {from: "https://docs.relaymail.example/rate-limits", to: "https://docs.relaymail.example/v2/rate-limits", status: 301}
+- {from: "https://docs.relaymail.example/v2/limits", to: "https://docs.relaymail.example/v2/rate-limits", status: 301}
+- {from: "https://docs.relaymail.example/latest/webhooks", to: "https://docs.relaymail.example/v2/webhooks", status: 302}
+- {from: "https://docs.relaymail.example/v1", to: "https://docs.relaymail.example/v1/overview", status: 301}
+gone:
+- {url: "https://docs.relaymail.example/v1/limits-faq", status: 404}
+- {url: "https://relaymail.example/blog/raising-the-limits-preview", status: 410}
+# Frozen by `hfx corpus freeze`: the content address of every page, redirect and 404 above. Don't edit by hand.
+version: fddbe698a495ecab
+page_count: 12

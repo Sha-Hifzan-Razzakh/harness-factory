@@ -231,6 +231,8 @@ class EnvSeed(BaseModel):
     # when set, so tasks without it keep their hash.
     git: bool = False
     biz_state: str | None = None      # JSON file: the biz server's business state (a fresh copy each run)
+    # A recorded web corpus the web server serves (catalog/corpora/<id>, ADR 0018); its version is in the task hash.
+    corpus: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]*$")
 
     def resolve(self, task_dir: Path) -> tuple[Path | None, Path | None]:
         f = (task_dir / self.files).resolve() if self.files else None
@@ -240,6 +242,10 @@ class EnvSeed(BaseModel):
     def biz_seed(self, task_dir: Path) -> Path | None:
         return (task_dir / self.biz_state).resolve() if self.biz_state else None
 
+    def web_corpus(self, task_dir: Path):
+        from harness_factory.env.corpus import find
+        return find(task_dir, self.corpus) if self.corpus else None
+
     def data_hash(self, task_dir: Path) -> str:
         f, s = self.resolve(task_dir)
         return hash_paths([p for p in (f, s, self.biz_seed(task_dir)) if p is not None])
@@ -247,7 +253,7 @@ class EnvSeed(BaseModel):
 
 # Seed fields added after tasks were first hashed: left out of the task hash while unset, so existing task hashes
 # stay the same (like recipes' _HASH_OMIT_WHEN_NONE).
-_SEED_OMIT_WHEN_NONE = ("biz_state",)
+_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus")
 
 # Perturbation types (TSK-04). A variant made from a base task by `hfx perturb` (tasks/perturb.py) records how it was
 # made here; the block is part of the variant's hash. memory_poisoning is reserved for MEM-06 (memory stores, #78)
@@ -356,6 +362,8 @@ class Task(BaseModel):
             data["git_seed"] = GIT_SEED
         if self.source_dir is not None:
             data["seed_hash"] = self.env_seed.data_hash(self.source_dir)
+            if self.env_seed.corpus:          # ADR 0018: the corpus's content address, not just its name
+                data["corpus_version"] = self.env_seed.web_corpus(self.source_dir).version
         return content_hash(data)
 
 
