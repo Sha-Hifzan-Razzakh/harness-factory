@@ -75,7 +75,8 @@ The CLI is `hfx`, not `hf`: huggingface_hub (pulled in by LiteLLM) installs its 
     catch provider errors elsewhere.
   - A 400 is the model's fault only when the provider says the output was malformed.
 - **Isolation.** Every run gets a fresh sandbox. Nothing may read or write outside `HF_WORKSPACE` / `HF_DB` /
-  `HF_BIZ` (the business state, a fresh copy of `env_seed.biz_state` next to the database),
+  `HF_BIZ` (the business state, a fresh copy of `env_seed.biz_state` next to the database) and the other JSON states
+  (`HF_OUTBOX`, `HF_CALENDAR`: fresh copies of `env_seed.server_state`, `env/state.JSON_STATES`),
   except that the web server reads `HF_WEB` (the task's compiled web corpus, mounted read-only).
   The Docker isolation contract is `DockerSandbox.run_args()`; weakening any flag must fail
   `tests/test_docker_sandbox.py`. A new MCP server module goes in `env/mcp/impl/` so the sandbox image picks
