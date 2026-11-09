@@ -1,0 +1,19 @@
+# Degree audit (HF-2, backlog G.01): the baseline degree auditor, v2-base with the `audit` server (ADR 0021). The
+# agent reads the SIS, calls the engine (validate_record, evaluate, explain), reads the policy documents and writes
+# the audit file. Nothing enforces the layer order; that is what v3-audit is compared against.
+# It differs from v2-base in three places, and together they define the degree baseline:
+#   - tools: the audit server, and only the read tools of sql (the auditor never writes the SIS; sql.execute is
+#     left out) and the three fs tools of the tool contract (list_dir, read_file, write_file);
+#   - caps: the degree references take up to 10 calls and 15 at most (DegreeAudit tracker, Agent_Trajectories), and
+#     engine results are large (up to 7.4K characters per evaluate);
+#   - output: the audit file (one line per check) is written in one reply, so the executor may write 8K tokens.
+# Baseline for rounds R1-R7 (Search_Trajectory). Gated on the degree tasks only (scripts/ci/recipes.py: degree).
+id: v2-audit
+version: 1
+base: v2-base
+model_slots:
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 8192}
+tools:
+  tool_ids: [fs.list_dir, fs.read_file, fs.write_file, sql.list_tables, sql.describe_table, sql.query, "audit.*"]
+  mcp_servers: [fs, sql, audit]
+config: {max_steps: 20, max_tool_calls: 24, max_tokens: 400000, wall_time_s: 600}

@@ -47,8 +47,28 @@ providers:
     litellm_prefix: openrouter
     auth_env: OPENROUTER_API_KEY
     data_terms: "depends on upstream; set provider data policy in account (verify)"
-    limits: {rpm: 20, rpd: 50, scope: account}
+    # Limits (openrouter.ai/docs/api/reference/limits, checked 2026-11-09): paid model variants have no
+    # platform-level request cap; upstream providers can still answer 429. The 20 rpm here is the factory's own
+    # pacing for paid models, not a platform limit. Free variants (`:free`) allow 20 rpm and 50 requests a day, or
+    # 1,000 a day once the account has bought at least $10 of credits (it has); each free model below says so itself.
+    limits: {rpm: 20, scope: account}
     models:
       - {canonical: llama-3.3-70b, provider_model_id: meta-llama/llama-3.3-70b-instruct, price_in: 0.13, price_out: 0.40}
       - {canonical: gpt-oss-120b,  provider_model_id: openai/gpt-oss-120b,               price_in: 0.10, price_out: 0.50}
       - {canonical: qwen3-32b,     provider_model_id: qwen/qwen3-32b,                    price_in: 0.10, price_out: 0.30}
+      # DegreeAudit shortlist (HF-2, backlog I.02; DegreeAudit tracker, Model_Candidates). Ids, prices ($/M) and
+      # context checked on each model's openrouter.ai page on 2026-11-09 (I.03). Free models are used on synthetic
+      # data only (DegreeAudit decision D-005).
+      - {canonical: deepseek-v4.1-flash, provider_model_id: deepseek/deepseek-v4.1-flash, price_in: 0.006, price_out: 0.50,
+         caps: {context_len: 1000000}}      # its page doesn't state tool calling; confirm on the first real run
+      - {canonical: glm-5.3-flash,       provider_model_id: z-ai/glm-5.3-flash,           price_in: 0.0335, price_out: 0.083,
+         caps: {context_len: 1000000}}
+      - {canonical: qwen3.6-35b-a3b,     provider_model_id: qwen/qwen3.6-35b-a3b,         price_in: 0.01, price_out: 0.092,
+         caps: {context_len: 262144}}
+      - {canonical: claude-haiku-5.5,    provider_model_id: anthropic/claude-haiku-5.5,   price_in: 0.10, price_out: 0.50,
+         caps: {context_len: 1000000}}
+      # The free variant only: one provider (NVIDIA), 1M context; the paid variant is a different endpoint (262K).
+      # OpenRouter counts free requests per account, so one free model here keeps this bucket honest; a second
+      # free model needs a shared limit instead (both would otherwise get 1,000 a day each).
+      - {canonical: "nemotron-3-ultra:free", provider_model_id: "nvidia/nemotron-3-ultra-550b-a55b:free", price_in: 0.0,
+         price_out: 0.0, free: true, caps: {context_len: 1000000}, limits: {rpm: 20, rpd: 1000}}

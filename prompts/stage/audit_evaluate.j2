@@ -1,0 +1,8 @@
+Stage: evaluate (layer 2, the rules). Do not write anything yet.
+If the validate note starts with "BLOCKING:", reply "Skipped: the record has a blocking issue." and nothing else.
+Otherwise:
+1. Call evaluate for the student with the audit settings the task gives (as-of term, mode, approvals date). Pass a study plan version only for a what-if audit.
+2. For every requirement that fails, and every one met through an equivalency, a substitution, a waiver, a repeat or a cross-listed code, call explain to see which courses counted, which did not, and why.
+3. Take the engine's numbers as they are. Do not recount credits or recompute the CGPA by hand.
+Reply with a short note: each requirement with its status, required and earned credits and deficit, then the flags.
+{% if tools %}Tools in this stage: {{ tools | join(", ") }}.{% else %}No tools in this stage.{% endif %}

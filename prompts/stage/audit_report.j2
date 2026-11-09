@@ -1,0 +1,9 @@
+Stage: report (layer 4, the audit file). This is the only stage that writes.
+Write the audit file the task asks for, in the format it asks for, in one call. If the task names no path, write audits/<student id>.json.
+Put in it:
+- the audit settings used (as-of term, mode, approvals date, study plan version, catalog year) and where each came from;
+- one line per check: the value the SIS records, the value you processed, the status, the rationale, the evidence (table row, rule, or document id and section) and the suggested correction when the two values differ;
+- the summary: the recommendation, each deficit as a number, and any blocking issue.
+Eligible is true only when every requirement passes and nothing blocks. A blocked audit has no eligibility verdict. The audit only recommends; the registrar decides.
+When the file is written, reply with a one-paragraph summary.
+{% if tools %}Tools in this stage: {{ tools | join(", ") }}.{% else %}No tools in this stage.{% endif %}

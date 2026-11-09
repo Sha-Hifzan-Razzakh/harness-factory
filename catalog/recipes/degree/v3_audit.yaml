@@ -1,0 +1,49 @@
+# Degree audit (HF-2, backlog G.04): Graph A as V3 stages (DegreeAudit tracker, Agent_Graph).
+#   validate (L1, the record) -> evaluate (L2, the rules) -> cite (L3, the documents) -> report (L4) -> verify
+# Each stage offers only its own tools, and only report writes. Graph A's intake is part of validate, and its
+# reconcile step is part of cite. The data-issue short cut (validate -> report) is in the prompts: evaluate skips
+# when validate reports a blocking issue. verify may send the run back to report once.
+# Stage caps are Graph A's; the run caps add the one retry (report + verify). Output and tools as v2-audit.
+# No retrieval here: a stage may list only tools the recipe can reach (hfx validate), so a rag variant (G.11,
+# phase 2) adds retrieve.search to cite in its own workflow block.
+# The question it answers: does an enforced layer order cut false eligibles and wasted calls (Recipe_Matrix SH-1)?
+# Gated on the degree tasks only (scripts/ci/recipes.py: degree): its stages are built for audits, and a generic
+# task with several writes doesn't fit a write stage of 3 steps.
+id: v3-audit
+version: 1
+variant: V3_WORKFLOW_GRAPH
+headless: true
+tier: T2
+model_slots:
+  executor: {role: executor, temperature: 0.0, max_output_tokens: 8192}
+tools:
+  tool_ids: [fs.list_dir, fs.read_file, fs.write_file, sql.list_tables, sql.describe_table, sql.query, "audit.*"]
+  mcp_servers: [fs, sql, audit]
+prompts: {system: system/default, task: task/default}
+config: {max_steps: 26, max_tool_calls: 30, max_tokens: 400000, wall_time_s: 900}   # 4+5+5+3+3 + retry (3+3)
+policies:
+  permission_mode: {READ: AUTO, REVERSIBLE: AUTO, IRREVERSIBLE: DENY}
+workflow:
+  stages:
+    - id: validate
+      prompt: stage/audit_validate
+      tools: [audit.validate_record, sql.list_tables, sql.describe_table, sql.query]
+      max_steps: 4
+    - id: evaluate
+      prompt: stage/audit_evaluate
+      tools: [audit.evaluate, audit.explain, sql.query]
+      max_steps: 5
+    - id: cite
+      prompt: stage/audit_cite
+      tools: [fs.list_dir, fs.read_file, audit.explain]
+      max_steps: 5
+    - id: report
+      prompt: stage/audit_report
+      tools: [fs.write_file]
+      max_steps: 3
+    - id: verify
+      prompt: stage/verify
+      tools: [fs.read_file, audit.evaluate, sql.query]
+      max_steps: 3
+  retry_from: report
+  max_retries: 1

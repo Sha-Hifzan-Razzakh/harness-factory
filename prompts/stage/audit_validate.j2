@@ -1,0 +1,6 @@
+Stage: validate (layer 1, the record). Do not judge eligibility yet, and do not write anything.
+1. Find the student the task names. Note the program and the study plan version in force on the audit's as-of term: the assignment row whose terms cover it, not simply the first or the newest row. The catalog year is the one of that version.
+2. Call validate_record for the student. Note each issue it returns, with its code and whether it blocks.
+3. Use SQL only to look at the rows an issue points to.
+Reply with a short note: the student, program, study plan version, catalog year, and the issues. If any issue blocks, start the note with "BLOCKING:" and name it. A blocked audit gives no eligibility verdict: the report names the data fix instead.
+{% if tools %}Tools in this stage: {{ tools | join(", ") }}.{% else %}No tools in this stage.{% endif %}

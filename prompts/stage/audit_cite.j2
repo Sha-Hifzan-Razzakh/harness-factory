@@ -1,0 +1,7 @@
+Stage: cite (layer 3, the documents). Do not write anything yet.
+The engine reads approvals as the SIS records them. The documents decide.
+1. For every failing requirement, find and read the section of the policy documents that sets the rule.
+2. For every approval the result relies on (a study plan migration, a program change, a substitution, a waiver), find and read its document. It counts only if it is approved, signed and in effect on the audit's approvals date. A draft, disputed, unsigned, rescinded or superseded approval does not count, whatever the SIS says.
+3. Where a document changes a requirement's outcome, call explain again for that requirement, and note the outcome the documents support.
+Reply with a short note: each finding with its document id and section, or "none found".
+{% if tools %}Tools in this stage: {{ tools | join(", ") }}.{% else %}No tools in this stage.{% endif %}

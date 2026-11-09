@@ -1,0 +1,9 @@
+# Degree audit (HF-2, backlog G.02): v2-audit with one change, the retrieve.search tool over the task's policy
+# corpus: hybrid search (dense + BM25, reciprocal rank fusion) and a reranker over 15 candidates, 5 passages per call
+# (KNW-02, ADR 0017). The tool is offered only on tasks whose seed has a corpus/ folder; on any other task this
+# recipe runs exactly like v2-audit. The question it answers: does retrieval find the governing section faster and
+# cite it more accurately than listing and reading files (DegreeAudit tracker, Recipe_Matrix RV-4)?
+id: v2-audit-rag
+version: 1
+base: v2-audit
+retrieval: {mode: hybrid, top_k: 5, rerank: true}

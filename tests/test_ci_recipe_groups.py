@@ -40,3 +40,14 @@ def test_cli_prints_a_group_and_refuses_an_unknown_one(capsys):
     assert ci.main(["matrix"]) == 0
     assert "v2-recover" in capsys.readouterr().out.split(",")
     assert ci.main(["nope"]) == 2
+
+
+def test_degree_recipes_have_their_own_group():
+    """Recipes that open the audit server are gated on the degree tasks only, never in the generic gates (HF-2)."""
+    ci = _module()
+    recipes = load_recipes(settings.RECIPES_DIR)
+    groups = ci.groups()
+    assert {"v2-audit", "v2-audit-rag", "v3-audit"} <= set(groups["degree"])
+    assert all(ci.DEGREE_SERVER in recipes[r].tools.mcp_servers for r in groups["degree"])
+    generic = groups["shapes"] + groups["matrix"] + groups["matrix-planned"] + groups["runners"]
+    assert not any(ci.DEGREE_SERVER in recipes[r].tools.mcp_servers for r in generic)

@@ -9,6 +9,10 @@ Groups (every recipe but v1-base and v2-base is in exactly one; tests/test_ci_re
     matrix-planned  matrix recipes on a V3, V4 or V5 shape: run without `long` tasks, like their base
     runners         matrix recipes on a framework runner (`runtime: ...`, ADR 0016): run without `long` tasks,
                     because a framework keeps its own untrimmed history and can overflow the context on them
+    degree          recipes that open the `audit` server (catalog/recipes/degree/, ADR 0021): domain recipes,
+                    gated only on the degree-audit tasks (their stages and caps are built for those tasks; a
+                    generic task's reference plan may not fit them). The gate step comes with those tasks (HF-3):
+                    `hfx smoke --tag degree-audit` refuses to run while no task carries the tag.
 
 v1-base and v2-base are gated by the P0 gate (`hfx smoke` with its default recipe) and the shape tests.
 """
@@ -22,11 +26,14 @@ from harness_factory.recipes.model import HarnessRecipe, Variant, load_recipes
 
 PLANNED = {Variant.V3_WORKFLOW_GRAPH, Variant.V4_PLANNER, Variant.V5_ORCHESTRATOR}
 UNGROUPED = {"v1-base", "v2-base"}
+DEGREE_SERVER = "audit"
 
 
 def group_of(recipe: HarnessRecipe) -> str | None:
     if recipe.id in UNGROUPED:
         return None
+    if DEGREE_SERVER in recipe.tools.mcp_servers:
+        return "degree"
     if recipe.base is None:
         return "shapes" if recipe.variant in PLANNED else None
     if recipe.runner is not None:
@@ -35,7 +42,7 @@ def group_of(recipe: HarnessRecipe) -> str | None:
 
 
 def groups() -> dict[str, list[str]]:
-    out: dict[str, list[str]] = {"shapes": [], "matrix": [], "matrix-planned": [], "runners": []}
+    out: dict[str, list[str]] = {"shapes": [], "matrix": [], "matrix-planned": [], "runners": [], "degree": []}
     for rid, recipe in sorted(load_recipes(settings.RECIPES_DIR).items()):
         g = group_of(recipe)
         if g is not None:
