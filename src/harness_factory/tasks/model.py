@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from harness_factory.hashing import content_hash, hash_paths
 
@@ -34,7 +34,7 @@ CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent",
                     "output_regex", "tool_called", "remote_equals", "tests_pass", "git_log_contains",
                     "biz_equals", "biz_count", "xlsx_cell", "docx_contains",
                     "docx_paragraph_regex", "sql_rows_unordered", "number_close", "json_schema", "output_exact",
-                    "rubric", "state_equals", "state_count"]
+                    "rubric", "state_equals", "state_count", "json_lines"]
 GIT_CHECKS = ("git_log_contains",)
 STATE_CHECKS = ("state_equals", "state_count")    # any stateful mock server's JSON state: path "<state>:<pointer>"
 
@@ -43,7 +43,8 @@ Normalization = Literal["whitespace", "case"]
 # Check fields added after the first tasks were written: left out of the task hash while unset, so adding them
 # kept every existing task hash (like _HASH_OMIT_WHEN_NONE for recipes).
 _CHECK_HASH_OMIT_WHEN_NONE = ("ref", "sheet", "cell", "expected", "tolerance", "style",
-                              "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches")
+                              "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches",
+                              "lines")
 
 _SCALAR = (str, int, float, bool, type(None))
 
@@ -70,6 +71,44 @@ class Rubric(BaseModel):
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"rubric criteria weights must sum to 1.0, got {total:.4f}")
         return self
+
+
+LineStatus = Literal["PASS", "FAIL", "CORRECTED", "FLAG", "INFO"]
+
+
+class ExpectedLine(BaseModel):
+    """One finding the agent's report must contain (json_lines). An agent line answers it when its check_id is
+    the same and its attribute matches `attribute`; it is accurate when its status is the same, its processed
+    value matches `processed` and, for a correction, its correction_type is the same."""
+    model_config = ConfigDict(extra="forbid")
+    check_id: str = Field(min_length=1)
+    status: LineStatus
+    attribute: str | None = None         # regex, searched case-insensitively in the agent line's attribute
+    processed: str | None = None         # regex, searched case-insensitively in the agent line's processed value
+    correction_type: str | None = None   # a CORRECTED line must carry this type
+
+    @model_validator(mode="after")
+    def _patterns(self) -> ExpectedLine:
+        for name in ("attribute", "processed"):
+            if getattr(self, name) is not None:
+                try:
+                    re.compile(getattr(self, name))
+                except re.error as e:
+                    raise ValueError(f"expected line {self.check_id}: bad {name} pattern: {e}") from e
+        if self.correction_type is not None and self.status != "CORRECTED":
+            raise ValueError(f"expected line {self.check_id}: a correction_type needs status CORRECTED")
+        return self
+
+
+class LinesSpec(BaseModel):
+    """json_lines: the findings a report must hold and how close it must come. The report's lines are a JSON
+    list of objects (check_id, status, attribute, processed, correction_type) at `pointer` in the file."""
+    model_config = ConfigDict(extra="forbid")
+    pointer: str = Field(default="/audit_lines", pattern=r"^(/.*)?$")
+    expected: list[ExpectedLine] = Field(min_length=1)
+    min_accuracy: float = Field(default=0.9, ge=0, le=1)              # accurate expected lines / expected lines
+    min_correction_recall: float = Field(default=0.95, ge=0, le=1)    # corrections found / corrections expected
+    max_false_corrections: float = Field(default=0.05, ge=0, le=1)    # unexpected corrections / corrections made
 
 
 class WeightedCheck(BaseModel):
@@ -113,6 +152,7 @@ class WeightedCheck(BaseModel):
     touches: list[str] | None = Field(default=None, min_length=1)   # tool_called: the matching call must touch
                                      # the task's data: a SQL table its statement names, a workspace path or glob
                                      # its path argument matches, or `arg=value` for other tools (grading/touches.py)
+    lines: LinesSpec | None = None   # json_lines: the expected findings and the thresholds (path is the report)
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -126,7 +166,8 @@ class WeightedCheck(BaseModel):
                  "xlsx_cell": ("path", "sheet", "cell"), "docx_contains": ("path", "text"),
                  "docx_paragraph_regex": ("path", "pattern"), "sql_rows_unordered": ("query", "rows"),
                  "number_close": ("value",), "json_schema": ("path", "json_schema"), "output_exact": ("text",),
-                 "rubric": ("rubric",), "state_equals": ("path", "text"), "state_count": ("path", "text")}[self.kind]
+                 "rubric": ("rubric",), "state_equals": ("path", "text"), "state_count": ("path", "text"),
+                 "json_lines": ("path", "lines")}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -174,6 +215,8 @@ class WeightedCheck(BaseModel):
                                          f"null), not {v!r}")
         if self.kind == "number_close":
             self._number_close_fields()
+        if self.lines is not None and self.kind != "json_lines":
+            raise ValueError(f"check {self.id}: lines is for json_lines checks")
         if self.rubric is not None and self.kind != "rubric":
             raise ValueError(f"check {self.id}: only a rubric check takes a rubric")
         if self.kind == "rubric" and (self.weight == 0 or self.critical):

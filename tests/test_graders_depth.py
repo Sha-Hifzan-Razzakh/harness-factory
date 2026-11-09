@@ -561,3 +561,114 @@ async def test_regrade_task_without_database(factory):
         assert z.read("state/task.sqlite") == b""
     [o] = await regrade(factory, all_runs=True)
     assert o.after == o.before and o.after.status == rec.status.value
+
+
+# ---- json_lines ------------------------------------------------------------------------------------------------
+
+REPORT_LINES = [
+    {"check_id": "DA-01", "status": "PASS", "attribute": "Identity", "processed": "S1 · BSCS"},
+    {"check_id": "DA-04", "status": "CORRECTED", "attribute": "Catalog year", "processed": "2022",
+     "correction_type": "CT-16"},
+    {"check_id": "DA-27", "status": "PASS", "attribute": "MAJOR-CORE", "processed": "51 / 51"},
+    {"check_id": "DA-27", "status": "FAIL", "attribute": "MAJOR-ELEC", "processed": "9 / 12, deficit 3"},
+]
+EXPECTED = [{"check_id": "DA-01", "status": "PASS"},
+            {"check_id": "DA-04", "status": "CORRECTED", "processed": "^2022$", "correction_type": "CT-16"},
+            {"check_id": "DA-27", "status": "FAIL", "attribute": "major-elec", "processed": r"deficit 3\b"}]
+
+
+def lines_check(expected=EXPECTED, **spec):
+    return check(kind="json_lines", path="r.json", lines={"expected": expected, **spec})
+
+
+def lines_ctx(tmp_path, lines, key="audit_lines"):
+    return make_ctx(tmp_path, files={"r.json": json.dumps({key: lines})})
+
+
+def test_json_lines_pass_when_every_expected_line_is_answered(tmp_path):
+    ok, detail = StateDiffGrader()._check(lines_check(), lines_ctx(tmp_path, REPORT_LINES))
+    assert ok, detail
+    assert "lines 3/3" in detail and "corrections 1/1" in detail and "false corrections 0/1" in detail
+
+
+def test_json_lines_match_by_check_id_and_attribute_not_position(tmp_path):
+    # the MAJOR-CORE PASS line has the same check id; the attribute picks the MAJOR-ELEC one, wherever it is
+    assert passes(lines_check(), lines_ctx(tmp_path, list(reversed(REPORT_LINES))))
+
+
+def test_json_lines_a_wrong_status_costs_accuracy(tmp_path):
+    wrong = [dict(x, status="PASS") if x["attribute"] == "MAJOR-ELEC" else x for x in REPORT_LINES]
+    ok, detail = StateDiffGrader()._check(lines_check(), lines_ctx(tmp_path, wrong))
+    assert not ok and "lines 2/3" in detail
+    assert passes(lines_check(min_accuracy=0.6), lines_ctx(tmp_path, wrong))
+
+
+def test_json_lines_a_missed_correction_fails_recall(tmp_path):
+    missed = [dict(x, status="PASS", correction_type=None) if x["check_id"] == "DA-04" else x for x in REPORT_LINES]
+    ok, detail = StateDiffGrader()._check(lines_check(min_accuracy=0), lines_ctx(tmp_path, missed))
+    assert not ok and "corrections 0/1" in detail
+
+
+def test_json_lines_a_correction_of_the_wrong_type_is_not_found(tmp_path):
+    typed = [dict(x, correction_type="CT-01") if x["check_id"] == "DA-04" else x for x in REPORT_LINES]
+    ok, detail = StateDiffGrader()._check(lines_check(min_accuracy=0), lines_ctx(tmp_path, typed))
+    assert not ok and "corrections 0/1" in detail and "false corrections 1/1" in detail
+
+
+def test_json_lines_unexpected_corrections_count_as_false(tmp_path):
+    extra = REPORT_LINES + [{"check_id": "DA-05", "status": "CORRECTED", "attribute": "COMP101", "processed": "x"}]
+    ok, detail = StateDiffGrader()._check(lines_check(), lines_ctx(tmp_path, extra))
+    assert not ok and "false corrections 1/2" in detail
+    assert passes(lines_check(max_false_corrections=0.5), lines_ctx(tmp_path, extra))
+
+
+def test_json_lines_extra_pass_and_info_lines_cost_nothing(tmp_path):
+    extra = REPORT_LINES + [{"check_id": "DA-30", "status": "INFO", "attribute": "Editions", "processed": "-"}]
+    assert passes(lines_check(), lines_ctx(tmp_path, extra))
+
+
+def test_json_lines_no_expected_corrections_means_full_recall(tmp_path):
+    plain = [{"check_id": "DA-01", "status": "PASS"}]
+    assert passes(lines_check(expected=plain), lines_ctx(tmp_path, REPORT_LINES[:1]))
+
+
+def test_json_lines_one_report_line_answers_one_expected_line(tmp_path):
+    twice = [{"check_id": "DA-27", "status": "FAIL"}, {"check_id": "DA-27", "status": "FAIL"}]
+    one = [x for x in REPORT_LINES if x["attribute"] == "MAJOR-ELEC"]
+    ok, detail = StateDiffGrader()._check(lines_check(expected=twice), lines_ctx(tmp_path, one))
+    assert not ok and "lines 1/2" in detail
+
+
+def test_json_lines_status_and_type_ignore_case_and_spaces(tmp_path):
+    loose = [dict(x, status=f" {x['status'].lower()} ") for x in REPORT_LINES]
+    loose[1]["correction_type"] = "ct-16"
+    assert passes(lines_check(), lines_ctx(tmp_path, loose))
+
+
+def test_json_lines_pointer_selects_the_list(tmp_path):
+    assert passes(lines_check(pointer="/marking"), lines_ctx(tmp_path, REPORT_LINES, key="marking"))
+    ok, detail = StateDiffGrader()._check(lines_check(pointer="/nope"), lines_ctx(tmp_path, REPORT_LINES))
+    assert not ok and "no /nope" in detail
+
+
+@pytest.mark.parametrize("body,why", [(None, "missing file"), ("{not json", "invalid JSON"),
+                                      (json.dumps({"audit_lines": {"a": 1}}), "is not a list")])
+def test_json_lines_broken_reports_fail(tmp_path, body, why):
+    ctx = make_ctx(tmp_path, files={} if body is None else {"r.json": body})
+    ok, detail = StateDiffGrader()._check(lines_check(), ctx)
+    assert not ok and why in detail
+
+
+def test_json_lines_needs_lines_and_takes_them_alone():
+    with pytest.raises(ValueError, match="needs lines"):
+        check(kind="json_lines", path="r.json")
+    with pytest.raises(ValueError, match="lines is for json_lines"):
+        check(kind="json_valid", path="r.json", lines={"expected": EXPECTED})
+    with pytest.raises(ValueError, match="correction_type needs status CORRECTED"):
+        lines_check(expected=[{"check_id": "DA-04", "status": "PASS", "correction_type": "CT-16"}])
+    with pytest.raises(ValueError, match="bad attribute pattern"):
+        lines_check(expected=[{"check_id": "DA-04", "status": "PASS", "attribute": "("}])
+
+
+def test_json_lines_field_keeps_existing_task_hashes():
+    assert "lines" in _CHECK_HASH_OMIT_WHEN_NONE

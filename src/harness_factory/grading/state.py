@@ -14,6 +14,10 @@ Which comparison to use:
   rubric              an open-ended deliverable (a summary, a note, a report) that no fixed comparison can grade:
                       a judge model scores it against the check's rubric (grading/judge.py, ADR 0014). Pair it
                       with deterministic checks: an uncalibrated judge carries weight 0
+  json_lines          a report that lists findings line by line (check id, status, processed value, correction):
+                      each expected line must be answered and right, every expected correction surfaced, and few
+                      corrections the task doesn't expect. Line accuracy, correction recall and the false
+                      correction rate each have a threshold; the check passes only when all three are met
 """
 
 from __future__ import annotations
@@ -207,6 +211,72 @@ def _json_schema(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
     return False, f"{len(errors)} schema error(s): {shown[:300]}"
 
 
+def _pointer(doc, pointer: str):
+    """RFC 6901: the value at a JSON pointer, or KeyError."""
+    for raw in pointer.split("/")[1:]:
+        key = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(doc, list):
+            if not key.isdigit() or int(key) >= len(doc):
+                raise KeyError(pointer)
+            doc = doc[int(key)]
+        elif isinstance(doc, dict) and key in doc:
+            doc = doc[key]
+        else:
+            raise KeyError(pointer)
+    return doc
+
+
+def _field(line: dict, name: str) -> str:
+    v = line.get(name)
+    return "" if v is None else str(v).strip()
+
+
+def _json_lines(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
+    spec = c.lines
+    p = (ctx.workspace / (c.path or "")).resolve()
+    if not p.is_file():
+        return False, f"missing file {c.path}"
+    try:
+        lines = _pointer(json.loads(p.read_text(errors="replace")), spec.pointer)
+    except ValueError as e:
+        return False, f"invalid JSON: {e}"
+    except KeyError:
+        return False, f"no {spec.pointer} in {c.path}"
+    if not isinstance(lines, list):
+        return False, f"{spec.pointer} is not a list"
+    got = [x for x in lines if isinstance(x, dict)]
+    used: set[int] = set()
+    accurate, found, matched_corrections = 0, 0, set()
+    wanted = [e for e in spec.expected if e.status == "CORRECTED"]
+    for e in spec.expected:
+        # The first unused agent line with the same check id whose attribute matches answers this expected line.
+        i = next((i for i, x in enumerate(got) if i not in used
+                  and _field(x, "check_id").casefold() == e.check_id.casefold()
+                  and (e.attribute is None or re.search(e.attribute, _field(x, "attribute"), re.IGNORECASE))), None)
+        if i is None:
+            continue
+        used.add(i)
+        x = got[i]
+        status = _field(x, "status").upper()
+        right = (status == e.status
+                 and (e.processed is None or re.search(e.processed, _field(x, "processed"), re.IGNORECASE))
+                 and (e.correction_type is None or _field(x, "correction_type").upper() == e.correction_type.upper()))
+        accurate += bool(right)
+        if e.status == "CORRECTED" and status == "CORRECTED" and (
+                e.correction_type is None or _field(x, "correction_type").upper() == e.correction_type.upper()):
+            found += 1
+            matched_corrections.add(i)
+    made = [i for i, x in enumerate(got) if _field(x, "status").upper() == "CORRECTED"]
+    false = [i for i in made if i not in matched_corrections]
+    acc = accurate / len(spec.expected)
+    recall = found / len(wanted) if wanted else 1.0
+    false_rate = len(false) / len(made) if made else 0.0
+    ok = acc >= spec.min_accuracy and recall >= spec.min_correction_recall and false_rate <= spec.max_false_corrections
+    return ok, (f"lines {accurate}/{len(spec.expected)} accurate ({acc:.2f} vs >= {spec.min_accuracy}); corrections "
+                f"{found}/{len(wanted)} ({recall:.2f} vs >= {spec.min_correction_recall}); false corrections "
+                f"{len(false)}/{len(made)} ({false_rate:.2f} vs <= {spec.max_false_corrections})")
+
+
 def normalize_answer(text: str, options: list[str] | None) -> str:
     t = text.replace("\r\n", "\n").strip()
     if "whitespace" in (options or []):
@@ -254,6 +324,8 @@ class StateDiffGrader:
             return _output_exact(ctx, c)
         if c.kind == "rubric":
             return _rubric(ctx, c)
+        if c.kind == "json_lines":
+            return _json_lines(ctx, c)
         if c.kind in ("file_equals", "file_contains", "file_regex", "file_absent", "json_valid"):
             p = (ctx.workspace / (c.path or "")).resolve()
             if c.kind == "file_absent":
