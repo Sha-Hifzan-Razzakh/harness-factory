@@ -396,26 +396,35 @@ def tools_freeze(check: bool = typer.Option(False, "--check", help="exit 1 if to
         console.print(f"[yellow]skipped remote server(s) {', '.join(skipped)}: set HF_ALLOW_REMOTE=1 (live) or "
                       f"HF_REMOTE_MODE=replay (recorded schemas) to check them")
     hashes = asyncio.run(discover())
-    text = settings.TOOLS_FILE.read_text()
-    data = yaml.safe_load(text)
-    changed = []
-    for server in data["servers"]:
-        if server["id"] in skipped:
-            continue
-        for tool in server["tools"]:
-            ref = f"{server['id']}.{tool['name']}"
-            if any(tool.get(k) != v for k, v in hashes[ref].items()):
-                changed.append(ref)
-                tool.update(hashes[ref])
+    from harness_factory import addons
+    files = [settings.TOOLS_FILE, *(f for _, f in addons.tools_files())]    # each add-on freezes its own (ADR 0021)
+    changed: list[str] = []
+    updated: dict = {}
+    for path in files:
+        text = path.read_text()
+        data = yaml.safe_load(text)
+        before = len(changed)
+        for server in data["servers"]:
+            if server["id"] in skipped:
+                continue
+            for tool in server["tools"]:
+                ref = f"{server['id']}.{tool['name']}"
+                if any(tool.get(k) != v for k, v in hashes[ref].items()):
+                    changed.append(ref)
+                    tool.update(hashes[ref])
+        if len(changed) > before:
+            updated[path] = (text, data)
     if check:
         for ref in changed:
             console.print(f"[red]stale[/] {ref}")
         console.print("tools.yaml is up to date" if not changed else f"{len(changed)} tool(s) changed")
         raise typer.Exit(code=1 if changed else 0)
-    header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
-    settings.TOOLS_FILE.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
-    console.print(f"wrote {len(hashes)} tools' schema and description hashes ({len(changed)} changed) to "
-                  f"{settings.TOOLS_FILE.name}")
+    for path, (text, data) in updated.items():          # only files with a changed tool are rewritten
+        header = "".join(line for line in text.splitlines(keepends=True) if line.startswith("#"))
+        path.write_text(header + yaml.safe_dump(data, sort_keys=False, width=120))
+    console.print(f"checked {len(hashes)} tools' schema and description hashes; {len(changed)} changed"
+                  + (f", written to {', '.join(p.name if p == settings.TOOLS_FILE else str(p) for p in updated)}"
+                     if updated else ""))
 
 
 baseline_app = typer.Typer(no_args_is_help=True, help="Cost baselines: the per-task medians that C is relative to.")

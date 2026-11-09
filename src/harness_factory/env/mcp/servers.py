@@ -249,5 +249,31 @@ class ToolCatalogFile(BaseModel):
         return [t.ref(s.id) for s in self.servers for t in s.tools if not t.schema_hash or not t.description_hash]
 
 
-def load_tool_catalog(path: Path) -> ToolCatalogFile:
-    return ToolCatalogFile.model_validate(yaml.safe_load(path.read_text()))
+def load_tool_catalog(path: Path, addons: bool | None = None) -> ToolCatalogFile:
+    """A tools file. The built-in one (settings.TOOLS_FILE) also gets the active add-ons' servers (ADR 0021), unless
+    `addons=False`; another file gets them only with `addons=True`."""
+    from harness_factory import settings
+    data = yaml.safe_load(path.read_text())
+    if addons if addons is not None else path.resolve() == settings.TOOLS_FILE.resolve():
+        data = {**data, "servers": [*data.get("servers", []), *_addon_servers({s["id"] for s in data["servers"]})]}
+    return ToolCatalogFile.model_validate(data)
+
+
+def _addon_servers(builtin: set[str]) -> list[dict]:
+    """The active add-ons' declared servers: stdio ones must be the add-on's own modules; nothing may clash."""
+    from harness_factory import addons
+    from harness_factory.env.mcp.deps import addon_problems
+    problems = addon_problems()
+    if problems:
+        raise addons.AddonError("; ".join(problems))
+    out, seen = [], set(builtin)
+    for a, f in addons.tools_files():
+        for srv in (yaml.safe_load(f.read_text()) or {}).get("servers", []):
+            if srv.get("id") in seen:
+                raise addons.AddonError(f"{f}: server id {srv.get('id')!r} is already declared")
+            if srv.get("transport", "stdio") == "stdio" and srv.get("module") not in a.servers:
+                raise addons.AddonError(f"{f}: server {srv.get('id')!r} runs module {srv.get('module')!r}, which "
+                                        f"addon.yaml doesn't list under `servers`")
+            seen.add(srv.get("id"))
+            out.append(srv)
+    return out

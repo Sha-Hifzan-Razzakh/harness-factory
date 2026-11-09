@@ -261,6 +261,9 @@ class EnvSeed(BaseModel):
     corpus: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]*$")
     # Other stateful mock servers' seeds (env/state.SERVER_STATES): state name -> JSON file, a fresh copy each run.
     server_state: dict[str, str] | None = None
+    # Read-only reference data a server reads (HF_REFERENCE, ADR 0021): one file, relative to the task dir, mounted
+    # read-only in the state folder, never the workspace. The audit server reads its compiled rules there.
+    reference: str | None = None
 
     @model_validator(mode="after")
     def _known_states(self) -> EnvSeed:
@@ -285,6 +288,9 @@ class EnvSeed(BaseModel):
         from harness_factory.env.corpus import find
         return find(task_dir, self.corpus) if self.corpus else None
 
+    def reference_file(self, task_dir: Path) -> Path | None:
+        return (task_dir / self.reference).resolve() if self.reference else None
+
     def state_seeds(self, task_dir: Path) -> dict[str, Path]:
         """Every JSON state the task seeds, biz included: state name -> seed file."""
         out = {name: (task_dir / rel).resolve() for name, rel in sorted((self.server_state or {}).items())}
@@ -293,12 +299,13 @@ class EnvSeed(BaseModel):
 
     def data_hash(self, task_dir: Path) -> str:
         f, s = self.resolve(task_dir)
-        return hash_paths([p for p in (f, s, *self.state_seeds(task_dir).values()) if p is not None])
+        return hash_paths([p for p in (f, s, *self.state_seeds(task_dir).values(), self.reference_file(task_dir))
+                           if p is not None])
 
 
 # Seed fields added after tasks were first hashed: left out of the task hash while unset, so existing task hashes
 # stay the same (like recipes' _HASH_OMIT_WHEN_NONE).
-_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus", "server_state")
+_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus", "server_state", "reference")
 
 # Perturbation types (TSK-04). A variant made from a base task by `hfx perturb` (tasks/perturb.py) records how it was
 # made here; the block is part of the variant's hash. memory_poisoning is reserved for MEM-06 (memory stores, #78)

@@ -365,7 +365,9 @@ def load_recipes(root: Path) -> dict[str, HarnessRecipe]:
     names the one dimension it varies). The hash is taken of the resolved recipe, base id included, so editing a
     base changes every recipe built on it."""
     raw: dict[str, dict] = {}
-    for p in sorted(root.rglob("*.yaml")):
+    from harness_factory import addons
+    roots = [root, *addons.recipes_dirs()] if root.resolve() == settings.RECIPES_DIR.resolve() else [root]
+    for p in [f for r in roots for f in sorted(r.rglob("*.yaml"))]:   # add-on recipes after the built-in ones
         data = yaml.safe_load(p.read_text())
         rid = data.get("id")
         if rid in raw:
