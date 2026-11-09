@@ -26,6 +26,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLJZLSKyEhjaA4sxi9R` | `session:core` | Shapes, measurement core, task batch 3, P2 (calibration, allocation), runners, framework fidelity |
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
+| `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -88,6 +89,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #65 | `chore/langfuse-compose` | `…JZLSKyEhjaA4sxi9R` | Langfuse in compose | ready for review (CI green) | no |
 | #66 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks | closed by GitHub after the branch was re-signed; continued in #86 | no |
 | #67 | `docs/handoff-packages` | `…JZLSKyEhjaA4sxi9R` | Handover guide, work packages, requirements snapshot | ready for review | no |
+| #103 | `feat/openrouter-shortlist` | `…LLwunk5SUBezW33oS5` | OpenRouter: five models (four paid, one free) and limits per the platform docs | draft | no (prices aren't hashed; new model ids only) |
 | #82 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3 (replaces #34) | ready for review | yes (new tasks and seeds) |
 | #83 | `feat/runner-sk-autogen` | `…JZLSKyEhjaA4sxi9R` | AutoGen runner, migration check vs Agent Framework (Semantic Kernel left out: pins pydantic<2.14, mcp<2) (replaces #55) | ready for review (stacked on #54; CI green) | no |
 | #84 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex (replaces #57) | ready for review (CI green) | no (unset recipes and existing env hashes unchanged) |
