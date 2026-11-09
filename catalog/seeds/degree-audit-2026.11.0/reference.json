@@ -1,0 +1,6903 @@
+{
+ "check_summary": {
+  "ERROR": 0,
+  "INFO": 9,
+  "WARN": 0
+ },
+ "courses": {
+  "ACCT201": {
+   "capstone": false,
+   "code": "ACCT201",
+   "dept": "ACCT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Financial Accounting"
+  },
+  "ACCT202": {
+   "capstone": false,
+   "code": "ACCT202",
+   "dept": "ACCT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Managerial Accounting"
+  },
+  "ARTS110": {
+   "capstone": false,
+   "code": "ARTS110",
+   "dept": "ARTS",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Art Appreciation"
+  },
+  "BIOL101": {
+   "capstone": false,
+   "code": "BIOL101",
+   "dept": "BIOL",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "General Biology"
+  },
+  "BUSA210": {
+   "capstone": false,
+   "code": "BUSA210",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Spreadsheet Modelling"
+  },
+  "BUSA310": {
+   "capstone": false,
+   "code": "BUSA310",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Business Forecasting"
+  },
+  "BUSA320": {
+   "capstone": false,
+   "code": "BUSA320",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Decision Analytics"
+  },
+  "BUSA330": {
+   "capstone": false,
+   "code": "BUSA330",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Business Analytics Methods"
+  },
+  "BUSA420": {
+   "capstone": false,
+   "code": "BUSA420",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Marketing Analytics"
+  },
+  "BUSA430": {
+   "capstone": false,
+   "code": "BUSA430",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "People Analytics"
+  },
+  "BUSA440": {
+   "capstone": false,
+   "code": "BUSA440",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Financial Analytics"
+  },
+  "BUSA450": {
+   "capstone": true,
+   "code": "BUSA450",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Business Capstone"
+  },
+  "BUSL210": {
+   "capstone": false,
+   "code": "BUSL210",
+   "dept": "BUSL",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Business Law"
+  },
+  "CIS220": {
+   "capstone": false,
+   "code": "CIS220",
+   "dept": "MIS",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    }
+   },
+   "title": "Business Information Systems"
+  },
+  "COMP101": {
+   "capstone": false,
+   "code": "COMP101",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Introduction to Programming"
+  },
+  "COMP201": {
+   "capstone": false,
+   "code": "COMP201",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Data Structures"
+  },
+  "COMP210": {
+   "capstone": false,
+   "code": "COMP210",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Object-Oriented Programming"
+  },
+  "COMP220": {
+   "capstone": false,
+   "code": "COMP220",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Software Engineering I"
+  },
+  "COMP230": {
+   "capstone": false,
+   "code": "COMP230",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Web Development"
+  },
+  "COMP250": {
+   "capstone": false,
+   "code": "COMP250",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 4
+    }
+   },
+   "title": "Systems Programming"
+  },
+  "COMP251": {
+   "capstone": false,
+   "code": "COMP251",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Computer Organisation"
+  },
+  "COMP252": {
+   "capstone": false,
+   "code": "COMP252",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Operating Systems"
+  },
+  "COMP301": {
+   "capstone": false,
+   "code": "COMP301",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Algorithms"
+  },
+  "COMP310": {
+   "capstone": false,
+   "code": "COMP310",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Theory of Computation"
+  },
+  "COMP315": {
+   "capstone": false,
+   "code": "COMP315",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Computer Architecture"
+  },
+  "COMP320": {
+   "capstone": false,
+   "code": "COMP320",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Software Engineering II"
+  },
+  "COMP340": {
+   "capstone": false,
+   "code": "COMP340",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Database Systems"
+  },
+  "COMP395": {
+   "capstone": false,
+   "code": "COMP395",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 2
+    },
+    "CAT-2025": {
+     "credits": 2
+    }
+   },
+   "title": "Computing Seminar"
+  },
+  "COMP400": {
+   "capstone": true,
+   "code": "COMP400",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 4
+    }
+   },
+   "title": "Capstone Project"
+  },
+  "COMP410": {
+   "capstone": false,
+   "code": "COMP410",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Computer Networks"
+  },
+  "COMP420": {
+   "capstone": false,
+   "code": "COMP420",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Cyber Security"
+  },
+  "COMP430": {
+   "capstone": false,
+   "code": "COMP430",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Machine Learning for Computing"
+  },
+  "COMP440": {
+   "capstone": false,
+   "code": "COMP440",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Cloud Computing"
+  },
+  "COMP450": {
+   "capstone": false,
+   "code": "COMP450",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Mobile Development"
+  },
+  "COMP460": {
+   "capstone": false,
+   "code": "COMP460",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Computer Graphics"
+  },
+  "CSC101": {
+   "capstone": false,
+   "code": "CSC101",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    }
+   },
+   "title": "Introduction to Programming (2022 code)"
+  },
+  "CSC201": {
+   "capstone": false,
+   "code": "CSC201",
+   "dept": "COMP",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    }
+   },
+   "title": "Data Structures (2022 code)"
+  },
+  "DSCI200": {
+   "capstone": false,
+   "code": "DSCI200",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 4
+    }
+   },
+   "title": "Data Wrangling I"
+  },
+  "DSCI205": {
+   "capstone": false,
+   "code": "DSCI205",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 2
+    }
+   },
+   "title": "Data Wrangling II"
+  },
+  "DSCI210": {
+   "capstone": false,
+   "code": "DSCI210",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Data Wrangling"
+  },
+  "DSCI220": {
+   "capstone": false,
+   "code": "DSCI220",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Data Management"
+  },
+  "DSCI230": {
+   "capstone": false,
+   "code": "DSCI230",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Statistical Programming"
+  },
+  "DSCI310": {
+   "capstone": false,
+   "code": "DSCI310",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Regression Modelling"
+  },
+  "DSCI320": {
+   "capstone": false,
+   "code": "DSCI320",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Applied Statistics"
+  },
+  "DSCI330": {
+   "capstone": false,
+   "code": "DSCI330",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Data Mining"
+  },
+  "DSCI395": {
+   "capstone": false,
+   "code": "DSCI395",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 2
+    },
+    "CAT-2025": {
+     "credits": 2
+    }
+   },
+   "title": "Data Science Seminar"
+  },
+  "DSCI410": {
+   "capstone": false,
+   "code": "DSCI410",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Machine Learning"
+  },
+  "DSCI430": {
+   "capstone": false,
+   "code": "DSCI430",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Natural Language Processing"
+  },
+  "DSCI440": {
+   "capstone": false,
+   "code": "DSCI440",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Recommender Systems"
+  },
+  "DSCI450": {
+   "capstone": false,
+   "code": "DSCI450",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Data Visualisation"
+  },
+  "DSCI460": {
+   "capstone": false,
+   "code": "DSCI460",
+   "dept": "DSCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Causal Inference"
+  },
+  "ECON101": {
+   "capstone": false,
+   "code": "ECON101",
+   "dept": "ECON",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Microeconomics"
+  },
+  "ECON102": {
+   "capstone": false,
+   "code": "ECON102",
+   "dept": "ECON",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Macroeconomics"
+  },
+  "ECON301": {
+   "capstone": false,
+   "code": "ECON301",
+   "dept": "ECON",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Managerial Economics"
+  },
+  "ENGL101": {
+   "capstone": false,
+   "code": "ENGL101",
+   "dept": "ENGL",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Academic Writing"
+  },
+  "ENGL102": {
+   "capstone": false,
+   "code": "ENGL102",
+   "dept": "ENGL",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Research Writing (advanced English)"
+  },
+  "ENVS101": {
+   "capstone": false,
+   "code": "ENVS101",
+   "dept": "ENVS",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Environmental Science and Sustainability"
+  },
+  "FIN301": {
+   "capstone": false,
+   "code": "FIN301",
+   "dept": "FIN",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Corporate Finance"
+  },
+  "FIN310": {
+   "capstone": false,
+   "code": "FIN310",
+   "dept": "FIN",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Investments"
+  },
+  "FIN410": {
+   "capstone": false,
+   "code": "FIN410",
+   "dept": "FIN",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Financial Modelling"
+  },
+  "HUMN110": {
+   "capstone": false,
+   "code": "HUMN110",
+   "dept": "HUMN",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Ethics"
+  },
+  "HUMN120": {
+   "capstone": false,
+   "code": "HUMN120",
+   "dept": "HUMN",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Arts and Culture"
+  },
+  "INNO201": {
+   "capstone": false,
+   "code": "INNO201",
+   "dept": "INNO",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Innovation and Entrepreneurship"
+  },
+  "INTR390": {
+   "capstone": true,
+   "code": "INTR390",
+   "dept": "INTR",
+   "editions": {
+    "CAT-2022": {
+     "credits": 6
+    },
+    "CAT-2025": {
+     "credits": 6
+    }
+   },
+   "title": "Internship"
+  },
+  "IT220": {
+   "capstone": false,
+   "code": "IT220",
+   "dept": "MIS",
+   "editions": {
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Information Technology for Business"
+  },
+  "MATH101": {
+   "capstone": false,
+   "code": "MATH101",
+   "dept": "MATH",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Calculus I"
+  },
+  "MATH102": {
+   "capstone": false,
+   "code": "MATH102",
+   "dept": "MATH",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Calculus II"
+  },
+  "MATH210": {
+   "capstone": false,
+   "code": "MATH210",
+   "dept": "MATH",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Discrete Mathematics"
+  },
+  "MGMT201": {
+   "capstone": false,
+   "code": "MGMT201",
+   "dept": "MGMT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Principles of Management"
+  },
+  "MGMT310": {
+   "capstone": false,
+   "code": "MGMT310",
+   "dept": "MGMT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Organisational Behaviour"
+  },
+  "MGMT320": {
+   "capstone": false,
+   "code": "MGMT320",
+   "dept": "MGMT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Operations Management"
+  },
+  "MGMT410": {
+   "capstone": false,
+   "code": "MGMT410",
+   "dept": "MGMT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Strategic Management"
+  },
+  "MGMT430": {
+   "capstone": false,
+   "code": "MGMT430",
+   "dept": "MGMT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Negotiation"
+  },
+  "MIS340": {
+   "capstone": false,
+   "code": "MIS340",
+   "dept": "MIS",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Database Systems (cross-listed)"
+  },
+  "MKTG201": {
+   "capstone": false,
+   "code": "MKTG201",
+   "dept": "MKTG",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Principles of Marketing"
+  },
+  "MKTG310": {
+   "capstone": false,
+   "code": "MKTG310",
+   "dept": "MKTG",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Consumer Behaviour"
+  },
+  "MKTG410": {
+   "capstone": false,
+   "code": "MKTG410",
+   "dept": "MKTG",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Digital Marketing"
+  },
+  "PHYS101": {
+   "capstone": false,
+   "code": "PHYS101",
+   "dept": "PHYS",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Physics I"
+  },
+  "PHYS101L": {
+   "capstone": false,
+   "code": "PHYS101L",
+   "dept": "PHYS",
+   "editions": {
+    "CAT-2022": {
+     "credits": 1
+    },
+    "CAT-2025": {
+     "credits": 1
+    }
+   },
+   "title": "Physics I Lab"
+  },
+  "PSYC101": {
+   "capstone": false,
+   "code": "PSYC101",
+   "dept": "PSYC",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Introduction to Psychology"
+  },
+  "QM210": {
+   "capstone": false,
+   "code": "QM210",
+   "dept": "BUSA",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Business Statistics"
+  },
+  "SOCI110": {
+   "capstone": false,
+   "code": "SOCI110",
+   "dept": "SOCI",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Introduction to Sociology"
+  },
+  "STAT201": {
+   "capstone": false,
+   "code": "STAT201",
+   "dept": "STAT",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3,
+     "syllabus": "v1"
+    },
+    "CAT-2025": {
+     "credits": 3,
+     "syllabus": "v2"
+    }
+   },
+   "title": "Probability and Statistics"
+  },
+  "UAES101": {
+   "capstone": false,
+   "code": "UAES101",
+   "dept": "UAES",
+   "editions": {
+    "CAT-2022": {
+     "credits": 3
+    },
+    "CAT-2025": {
+     "credits": 3
+    }
+   },
+   "title": "Emirati Studies"
+  }
+ },
+ "edition_by_year": {
+  "2022": "CAT-2022",
+  "2025": "CAT-2025"
+ },
+ "editions": [
+  {
+   "doc_id": "doc-001",
+   "from_term": "2022FA",
+   "id": "CAT-2022",
+   "name": "Academic Catalog 2022",
+   "status": "in_force_for_its_terms",
+   "to_term": "2025SU"
+  },
+  {
+   "doc_id": "doc-002",
+   "from_term": "2025FA",
+   "id": "CAT-2025",
+   "name": "Academic Catalog 2025",
+   "status": "in_force",
+   "to_term": null
+  }
+ ],
+ "gened_blocks": {
+  "GE-2022": {
+   "areas": [
+    {
+     "area": "humanities",
+     "id": "GE-HUM",
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "id": "GE-SOC",
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "title": "Natural science"
+    },
+    {
+     "area": "natural_math",
+     "id": "GE-MATH",
+     "options": [
+      "MATH101"
+     ],
+     "title": "Mathematics"
+    }
+   ],
+   "compulsory": [
+    {
+     "category": "Communication",
+     "course": "ENGL101",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "category": "Communication",
+     "course": "ENGL102",
+     "mandate": "advanced_english",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "category": "UAE Studies",
+     "course": "UAES101",
+     "mandate": "emirati_studies",
+     "semester": "Fall",
+     "year": 1
+    }
+   ],
+   "pool": [
+    "ENGL101",
+    "ENGL102",
+    "UAES101",
+    "INNO201",
+    "HUMN110",
+    "HUMN120",
+    "ARTS110",
+    "PSYC101",
+    "SOCI110",
+    "ECON101",
+    "PHYS101",
+    "PHYS101L",
+    "BIOL101",
+    "ENVS101",
+    "MATH101"
+   ],
+   "total_credits": 30
+  },
+  "GE-2025": {
+   "areas": [
+    {
+     "area": "humanities",
+     "id": "GE-HUM",
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "id": "GE-SOC",
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "id": "GE-MATH",
+     "options": [
+      "MATH101"
+     ],
+     "title": "Mathematics"
+    }
+   ],
+   "compulsory": [
+    {
+     "category": "Communication",
+     "course": "ENGL101",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "category": "Communication",
+     "course": "ENGL102",
+     "mandate": "advanced_english",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "category": "UAE Studies",
+     "course": "UAES101",
+     "mandate": "emirati_studies",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "category": "Innovation",
+     "course": "INNO201",
+     "mandate": "innovation",
+     "semester": "Fall",
+     "year": 2
+    }
+   ],
+   "pool": [
+    "ENGL101",
+    "ENGL102",
+    "UAES101",
+    "INNO201",
+    "HUMN110",
+    "HUMN120",
+    "ARTS110",
+    "PSYC101",
+    "SOCI110",
+    "ECON101",
+    "PHYS101",
+    "PHYS101L",
+    "BIOL101",
+    "ENVS101",
+    "MATH101"
+   ],
+   "total_credits": 30
+  }
+ },
+ "grades": [
+  {
+   "attempted": true,
+   "code": "A",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Excellent",
+   "rank": 9
+  },
+  {
+   "attempted": true,
+   "code": "A-",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Excellent",
+   "rank": 8
+  },
+  {
+   "attempted": true,
+   "code": "B+",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Very Good",
+   "rank": 7
+  },
+  {
+   "attempted": true,
+   "code": "B",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Very Good",
+   "rank": 6
+  },
+  {
+   "attempted": true,
+   "code": "B-",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Good",
+   "rank": 5
+  },
+  {
+   "attempted": true,
+   "code": "C+",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Satisfactory",
+   "rank": 4
+  },
+  {
+   "attempted": true,
+   "code": "C",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Satisfactory",
+   "rank": 3
+  },
+  {
+   "attempted": true,
+   "code": "D+",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Minimum Pass",
+   "rank": 2
+  },
+  {
+   "attempted": true,
+   "code": "D",
+   "earned": true,
+   "in_gpa": true,
+   "meaning": "Minimum Pass",
+   "rank": 1
+  },
+  {
+   "attempted": true,
+   "code": "F",
+   "earned": false,
+   "in_gpa": true,
+   "meaning": "Fail",
+   "rank": 0
+  },
+  {
+   "attempted": true,
+   "code": "FA",
+   "earned": false,
+   "in_gpa": true,
+   "meaning": "Fail due to attendance",
+   "rank": 0
+  },
+  {
+   "also": "academic_standing",
+   "attempted": true,
+   "code": "XF",
+   "earned": false,
+   "in_gpa": true,
+   "meaning": "Administrative / disciplinary fail",
+   "rank": 0
+  },
+  {
+   "attempted": true,
+   "code": "WF",
+   "earned": false,
+   "in_gpa": true,
+   "meaning": "Withdraw fail",
+   "note": "Not a W",
+   "rank": 0
+  },
+  {
+   "attempted": true,
+   "code": "P",
+   "earned": true,
+   "in_gpa": false,
+   "meaning": "Pass",
+   "meets": "pass_fail_lines_only",
+   "rank": null
+  },
+  {
+   "attempted": true,
+   "code": "NP",
+   "earned": false,
+   "in_gpa": false,
+   "meaning": "No Pass",
+   "rank": null
+  },
+  {
+   "attempted": false,
+   "code": "TR",
+   "earned": true,
+   "in_gpa": false,
+   "meaning": "Transfer credit",
+   "rank": null,
+   "residency": false
+  },
+  {
+   "attempted": false,
+   "code": "EX",
+   "earned": true,
+   "in_gpa": false,
+   "meaning": "Exempted / credit by examination",
+   "rank": null,
+   "residency": false
+  },
+  {
+   "attempted": false,
+   "code": "W",
+   "earned": false,
+   "ignore": true,
+   "in_gpa": false,
+   "meaning": "Withdraw",
+   "rank": null
+  },
+  {
+   "attempted": true,
+   "blocks_clearance": true,
+   "code": "I",
+   "earned": false,
+   "in_gpa": false,
+   "meaning": "Incomplete",
+   "rank": null
+  },
+  {
+   "attempted": false,
+   "code": "IP",
+   "earned": false,
+   "in_gpa": false,
+   "in_progress": true,
+   "meaning": "In progress",
+   "rank": null
+  },
+  {
+   "attempted": true,
+   "blocks_clearance": true,
+   "code": "NR",
+   "earned": false,
+   "in_gpa": false,
+   "meaning": "Not reported",
+   "rank": null
+  },
+  {
+   "attempted": true,
+   "blocks_clearance": true,
+   "code": "NULL",
+   "earned": false,
+   "in_gpa": false,
+   "meaning": "Missing grade",
+   "rank": null
+  }
+ ],
+ "mappings": [
+  {
+   "from": [
+    "CSC101"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "renumbering",
+   "relation": "R-01",
+   "to": [
+    "COMP101"
+   ],
+   "to_version": "BSCS-2025"
+  },
+  {
+   "from": [
+    "CSC201"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "renumbering",
+   "relation": "R-02",
+   "to": [
+    "COMP201"
+   ],
+   "to_version": "BSCS-2025"
+  },
+  {
+   "from": [
+    "COMP250"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "split",
+   "relation": "R-05",
+   "to": [
+    "COMP251",
+    "COMP252"
+   ],
+   "to_version": "BSCS-2025"
+  },
+  {
+   "from": [
+    "COMP400"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "credit_change",
+   "note": "Credits of the line the student is on",
+   "relation": "R-07",
+   "to": [
+    "COMP400"
+   ],
+   "to_version": "BSCS-2025"
+  },
+  {
+   "from": [
+    "CSC101"
+   ],
+   "from_version": "BSDS-2022",
+   "kind": "renumbering",
+   "relation": "R-01",
+   "to": [
+    "COMP101"
+   ],
+   "to_version": "BSDS-2025"
+  },
+  {
+   "from": [
+    "CSC201"
+   ],
+   "from_version": "BSDS-2022",
+   "kind": "renumbering",
+   "relation": "R-02",
+   "to": [
+    "COMP201"
+   ],
+   "to_version": "BSDS-2025"
+  },
+  {
+   "from": [
+    "DSCI200",
+    "DSCI205"
+   ],
+   "from_version": "BSDS-2022",
+   "kind": "merge",
+   "relation": "R-06",
+   "to": [
+    "DSCI210"
+   ],
+   "to_version": "BSDS-2025"
+  },
+  {
+   "from": [
+    "CIS220"
+   ],
+   "from_version": "BBA-2022",
+   "kind": "retired",
+   "needs_substitution": true,
+   "relation": "R-10",
+   "to": [
+    "IT220"
+   ],
+   "to_version": "BBA-2025"
+  },
+  {
+   "from": [
+    "CSC101"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "program_change",
+   "relation": "R-01",
+   "to": [
+    "COMP101"
+   ],
+   "to_version": "BSDS-2025"
+  },
+  {
+   "from": [
+    "CSC201"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "program_change",
+   "relation": "R-02",
+   "to": [
+    "COMP201"
+   ],
+   "to_version": "BSDS-2025"
+  },
+  {
+   "from": [
+    "COMP430"
+   ],
+   "from_version": "BSCS-2022",
+   "kind": "program_change",
+   "relation": "R-03",
+   "to": [
+    "DSCI410"
+   ],
+   "to_version": "BSDS-2025"
+  },
+  {
+   "from": [
+    "COMP340"
+   ],
+   "from_version": "BBA-2022",
+   "kind": "program_change",
+   "relation": "R-04",
+   "to": [
+    "MIS340"
+   ],
+   "to_version": "BSBAN-2025"
+  }
+ ],
+ "plans": {
+  "BBA-2022": {
+   "gened_block": "GE-2022",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 15,
+     "options": [
+      "MIS340",
+      "ECON301",
+      "BUSA330",
+      "FIN310",
+      "FIN410",
+      "MKTG410",
+      "MGMT410",
+      "MGMT430"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 24,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "D",
+     "note": "Also meets the Gen Ed social area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "ECON101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT201",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ACCT201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MKTG201",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "CIS220",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "D",
+     "note": "Retired 2025; IT220 only by substitution (R-10)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ACCT202",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "ACCT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "QM210",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSL210",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "FIN301",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "D",
+     "note": "ECON301 by approved substitution only (R-12)",
+     "prerequisites": [
+      "ACCT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT320",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT310",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MKTG310",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MKTG201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA450",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT320"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BBA-2022"
+  },
+  "BBA-2025": {
+   "gened_block": "GE-2025",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 12,
+     "options": [
+      "QM210",
+      "COMP101",
+      "MIS340",
+      "ECON301",
+      "BUSA330",
+      "FIN410",
+      "MKTG410",
+      "MGMT430"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 24,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Innovation",
+     "corequisites": [],
+     "course": "INNO201",
+     "credits": 3,
+     "id": "G04",
+     "kind": "line",
+     "mandate": "innovation",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "D",
+     "note": "Also meets the Gen Ed social area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "ECON101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT201",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ACCT201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MKTG201",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "IT220",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ACCT202",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "ACCT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSL210",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "FIN301",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "ACCT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT320",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT310",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MKTG310",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MKTG201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "FIN310",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "FIN301"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT410",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT310"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA450",
+     "credits": 3,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "MGMT320"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BBA-2025"
+  },
+  "BSBAN-2025": {
+   "gened_block": "GE-2025",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 12,
+     "options": [
+      "QM210",
+      "COMP201",
+      "DSCI410",
+      "MKTG201",
+      "FIN301",
+      "BUSA420",
+      "BUSA430",
+      "BUSA440"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 21,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Innovation",
+     "corequisites": [],
+     "course": "INNO201",
+     "credits": 3,
+     "id": "G04",
+     "kind": "line",
+     "mandate": "innovation",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed social area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ACCT201",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "IT220",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "DSCI210",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA210",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MIS340",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Cross-listed with COMP340 (R-04)",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "QM210"
+     ],
+     "corequisites": [],
+     "course": "DSCI320",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON301",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "ECON101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA320",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "BUSA210"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA330",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA310",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI450",
+     "credits": 3,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "DSCI210"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA450",
+     "credits": 3,
+     "id": "C17",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "BUSA330"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSBAN-2025"
+  },
+  "BSCS-2022": {
+   "gened_block": "GE-2022",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 12,
+     "options": [
+      "COMP410",
+      "COMP420",
+      "COMP430",
+      "COMP440",
+      "COMP450",
+      "COMP460",
+      "DSCI410"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 21,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "CSC101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "COMP101"
+     ],
+     "corequisites": [],
+     "course": "CSC201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP101"
+     ],
+     "corequisites": [],
+     "course": "COMP210",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP201"
+     ],
+     "corequisites": [],
+     "course": "COMP220",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP101"
+     ],
+     "corequisites": [],
+     "course": "COMP230",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP201"
+     ],
+     "corequisites": [],
+     "course": "COMP250",
+     "credits": 4,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Split into COMP251 + COMP252 in 2025 (R-05)",
+     "prerequisites": [
+      "CSC201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP201"
+     ],
+     "corequisites": [],
+     "course": "COMP301",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP320",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP220"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "COMP201"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP310",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH210"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "COMP251"
+     ],
+     "corequisites": [],
+     "course": "COMP315",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP250"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP395",
+     "credits": 2,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "P-25)": null,
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP400",
+     "credits": 3,
+     "id": "C17",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "3 cr on this plan; 4 cr on BSCS-2025 (R-07",
+     "prerequisites": [
+      "COMP301"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSCS-2022"
+  },
+  "BSCS-2025": {
+   "gened_block": "GE-2025",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 12,
+     "options": [
+      "COMP410",
+      "COMP420",
+      "COMP430",
+      "COMP440",
+      "COMP450",
+      "COMP460",
+      "DSCI410"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 18,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Innovation",
+     "corequisites": [],
+     "course": "INNO201",
+     "credits": 3,
+     "id": "G04",
+     "kind": "line",
+     "mandate": "innovation",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP210",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP220",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP230",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP251",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [
+      "COMP251"
+     ],
+     "course": "COMP252",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP301",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP320",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP220"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP310",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH210"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "COMP250"
+     ],
+     "corequisites": [],
+     "course": "COMP315",
+     "credits": 3,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP251"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP395",
+     "credits": 2,
+     "id": "C17",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "P-25)": null,
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP400",
+     "credits": 4,
+     "id": "C18",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "4 cr on this plan (R-07",
+     "prerequisites": [
+      "COMP301"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSCS-2025"
+  },
+  "BSCS-2025-AI": {
+   "gened_block": "GE-2025",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 6,
+     "options": [
+      "COMP410",
+      "COMP420",
+      "COMP440",
+      "COMP450",
+      "COMP460",
+      "DSCI430"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 18,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Innovation",
+     "corequisites": [],
+     "course": "INNO201",
+     "credits": 3,
+     "id": "G04",
+     "kind": "line",
+     "mandate": "innovation",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP210",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP220",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP230",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP251",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [
+      "COMP251"
+     ],
+     "course": "COMP252",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP301",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP320",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP220"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP310",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH210"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [
+      "COMP250"
+     ],
+     "corequisites": [],
+     "course": "COMP315",
+     "credits": 3,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP251"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP395",
+     "credits": 2,
+     "id": "C17",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "P-25)": null,
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP400",
+     "credits": 4,
+     "id": "C18",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "4 cr on this plan (R-07",
+     "prerequisites": [
+      "COMP301"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP430",
+     "credits": 3,
+     "id": "T01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Track line",
+     "prerequisites": [
+      "COMP301"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI410",
+     "credits": 3,
+     "id": "T02",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Track line; COMP430 is an approved equivalent (R-03) but can meet only one line",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSCS-2025-AI"
+  },
+  "BSDS-2022": {
+   "gened_block": "GE-2022",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 12,
+     "options": [
+      "COMP301",
+      "COMP410",
+      "DSCI430",
+      "DSCI440",
+      "DSCI450",
+      "DSCI460"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 24,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "CSC101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "COMP101"
+     ],
+     "corequisites": [],
+     "course": "CSC201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP101"
+     ],
+     "corequisites": [],
+     "course": "DSCI200",
+     "credits": 4,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Merged with DSCI205 into DSCI210 in 2025 (R-06)",
+     "prerequisites": [
+      "CSC101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI205",
+     "credits": 2,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "DSCI200"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP201"
+     ],
+     "corequisites": [],
+     "course": "DSCI220",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI230",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "COMP201"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "CSC201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI320",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI310",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI330",
+     "credits": 3,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "DSCI230"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI410",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "COMP430 is an approved equivalent (R-03)",
+     "prerequisites": [
+      "DSCI320"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP400",
+     "credits": 3,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "3 cr on this plan (P-25)",
+     "prerequisites": [
+      "DSCI330"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSDS-2022"
+  },
+  "BSDS-2025": {
+   "gened_block": "GE-2025",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 15,
+     "options": [
+      "COMP301",
+      "COMP410",
+      "COMP420",
+      "DSCI430",
+      "DSCI440",
+      "DSCI450",
+      "DSCI460"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 21,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Innovation",
+     "corequisites": [],
+     "course": "INNO201",
+     "credits": 3,
+     "id": "G04",
+     "kind": "line",
+     "mandate": "innovation",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "DSCI210",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "DSCI220",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI230",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI320",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI310",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI330",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "DSCI230"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI395",
+     "credits": 2,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI410",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "COMP430 is an approved equivalent (R-03)",
+     "prerequisites": [
+      "DSCI320"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP400",
+     "credits": 4,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "4 cr on this plan (P-25)",
+     "prerequisites": [
+      "DSCI330"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSDS-2025"
+  },
+  "BSDS-2025-BA": {
+   "gened_block": "GE-2025",
+   "groups": [
+    {
+     "area": "humanities",
+     "corequisites": {},
+     "id": "GE-HUM",
+     "min_courses": 1,
+     "options": [
+      "HUMN110",
+      "HUMN120",
+      "ARTS110"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Humanities and fine arts"
+    },
+    {
+     "area": "social",
+     "corequisites": {},
+     "id": "GE-SOC",
+     "min_courses": 1,
+     "options": [
+      "PSYC101",
+      "SOCI110",
+      "ECON101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Social and behavioural sciences"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {
+      "PHYS101": [
+       "PHYS101L"
+      ]
+     },
+     "id": "GE-NAT",
+     "min_courses": 1,
+     "options": [
+      "PHYS101",
+      "BIOL101",
+      "ENVS101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Natural science and sustainability"
+    },
+    {
+     "area": "natural_math",
+     "corequisites": {},
+     "id": "GE-MATH",
+     "min_courses": 1,
+     "options": [
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_courses",
+     "title": "Mathematics"
+    },
+    {
+     "id": "GE-TOTAL",
+     "min_credits": 30,
+     "options": [
+      "ENGL101",
+      "ENGL102",
+      "UAES101",
+      "INNO201",
+      "HUMN110",
+      "HUMN120",
+      "ARTS110",
+      "PSYC101",
+      "SOCI110",
+      "ECON101",
+      "PHYS101",
+      "PHYS101L",
+      "BIOL101",
+      "ENVS101",
+      "MATH101"
+     ],
+     "req": "GENED",
+     "rule": "min_credits",
+     "title": "Gen Ed total"
+    },
+    {
+     "id": "E01",
+     "min_credits": 9,
+     "options": [
+      "COMP301",
+      "COMP410",
+      "COMP420",
+      "DSCI430",
+      "DSCI440",
+      "DSCI450",
+      "DSCI460",
+      "BUSA430",
+      "BUSA440"
+     ],
+     "req": "MAJOR-ELEC",
+     "rule": "min_credits",
+     "title": "Major electives"
+    },
+    {
+     "id": "F01",
+     "min_credits": 21,
+     "options": "any",
+     "req": "FREE-ELEC",
+     "rule": "min_credits",
+     "title": "Free electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL101",
+     "credits": 3,
+     "id": "G01",
+     "kind": "line",
+     "mandate": null,
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Communication",
+     "corequisites": [],
+     "course": "ENGL102",
+     "credits": 3,
+     "id": "G02",
+     "kind": "line",
+     "mandate": "advanced_english",
+     "min_grade": "D",
+     "prerequisites": [
+      "ENGL101"
+     ],
+     "req": "GENED",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "UAE Studies",
+     "corequisites": [],
+     "course": "UAES101",
+     "credits": 3,
+     "id": "G03",
+     "kind": "line",
+     "mandate": "emirati_studies",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "category": "Innovation",
+     "corequisites": [],
+     "course": "INNO201",
+     "credits": 3,
+     "id": "G04",
+     "kind": "line",
+     "mandate": "innovation",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "GENED",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Also meets the Gen Ed Mathematics area (P-15)",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH102",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP201",
+     "credits": 3,
+     "id": "C04",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C05",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C06",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "MATH101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "DSCI210",
+     "credits": 3,
+     "id": "C07",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "DSCI220",
+     "credits": 3,
+     "id": "C08",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI230",
+     "credits": 3,
+     "id": "C09",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [
+      "CSC201"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C10",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "COMP201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI320",
+     "credits": 3,
+     "id": "C11",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI310",
+     "credits": 3,
+     "id": "C12",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI330",
+     "credits": 3,
+     "id": "C13",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [
+      "DSCI230"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI395",
+     "credits": 2,
+     "id": "C14",
+     "kind": "line",
+     "min_grade": "C",
+     "prerequisites": [],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "DSCI410",
+     "credits": 3,
+     "id": "C15",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "COMP430 is an approved equivalent (R-03)",
+     "prerequisites": [
+      "DSCI320"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Spring",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP400",
+     "credits": 4,
+     "id": "C16",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "4 cr on this plan (P-25)",
+     "prerequisites": [
+      "DSCI330"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA330",
+     "credits": 3,
+     "id": "T01",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Track line",
+     "prerequisites": [
+      "STAT201"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "BUSA420",
+     "credits": 3,
+     "id": "T02",
+     "kind": "line",
+     "min_grade": "C",
+     "note": "Track line",
+     "prerequisites": [
+      "BUSA330"
+     ],
+     "req": "MAJOR-CORE",
+     "semester": "Fall",
+     "year": 4
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "INTR390",
+     "credits": 6,
+     "id": "I01",
+     "kind": "line",
+     "min_credits_completed": 90,
+     "min_grade": "D",
+     "note": "Never waivable (P-24)",
+     "prerequisites": [],
+     "req": "INTERN",
+     "semester": "Spring",
+     "year": 4
+    }
+   ],
+   "share_cap_credits": null,
+   "version": "BSDS-2025-BA"
+  },
+  "MBUS-2025": {
+   "gened_block": null,
+   "groups": [
+    {
+     "id": "E01",
+     "min_credits": 6,
+     "options": [
+      "MIS340",
+      "MKTG201",
+      "FIN301"
+     ],
+     "req": "MINOR-ELEC",
+     "rule": "min_credits",
+     "title": "Minor electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ECON101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "ACCT201",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MGMT201",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    }
+   ],
+   "share_cap_credits": 6,
+   "version": "MBUS-2025"
+  },
+  "MCS-2025": {
+   "gened_block": null,
+   "groups": [
+    {
+     "id": "E01",
+     "min_credits": 6,
+     "options": [
+      "COMP301",
+      "COMP340",
+      "COMP410"
+     ],
+     "req": "MINOR-ELEC",
+     "rule": "min_credits",
+     "title": "Minor electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "D",
+     "note": "CSC101 counts through renumbering (R-01)",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP201",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MINOR-CORE",
+     "semester": "Spring",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "MATH210",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Spring",
+     "year": 2
+    }
+   ],
+   "share_cap_credits": 6,
+   "version": "MCS-2025"
+  },
+  "MDA-2025": {
+   "gened_block": null,
+   "groups": [
+    {
+     "id": "E01",
+     "min_credits": 6,
+     "options": [
+      "DSCI210",
+      "DSCI320",
+      "DSCI410",
+      "DSCI450",
+      "BUSA330"
+     ],
+     "req": "MINOR-ELEC",
+     "rule": "min_credits",
+     "title": "Minor electives"
+    }
+   ],
+   "lines": [
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "STAT201",
+     "credits": 3,
+     "id": "C01",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 2
+    },
+    {
+     "alt_prerequisites": [],
+     "corequisites": [],
+     "course": "COMP101",
+     "credits": 3,
+     "id": "C02",
+     "kind": "line",
+     "min_grade": "D",
+     "note": "CSC101 counts through renumbering (R-01)",
+     "prerequisites": [],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 1
+    },
+    {
+     "alt_prerequisites": [
+      "CSC101"
+     ],
+     "corequisites": [],
+     "course": "COMP340",
+     "credits": 3,
+     "id": "C03",
+     "kind": "line",
+     "min_grade": "D",
+     "prerequisites": [
+      "COMP101"
+     ],
+     "req": "MINOR-CORE",
+     "semester": "Fall",
+     "year": 3
+    }
+   ],
+   "share_cap_credits": 6,
+   "version": "MDA-2025"
+  }
+ },
+ "policies": [
+  {
+   "area": "study_plan",
+   "id": "P-01",
+   "label": "MANDATED",
+   "name": "Study plan version",
+   "params": {
+    "resolve_by": "first_enrolled_term"
+   },
+   "rule": "The version in force at the student's first enrolled term in the program (not the admission decision)",
+   "source_of_value": "regulator",
+   "sources": [
+    "CAA-19 6.1.2-6.1.3",
+    "SAC-24 10.3"
+   ]
+  },
+  {
+   "area": "study_plan",
+   "id": "P-02",
+   "label": "EXPECTED",
+   "name": "Study plan migration",
+   "params": {
+    "approval_required": true
+   },
+   "rule": "A move to a newer version needs an Approved record effective by the approvals date",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 Annex 3",
+    "SAC-24 10.1"
+   ]
+  },
+  {
+   "area": "study_plan",
+   "id": "P-03",
+   "label": "EXPECTED",
+   "name": "Program change",
+   "params": {
+    "resolve_by": "change_term"
+   },
+   "rule": "The new program's version in force at the change term; courses remap via the version mappings",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 6.4.4-6.4.5"
+   ]
+  },
+  {
+   "area": "credits",
+   "id": "P-04",
+   "label": "MANDATED",
+   "name": "Total credits to graduate",
+   "params": {
+    "min_total_credits": 120
+   },
+   "rule": "120 credits (no double majors — not stored, D-025)",
+   "source_of_value": "regulator",
+   "sources": [
+    "SAC-24 9.2"
+   ]
+  },
+  {
+   "area": "credits",
+   "id": "P-05",
+   "label": "EXPECTED",
+   "name": "Credits of courses outside the plan",
+   "params": {
+    "credits_by": "edition_taken"
+   },
+   "rule": "Courses not on a plan line take their course-master credits in the edition they were taken under",
+   "source_of_value": "institution",
+   "sources": [
+    "SAC-24 10.7"
+   ]
+  },
+  {
+   "area": "grades",
+   "id": "P-06",
+   "label": "MANDATED",
+   "name": "Repeated courses",
+   "params": {
+    "attempt_counted": "latest",
+    "credit_once": true
+   },
+   "rule": "Latest attempt counts even if lower; credits count once; repeats detected by the engine (incl. renumbered and cross-listed codes)",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 3.3.9"
+   ]
+  },
+  {
+   "area": "grades",
+   "id": "P-07",
+   "label": "EXPECTED",
+   "name": "Minimum CGPA",
+   "params": {
+    "min_cgpa": 2.0,
+    "use": "stored"
+   },
+   "rule": "The CGPA stored in the SIS must be at least 2.00; a recomputed value only flags a difference",
+   "source_of_value": "institution",
+   "sources": [
+    "CAA-19 6.4.4",
+    "SAC-24 10.2"
+   ]
+  },
+  {
+   "area": "gened",
+   "id": "P-09",
+   "label": "MANDATED",
+   "name": "Gen Ed",
+   "params": {
+    "areas": [
+     "humanities",
+     "social",
+     "natural_math"
+    ],
+    "mandated": {
+     "advanced_english": "all",
+     "emirati_studies": "all",
+     "innovation": "catalog_2025_on"
+    },
+    "min_credits": 30
+   },
+   "rule": "≥ 30 Gen Ed credits; categories from the student's plan; humanities, social and natural science / maths areas; Emirati Studies, advanced English; innovation course from catalog 2025",
+   "source_of_value": "regulator",
+   "sources": [
+    "GE-24 1-4",
+    "SAC-24 9.3"
+   ]
+  },
+  {
+   "area": "transfer",
+   "id": "P-10",
+   "label": "MANDATED",
+   "name": "Transfer credit",
+   "params": {
+    "capstone_allowed": false,
+    "exchange_counts_as_transfer": true,
+    "max_credits": 60,
+    "max_share": 0.5,
+    "min_grade": "C"
+   },
+   "rule": "Max 60 cr and ≤ 50% of program credits; grade ≥ C; never onto a capstone line; exchange / articulation credit counts as transfer; never in the GPA",
+   "source_of_value": "regulator",
+   "sources": [
+    "CAA-19 6.4.6",
+    "CAA-19 6.4.11",
+    "CAA-19 6.4.12",
+    "CAA-19 6.4.15",
+    "CAA-19 6.4.17"
+   ]
+  },
+  {
+   "area": "residency",
+   "id": "P-11",
+   "label": "MANDATED",
+   "name": "Residency",
+   "params": {
+    "excluded_grades": [
+     "TR",
+     "EX"
+    ],
+    "last_credits_here": 30,
+    "min_major_share_here": 0.5,
+    "min_share_own": 0.25
+   },
+   "rule": "≥ 25% of program credits by own instruction (TR and EX excluded); last 30 cr and ≥ 50% of major credits here",
+   "source_of_value": "regulator",
+   "sources": [
+    "SAC-24 9.4"
+   ]
+  },
+  {
+   "area": "exceptions",
+   "id": "P-12",
+   "label": "MANDATED",
+   "name": "Waivers",
+   "params": {
+    "max_waived_courses": 2,
+    "required_fields": [
+     "approver",
+     "approved_on",
+     "reference",
+     "waiver_type",
+     "policy_clause"
+    ]
+   },
+   "rule": "Count only with an Approved record (approver, date, reference, type, policy clause) and within the waiver cap",
+   "source_of_value": "institution",
+   "sources": [
+    "CAA-19 6.4.1",
+    "CAA-19 6.4.8"
+   ]
+  },
+  {
+   "area": "exceptions",
+   "id": "P-13",
+   "label": "EXPECTED",
+   "name": "Substitutions",
+   "params": {
+    "approver_role": "Dean"
+   },
+   "rule": "Per student, with an Approved Dean record effective by the approvals date (program alternatives too, D-024)",
+   "source_of_value": "institution",
+   "sources": [
+    "CAA-19 Annex 3",
+    "SAC-24 10.1"
+   ]
+  },
+  {
+   "area": "overlap",
+   "id": "P-14",
+   "label": "MANDATED",
+   "name": "Cross-listed courses",
+   "params": {
+    "credit_once": true
+   },
+   "rule": "One course under two codes; counts once; taking both is a repeat",
+   "source_of_value": "regulator",
+   "sources": [
+    "CAA-19 3.3.9"
+   ]
+  },
+  {
+   "area": "overlap",
+   "id": "P-15",
+   "label": "MANDATED",
+   "name": "Gen Ed area met by a major course",
+   "params": {
+    "category_met": true,
+    "credits_once": true
+   },
+   "rule": "Area met only if the course is on the plan's Gen Ed list; credits stay with the major; Gen Ed still ≥ 30 cr",
+   "source_of_value": "regulator",
+   "sources": [
+    "SAC-24 9.3"
+   ]
+  },
+  {
+   "area": "overlap",
+   "id": "P-16",
+   "label": "EXPECTED",
+   "name": "Major–minor sharing",
+   "params": {
+    "max_shared_credits": 6
+   },
+   "rule": "At most 6 credits may count toward both the major and a minor",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 Annex 4(s)"
+   ]
+  },
+  {
+   "area": "study_plan",
+   "id": "P-17",
+   "label": "MANDATED",
+   "name": "Track study plans",
+   "params": {},
+   "rule": "A track is its own approved study plan (StudyPlanTrackID), resolved like any version",
+   "source_of_value": "institution",
+   "sources": [
+    "CAA-19 3.3.3"
+   ]
+  },
+  {
+   "area": "overlap",
+   "id": "P-18",
+   "label": "EXPECTED",
+   "name": "Equivalency",
+   "params": {},
+   "rule": "Renumbering and approved equivalencies apply to every student automatically (relations table)",
+   "source_of_value": "institution",
+   "sources": [
+    "CAA-19 3.3.9"
+   ]
+  },
+  {
+   "area": "overlap",
+   "id": "P-19",
+   "label": "EXPECTED",
+   "name": "Split and merged courses",
+   "params": {
+    "merge_needs_all": true
+   },
+   "rule": "The mappings decide; a merge needs every old course; leftovers go to free electives",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 3.14"
+   ]
+  },
+  {
+   "area": "overlap",
+   "id": "P-20",
+   "label": "EXPECTED",
+   "name": "No double counting",
+   "params": {},
+   "rule": "A course counts in one requirement only, except P-15 (area) and P-16 (minor share)",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 3.3.9"
+   ]
+  },
+  {
+   "area": "requisites",
+   "id": "P-21",
+   "label": "EXPECTED",
+   "name": "Prerequisite violations",
+   "params": {
+    "blocking": false
+   },
+   "rule": "Flagged for the committee; they don't block graduation. Alternate prerequisites on the line satisfy it",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 3.3.8"
+   ]
+  },
+  {
+   "area": "grades",
+   "id": "P-22",
+   "label": "EXPECTED",
+   "name": "Grade codes",
+   "params": {
+    "table": "grade_codes.yaml"
+   },
+   "rule": "The SIS grade table (22 codes) decides earned / attempted / in-GPA; grade points not needed",
+   "source_of_value": "institution",
+   "sources": [
+    "CAA-19 Annex 4(x)",
+    "SAC-24 10.2"
+   ]
+  },
+  {
+   "area": "standing",
+   "id": "P-23",
+   "label": "EXPECTED",
+   "name": "Academic standing",
+   "params": {},
+   "rule": "Not suspended or dismissed in the graduation term",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 Annex 4(k)"
+   ]
+  },
+  {
+   "area": "internship",
+   "id": "P-24",
+   "label": "EXPECTED",
+   "name": "Internship",
+   "params": {
+    "course": "INTR390",
+    "waivable": false
+   },
+   "rule": "INTR390 (6 cr) is required and never waivable",
+   "source_of_value": "factory",
+   "sources": [
+    "CAA-19 3.8",
+    "CAA-19 Annex 12"
+   ]
+  },
+  {
+   "area": "study_plan",
+   "id": "P-25",
+   "label": "EXPECTED",
+   "name": "Credit source",
+   "params": {
+    "credits_by": "plan_line"
+   },
+   "rule": "A course on a plan line takes the line's credits, not the course master's",
+   "source_of_value": "institution",
+   "sources": [
+    "SAC-24 10.7"
+   ]
+  },
+  {
+   "area": "study_plan",
+   "id": "P-26",
+   "label": "SILENT",
+   "name": "Assignment history",
+   "params": {},
+   "rule": "Exactly one current assignment per program, chosen by term range; older rows are history",
+   "source_of_value": "institution",
+   "sources": []
+  },
+  {
+   "area": "study_plan",
+   "id": "P-27",
+   "label": "EXPECTED",
+   "name": "Minimum grade per plan line",
+   "params": {
+    "decided_by": "plan_line"
+   },
+   "rule": "A course meets its line only at or above the line's minimum grade; below it the credits go to free electives",
+   "source_of_value": "institution",
+   "sources": [
+    "SAC-24 9.7"
+   ]
+  }
+ ],
+ "policy_set": "2026.11",
+ "profiles": [
+  {
+   "approvals_as_of": "2026-05-31",
+   "as_of_term": "2026SP",
+   "autonomy": "L1",
+   "id": "CP-GRAD-2026SP",
+   "mode": "clearance",
+   "name": "Graduation clearance Spring 2026",
+   "used_by": "task set 1 (da-01 … da-19)"
+  },
+  {
+   "D5)": null,
+   "approvals_as_of": "2026-08-06",
+   "as_of_term": "2026SU",
+   "autonomy": "L1",
+   "id": "CP-GRAD-2026SU",
+   "mode": "clearance",
+   "name": "Graduation clearance Summer 2026",
+   "used_by": "summer graduates (D2"
+  },
+  {
+   "approvals_as_of": "audit_date",
+   "as_of_term": "current",
+   "autonomy": "L0",
+   "id": "CP-CURRENT",
+   "mode": "projected",
+   "name": "Current-term progress",
+   "used_by": "registrar progress checks"
+  },
+  {
+   "approvals_as_of": "2025-05-31",
+   "as_of_term": "2025SP",
+   "autonomy": "L0",
+   "historical": true,
+   "id": "CP-HIST-2025SP",
+   "mode": "clearance",
+   "name": "Historical audit Spring 2025",
+   "used_by": "TW-01"
+  },
+  {
+   "approvals_as_of": "2026-01-15",
+   "as_of_term": "2026SP",
+   "autonomy": "L0",
+   "id": "CP-APPR-2026JAN",
+   "mode": "clearance",
+   "name": "Pre-audit with January approvals",
+   "used_by": "TW-02"
+  },
+  {
+   "approvals_as_of": "2026-12-16",
+   "as_of_term": "2026FA",
+   "autonomy": "L0",
+   "id": "CP-PROJ-2026FA",
+   "mode": "projected",
+   "name": "Projected Fall 2026",
+   "used_by": "TW-03"
+  },
+  {
+   "approvals_as_of": "2026-05-31",
+   "as_of_term": "2026SP",
+   "autonomy": "L0",
+   "id": "CP-WHATIF",
+   "mode": "what_if",
+   "name": "What-if study plan",
+   "override": "study_plan_version",
+   "used_by": "TW-04"
+  },
+  {
+   "approvals_as_of": "2026-05-31",
+   "as_of_term": "2026SP",
+   "autonomy": "L1",
+   "id": "CP-PARITY",
+   "mode": "clearance",
+   "name": "Parity run",
+   "used_by": "E15"
+  }
+ ],
+ "programs": [
+  {
+   "code": "BSCS",
+   "kind": "major",
+   "name": "BS Computer Science"
+  },
+  {
+   "code": "BSDS",
+   "kind": "major",
+   "name": "BS Data Science"
+  },
+  {
+   "code": "BBA",
+   "kind": "major",
+   "name": "Bachelor of Business Administration"
+  },
+  {
+   "code": "BSBAN",
+   "kind": "major",
+   "name": "BS Business Analytics"
+  },
+  {
+   "code": "MDA",
+   "kind": "minor",
+   "name": "Minor in Data Analytics"
+  },
+  {
+   "code": "MCS",
+   "kind": "minor",
+   "name": "Minor in Computer Science"
+  },
+  {
+   "code": "MBUS",
+   "kind": "minor",
+   "name": "Minor in Business"
+  }
+ ],
+ "relations": [
+  {
+   "effective_from": "2025FA",
+   "from": [
+    "CSC101"
+   ],
+   "id": "R-01",
+   "kind": "renumbering",
+   "note": "Same course; taking both is a repeat",
+   "scope": "all",
+   "to": [
+    "COMP101"
+   ]
+  },
+  {
+   "effective_from": "2025FA",
+   "from": [
+    "CSC201"
+   ],
+   "id": "R-02",
+   "kind": "renumbering",
+   "note": "Same course; taking both is a repeat",
+   "scope": "all",
+   "to": [
+    "COMP201"
+   ]
+  },
+  {
+   "approval_ref": "SA-2024-07",
+   "effective_from": "2024FA",
+   "from": [
+    "COMP430"
+   ],
+   "id": "R-03",
+   "kind": "equivalency",
+   "note": "Approved equivalency; one direction only",
+   "scope": "all",
+   "to": [
+    "DSCI410"
+   ]
+  },
+  {
+   "effective_from": "2022FA",
+   "from": [
+    "COMP340"
+   ],
+   "id": "R-04",
+   "kind": "cross_list",
+   "note": "Same course under two codes; counts once (P-14)",
+   "scope": "all",
+   "to": [
+    "MIS340"
+   ]
+  },
+  {
+   "effective_from": "2025FA",
+   "from": [
+    "COMP250"
+   ],
+   "id": "R-05",
+   "kind": "split",
+   "note": "The old course meets both new lines",
+   "scope": "all",
+   "to": [
+    "COMP251",
+    "COMP252"
+   ]
+  },
+  {
+   "effective_from": "2025FA",
+   "from": [
+    "DSCI200",
+    "DSCI205"
+   ],
+   "id": "R-06",
+   "kind": "merge",
+   "note": "Both old courses needed; one alone goes to free electives",
+   "scope": "all",
+   "to": [
+    "DSCI210"
+   ]
+  },
+  {
+   "credits": {
+    "after": 4,
+    "before": 3
+   },
+   "effective_from": "2025FA",
+   "from": [
+    "COMP400"
+   ],
+   "id": "R-07",
+   "kind": "credit_change",
+   "note": "Plan line decides the credits (P-25)",
+   "scope": "all",
+   "to": [
+    "COMP400"
+   ]
+  },
+  {
+   "effective_from": "2025FA",
+   "from": [
+    "STAT201"
+   ],
+   "id": "R-09",
+   "kind": "syllabus_version",
+   "note": "Recorded and echoed only",
+   "scope": "all",
+   "syllabus": {
+    "after": "v2",
+    "before": "v1"
+   },
+   "to": [
+    "STAT201"
+   ]
+  },
+  {
+   "effective_from": "2025FA",
+   "from": [
+    "CIS220"
+   ],
+   "id": "R-10",
+   "kind": "retired",
+   "needs_substitution": true,
+   "note": "A late finisher needs a per-student substitution",
+   "scope": "all",
+   "to": [
+    "IT220"
+   ]
+  }
+ ],
+ "release": {
+  "core": "0.1.0",
+  "corpus": "2026.11",
+  "dataset": "2026.11.0",
+  "policy_set": "2026.11",
+  "study_plan_set": "2026.11"
+ },
+ "repeatable": [
+  {
+   "course": "COMP395",
+   "extra_credits_go_to": "FREE-ELEC",
+   "max_attempts_for_credit": 2,
+   "reason": "Seminar topics change each term"
+  },
+  {
+   "course": "DSCI395",
+   "extra_credits_go_to": "FREE-ELEC",
+   "max_attempts_for_credit": 2,
+   "reason": "Seminar topics change each term"
+  }
+ ],
+ "retired_policies": [
+  {
+   "decision": "D-028",
+   "id": "P-08",
+   "name": "Minimum major GPA",
+   "reason": "No regulator requires it; CGPA is stored"
+  }
+ ],
+ "term_edition": {
+  "2022FA": "CAT-2022",
+  "2023FA": "CAT-2022",
+  "2023SP": "CAT-2022",
+  "2023SU": "CAT-2022",
+  "2024FA": "CAT-2022",
+  "2024SP": "CAT-2022",
+  "2024SU": "CAT-2022",
+  "2025FA": "CAT-2025",
+  "2025SP": "CAT-2022",
+  "2025SU": "CAT-2022",
+  "2026FA": "CAT-2025",
+  "2026SP": "CAT-2025",
+  "2026SU": "CAT-2025",
+  "2027SP": "CAT-2025"
+ },
+ "terms": [
+  {
+   "code": "2022FA",
+   "end": "2022-12-20",
+   "name": "Fall 2022",
+   "seq": 1,
+   "start": "2022-08-29"
+  },
+  {
+   "code": "2023SP",
+   "end": "2023-05-31",
+   "name": "Spring 2023",
+   "seq": 2,
+   "start": "2023-01-16"
+  },
+  {
+   "code": "2023SU",
+   "end": "2023-08-10",
+   "name": "Summer 2023",
+   "seq": 3,
+   "start": "2023-06-12"
+  },
+  {
+   "code": "2023FA",
+   "end": "2023-12-19",
+   "name": "Fall 2023",
+   "seq": 4,
+   "start": "2023-08-28"
+  },
+  {
+   "code": "2024SP",
+   "end": "2024-05-31",
+   "name": "Spring 2024",
+   "seq": 5,
+   "start": "2024-01-15"
+  },
+  {
+   "code": "2024SU",
+   "end": "2024-08-08",
+   "name": "Summer 2024",
+   "seq": 6,
+   "start": "2024-06-10"
+  },
+  {
+   "code": "2024FA",
+   "end": "2024-12-18",
+   "name": "Fall 2024",
+   "seq": 7,
+   "start": "2024-08-26"
+  },
+  {
+   "code": "2025SP",
+   "end": "2025-05-31",
+   "name": "Spring 2025",
+   "seq": 8,
+   "start": "2025-01-13"
+  },
+  {
+   "code": "2025SU",
+   "end": "2025-08-07",
+   "name": "Summer 2025",
+   "seq": 9,
+   "start": "2025-06-09"
+  },
+  {
+   "code": "2025FA",
+   "end": "2025-12-17",
+   "name": "Fall 2025",
+   "seq": 10,
+   "start": "2025-08-25"
+  },
+  {
+   "code": "2026SP",
+   "end": "2026-05-31",
+   "name": "Spring 2026",
+   "seq": 11,
+   "start": "2026-01-12"
+  },
+  {
+   "code": "2026SU",
+   "end": "2026-08-06",
+   "name": "Summer 2026",
+   "seq": 12,
+   "start": "2026-06-08"
+  },
+  {
+   "code": "2026FA",
+   "end": "2026-12-16",
+   "name": "Fall 2026",
+   "seq": 13,
+   "start": "2026-08-24"
+  },
+  {
+   "code": "2027SP",
+   "end": "2027-05-31",
+   "name": "Spring 2027",
+   "seq": 14,
+   "start": "2027-01-11"
+  }
+ ],
+ "versions": {
+  "BBA-2022": {
+   "approval_ref": "SA-2022-05",
+   "buckets": {
+    "FREE-ELEC": 24,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 45,
+    "MAJOR-ELEC": 15
+   },
+   "catalog_year": 2022,
+   "effective_from": "2022FA",
+   "id": "BBA-2022",
+   "intake_closed_after": "2025SU",
+   "program": "BBA",
+   "status": "closed_to_intake",
+   "supersedes": null,
+   "version_no": 1
+  },
+  "BBA-2025": {
+   "approval_ref": "SA-2025-03",
+   "buckets": {
+    "FREE-ELEC": 24,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 48,
+    "MAJOR-ELEC": 12
+   },
+   "catalog_year": 2025,
+   "changes": "CIS220 retired, IT220 replaces it; INNO201 compulsory",
+   "effective_from": "2025FA",
+   "id": "BBA-2025",
+   "intake_closed_after": null,
+   "program": "BBA",
+   "status": "active",
+   "supersedes": "BBA-2022",
+   "version_no": 2
+  },
+  "BSBAN-2025": {
+   "approval_ref": "SA-2025-05",
+   "buckets": {
+    "FREE-ELEC": 21,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 51,
+    "MAJOR-ELEC": 12
+   },
+   "catalog_year": 2025,
+   "changes": "New program — no 2022 version exists (a recorded BSBAN-2022 is invalid, da-17)",
+   "effective_from": "2025FA",
+   "id": "BSBAN-2025",
+   "intake_closed_after": null,
+   "program": "BSBAN",
+   "status": "active",
+   "supersedes": null,
+   "version_no": 1
+  },
+  "BSCS-2022": {
+   "approval_ref": "SA-2022-03",
+   "buckets": {
+    "FREE-ELEC": 21,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 51,
+    "MAJOR-ELEC": 12
+   },
+   "catalog_year": 2022,
+   "effective_from": "2022FA",
+   "id": "BSCS-2022",
+   "intake_closed_after": "2025SU",
+   "program": "BSCS",
+   "status": "closed_to_intake",
+   "supersedes": null,
+   "version_no": 1
+  },
+  "BSCS-2025": {
+   "approval_ref": "SA-2025-01",
+   "buckets": {
+    "FREE-ELEC": 18,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 54,
+    "MAJOR-ELEC": 12
+   },
+   "catalog_year": 2025,
+   "changes": "CSC→COMP renumbering; COMP250 split into COMP251 + COMP252; COMP400 3 → 4 cr; INNO201 compulsory",
+   "effective_from": "2025FA",
+   "id": "BSCS-2025",
+   "intake_closed_after": null,
+   "program": "BSCS",
+   "status": "active",
+   "supersedes": "BSCS-2022",
+   "version_no": 2
+  },
+  "BSCS-2025-AI": {
+   "approval_ref": "SA-2025-12",
+   "base": "BSCS-2025",
+   "buckets": {
+    "FREE-ELEC": 18,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 60,
+    "MAJOR-ELEC": 6
+   },
+   "catalog_year": 2025,
+   "changes": "Track of BSCS-2025 — COMP430 and DSCI410 become track core lines; major electives 12 → 6",
+   "effective_from": "2025FA",
+   "id": "BSCS-2025-AI",
+   "intake_closed_after": null,
+   "program": "BSCS",
+   "status": "active",
+   "supersedes": null,
+   "track": "Artificial Intelligence",
+   "version_no": 1
+  },
+  "BSDS-2022": {
+   "approval_ref": "SA-2022-04",
+   "buckets": {
+    "FREE-ELEC": 24,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 48,
+    "MAJOR-ELEC": 12
+   },
+   "catalog_year": 2022,
+   "effective_from": "2022FA",
+   "id": "BSDS-2022",
+   "intake_closed_after": "2025SU",
+   "program": "BSDS",
+   "status": "closed_to_intake",
+   "supersedes": null,
+   "version_no": 1
+  },
+  "BSDS-2025": {
+   "approval_ref": "SA-2025-02",
+   "buckets": {
+    "FREE-ELEC": 21,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 48,
+    "MAJOR-ELEC": 15
+   },
+   "catalog_year": 2025,
+   "changes": "DSCI200 + DSCI205 merged into DSCI210; STAT201 syllabus v2; INNO201 compulsory",
+   "effective_from": "2025FA",
+   "id": "BSDS-2025",
+   "intake_closed_after": null,
+   "program": "BSDS",
+   "status": "active",
+   "supersedes": "BSDS-2022",
+   "version_no": 2
+  },
+  "BSDS-2025-BA": {
+   "approval_ref": "SA-2025-13",
+   "base": "BSDS-2025",
+   "buckets": {
+    "FREE-ELEC": 21,
+    "GENED": 30,
+    "INTERN": 6,
+    "MAJOR-CORE": 54,
+    "MAJOR-ELEC": 9
+   },
+   "catalog_year": 2025,
+   "changes": "Track of BSDS-2025 — BUSA330 and BUSA420 become track core lines; major electives 15 → 9",
+   "effective_from": "2025FA",
+   "id": "BSDS-2025-BA",
+   "intake_closed_after": null,
+   "program": "BSDS",
+   "status": "active",
+   "supersedes": null,
+   "track": "Business Analytics",
+   "version_no": 1
+  },
+  "MBUS-2025": {
+   "approval_ref": "SA-2025-08",
+   "buckets": {
+    "MINOR-CORE": 9,
+    "MINOR-ELEC": 6
+   },
+   "catalog_year": 2025,
+   "effective_from": "2025FA",
+   "id": "MBUS-2025",
+   "intake_closed_after": null,
+   "program": "MBUS",
+   "status": "active",
+   "supersedes": null,
+   "version_no": 1
+  },
+  "MCS-2025": {
+   "approval_ref": "SA-2025-07",
+   "buckets": {
+    "MINOR-CORE": 9,
+    "MINOR-ELEC": 6
+   },
+   "catalog_year": 2025,
+   "effective_from": "2025FA",
+   "id": "MCS-2025",
+   "intake_closed_after": null,
+   "program": "MCS",
+   "status": "active",
+   "supersedes": null,
+   "version_no": 1
+  },
+  "MDA-2025": {
+   "approval_ref": "SA-2025-06",
+   "buckets": {
+    "MINOR-CORE": 9,
+    "MINOR-ELEC": 6
+   },
+   "catalog_year": 2025,
+   "effective_from": "2025FA",
+   "id": "MDA-2025",
+   "intake_closed_after": null,
+   "program": "MDA",
+   "status": "active",
+   "supersedes": null,
+   "version_no": 1
+  }
+ }
+}

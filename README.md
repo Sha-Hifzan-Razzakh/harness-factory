@@ -1040,6 +1040,28 @@ repository.
 uv run hfx smoke --recipe v2-web --models scripted/replay --strict
 ```
 
+## Degree audit
+
+The `audit` server (HF-1, ADR 0021) is the DegreeAudit engine as a tool: it audits one student's SIS record against
+an institution's degree rules. The engine is `degree_audit_core`, pinned in the server allow-list to one commit of
+the DegreeAudit repository (tag `core-v0.1.0`) and installed by the `docs` extra. The tools, their descriptions
+and their refusal codes are the engine's own; the server only adapts them to MCP.
+
+| Tool | Returns |
+|---|---|
+| `audit.validate_record(student_id, as_of_term?)` | `{student_id, as_of_term, issues, blocking}`: data problems in the record, each with a code and severity |
+| `audit.evaluate(student_id, as_of_term?, mode?, approvals_as_of?, study_plan_version?)` | `{config_used, requirements, eligible, recommendation, flags, engine_version}`: the verdict per requirement, with policy ids. `mode` is `clearance` (default), `projected` or `what_if`; `study_plan_version` only with `what_if` |
+| `audit.explain(student_id, requirement_id, as_of_term?, mode?, approvals_as_of?)` | `{requirement, counted, line_credits, excluded, exceptions_considered, notes}`: which courses counted, how, and which were excluded and why |
+
+A refusal starts with the engine's code: `UNKNOWN_STUDENT`, `CONFIG_INVALID`, `INVALID_STUDY_PLAN`,
+`MULTIPLE_CURRENT_PLANS`, `CONFIG_CONFLICT`, `UNKNOWN_REQUIREMENT`.
+
+**A task** seeds the SIS as its database (`env_seed.sqlite`, which `sql` can query too) and the compiled rules with
+`env_seed.reference: <file>`. The reference is copied read-only into the run's state folder (`HF_REFERENCE`; in
+Docker its own `:ro` mount at `/state/reference`), never the workspace, and is part of the task hash (tasks without
+one keep theirs). The frozen dataset is vendored by release in `catalog/seeds/degree-audit-<release>/`, byte for
+byte, with `SOURCE.yaml` naming the commit and hashes.
+
 ## Runners
 
 A runner is what executes a recipe. Until now that was always the factory's own graphs (`native`). A recipe can name

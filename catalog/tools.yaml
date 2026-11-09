@@ -422,3 +422,25 @@ servers:
     timeout_s: 10
     schema_hash: 00d238811fcff34e
     description_hash: 751b381696fdfb8c
+- id: audit
+  transport: stdio
+  module: harness_factory.env.mcp.impl.audit_server
+  tools:
+  - name: validate_record
+    side_effect: READ
+    risk: R0
+    timeout_s: 20
+    schema_hash: 4763320a6d1f288d
+    description_hash: 20af56ff5bec43d4
+  - name: evaluate
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: d08a34d84daad215
+    description_hash: be5fd41a72b64c06
+  - name: explain
+    side_effect: READ
+    risk: R0
+    timeout_s: 30
+    schema_hash: d3aa33639a180037
+    description_hash: f96198a1f0484f11

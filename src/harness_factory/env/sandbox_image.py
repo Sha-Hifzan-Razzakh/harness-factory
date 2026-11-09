@@ -93,8 +93,9 @@ def _vendor(target: Path, python: str, arch: str, workdir: Path) -> None:
     cons.write_text(_constraints())
     # The allow-list's dependencies (lxml, et-xmlfile, ...) are pinned by the constraints only if it is installed.
     deps.require(tuple(deps.ALLOWED), "the sandbox image")
+    sourced = deps.source_requirements(tuple(deps.ALLOWED))
     req = [f"mcp=={md.version('mcp')}", f"pytest=={md.version('pytest')}",   # pytest: the code server (ADR 0012)
-           *deps.image_requirements()]
+           *[r for r in deps.image_requirements() if r not in sourced]]
     uv = shutil.which("uv")
     if uv:
         cmd = [uv, "pip", "install", "--quiet", "--target", str(target), "--python-version", python,
@@ -102,9 +103,17 @@ def _vendor(target: Path, python: str, arch: str, workdir: Path) -> None:
     else:
         cmd = [sys.executable, "-m", "pip", "install", "--quiet", "--target", str(target), "--python-version",
                python, "--platform", f"manylinux_2_28_{arch}", "--only-binary", ":all:", "-c", str(cons), *req]
-    proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=600)
-    if proc.returncode != 0:
-        raise HarnessError(ErrorKind.SANDBOX, f"vendoring mcp, pytest and the server libraries for the sandbox failed: {proc.stderr.strip()[:800]}")
+    cmds = [cmd]
+    if sourced:
+        # Git-pinned libraries (ADR 0021) have no wheel: built from their pinned commit. They are pure Python with
+        # no dependencies of their own, so nothing else is resolved for them.
+        cmds.append([uv, "pip", "install", "--quiet", "--target", str(target), "--no-deps", *sourced] if uv else
+                    [sys.executable, "-m", "pip", "install", "--quiet", "--target", str(target), "--no-deps",
+                     *sourced])
+    for c in cmds:
+        proc = subprocess.run(c, check=False, capture_output=True, text=True, timeout=600)
+        if proc.returncode != 0:
+            raise HarnessError(ErrorKind.SANDBOX, f"vendoring mcp, pytest and the server libraries for the sandbox failed: {proc.stderr.strip()[:800]}")
 
 
 def ensure_image(base: str | None = None, python: str | None = None) -> str:

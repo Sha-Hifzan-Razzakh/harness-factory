@@ -1018,6 +1018,11 @@ wheels = [
 ]
 
 [[package]]
+name = "degree-audit"
+version = "0.1.0"
+source = { git = "https://github.com/Sha-Hifzan-Razzakh/DegreeAudit?rev=824682286a344762dbe7656bffb9f3a61465afdd#824682286a344762dbe7656bffb9f3a61465afdd" }
+
+[[package]]
 name = "deprecated"
 version = "3.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1808,6 +1813,7 @@ dev = [
     { name = "uvicorn" },
 ]
 docs = [
+    { name = "degree-audit" },
     { name = "openpyxl" },
     { name = "pypdf" },
     { name = "python-docx" },
@@ -1862,6 +1868,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.5" },
     { name = "autogen-agentchat", marker = "extra == 'autogen-agentchat'", specifier = ">=0.7.5,<0.8" },
     { name = "autogen-ext", extras = ["openai"], marker = "extra == 'autogen-agentchat'", specifier = ">=0.7.5,<0.8" },
+    { name = "degree-audit", marker = "extra == 'docs'", git = "https://github.com/Sha-Hifzan-Razzakh/DegreeAudit?rev=824682286a344762dbe7656bffb9f3a61465afdd" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "harness-factory", extras = ["analysis", "api", "autogen-agentchat", "emulation", "langgraph-prebuilt", "langgraph-supervisor", "llamaindex", "ms-agent-framework", "openai-agents", "pydantic-ai", "retrieval", "ui"], marker = "extra == 'dev'" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27" },

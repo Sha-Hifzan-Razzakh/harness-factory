@@ -1,0 +1,9 @@
+# Where these files come from (ADR 0021). Copied, never edited: a change is a new DegreeAudit dataset release and a
+# new folder here.
+repository: https://github.com/Sha-Hifzan-Razzakh/DegreeAudit
+dataset: 2026.11.0                     # tag dataset-2026.11.0
+degree_audit_core: 0.1.0               # tag core-v0.1.0
+commit: 824682286a344762dbe7656bffb9f3a61465afdd
+bundle_sha256: 5f4d989bb8dc7b0b623f4475408ee28ccb7da5c958efc3ce25fe5a031776f2e8   # releases/dataset-2026.11.0.json
+files:
+  reference.json: 78e11a2dbcb512a3dfd079bafc53f6032edd6ce71c05b18c535f6b76c687f983   # D0 compiled: the engine's rules

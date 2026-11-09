@@ -1,0 +1,31 @@
+# MCP conformance fixture (MCP-11, src/harness_factory/mcp/conformance.py) for the degree audit server (ADR 0021).
+# The cases are DegreeAudit's own (conformance/cases.yaml at core-v0.1.0). seed/audit/sis.sql is the SIS that
+# DegreeAudit's compiler builds for the three D1 profiles the happy calls use, plus that file's two extra records
+# (S29990001: no major assignment; S29990002: two current BSCS rows). The reference is the frozen 2026.11.0 one.
+server: audit
+seed: {sqlite: seed/audit/sis.sql, reference: ../seeds/degree-audit-2026.11.0/reference.json}
+calls:
+- {tool: validate_record, args: {student_id: S20231047}, expect: {contains: ['"blocking": false']}}
+- {tool: validate_record, args: {student_id: S29990002}, expect: {contains: ['"blocking": true', MULTIPLE_CURRENT_PLANS]}}
+- {tool: evaluate, args: {student_id: S20231047},
+   expect: {contains: ['"recommendation": "NOT_ELIGIBLE"', BSCS-2022], keys: [config_used, requirements, eligible, recommendation, flags]}}
+- {tool: evaluate, args: {student_id: S20222001}, expect: {contains: ['"recommendation": "ELIGIBLE"']}}
+- {tool: evaluate, args: {student_id: S20221356, mode: what_if, study_plan_version: BSCS-2025},
+   expect: {contains: ['"recommendation": "ADVISORY"', BSCS-2025]}}
+- {tool: evaluate, args: {student_id: S29990002}, expect: {contains: ['"recommendation": "BLOCKED"']}}
+- {tool: explain, args: {student_id: S20231047, requirement_id: MAJOR-ELEC},
+   expect: {contains: ['"status": "FAIL"', '"deficit": 3'], keys: [requirement, counted, excluded, exceptions_considered]}}
+refusals:
+- {tool: validate_record, args: {student_id: S00000000}, contains: [UNKNOWN_STUDENT]}
+- {tool: validate_record, args: {student_id: S20231047, as_of_term: 2030FA}, contains: [CONFIG_INVALID]}
+- {tool: evaluate, args: {student_id: S20299999}, contains: [UNKNOWN_STUDENT]}
+- {tool: evaluate, args: {student_id: S20231047, mode: what_if, study_plan_version: BSBAN-2022}, contains: [INVALID_STUDY_PLAN]}
+- {tool: evaluate, args: {student_id: S29990001}, contains: [MULTIPLE_CURRENT_PLANS]}
+- {tool: evaluate, args: {student_id: S20231047, as_of_term: 2027SP}, contains: [CONFIG_INVALID]}
+- {tool: evaluate, args: {student_id: S20231047, study_plan_version: BSCS-2025}, contains: [CONFIG_INVALID]}
+- {tool: explain, args: {student_id: S20231047, requirement_id: NOT-A-REQ}, contains: [UNKNOWN_REQUIREMENT]}
+- {tool: explain, args: {student_id: S20231047, requirement_id: MINOR-CORE}, contains: [UNKNOWN_REQUIREMENT]}
+- {tool: explain, args: {student_id: S00000000, requirement_id: TOTAL}, contains: [UNKNOWN_STUDENT]}
+- {tool: explain, args: {student_id: S20231047, requirement_id: TOTAL, as_of_term: 2027SP}, contains: [CONFIG_INVALID]}
+invalid:
+- {tool: evaluate, args: {student_id: S20231047, mode: someday}, contains: [mode]}
