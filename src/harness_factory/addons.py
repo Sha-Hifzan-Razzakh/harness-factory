@@ -8,6 +8,7 @@ separately versioned catalog needs, in the same layout as `catalog/`:
     <add-on>/catalog/tasks/<id>/      more tasks
     <add-on>/catalog/recipes/**.yaml  more recipes (they may extend built-in ones with `base:`)
     <add-on>/catalog/conformance/     a conformance fixture per add-on server
+    <add-on>/prompts/**.j2            more prompt templates (system, task, stage...), by ref like prompts/
 
 `addon.yaml`:
 
@@ -21,7 +22,8 @@ separately versioned catalog needs, in the same layout as `catalog/`:
 
 Nothing in the repository depends on an add-on, and with `HF_ADDONS` unset the factory sees exactly its own
 catalog. An add-on adds; it never replaces: a server, task or recipe id, a module or a library that clashes with
-the built-in catalog or another add-on is refused. Add-on servers run in the local sandbox; the Docker sandbox
+the built-in catalog or another add-on is refused, and so is a prompt ref the built-in prompts or another add-on
+already have. Add-on servers run in the local sandbox; the Docker sandbox
 image carries only the built-in servers and refuses them. Their identity works as for built-in ones: tool specs,
 pinned libraries and task contents go into the same hashes, wherever the files live.
 """
@@ -86,6 +88,10 @@ class Addon(BaseModel):
     @property
     def conformance_dir(self) -> Path:
         return self.catalog / "conformance"
+
+    @property
+    def prompts_dir(self) -> Path:
+        return self.root / "prompts"
 
 
 def load_addon(root: Path) -> Addon:
@@ -152,6 +158,27 @@ def recipes_dirs() -> list[Path]:
 
 def conformance_dirs() -> list[Path]:
     return [a.conformance_dir for a in active() if a.conformance_dir.is_dir()]
+
+
+def prompts_dirs() -> list[Path]:
+    """The active add-ons' prompt folders, after checking that no ref repeats one the built-in prompts or an
+    earlier add-on already have (a template that shadowed another would change a recipe without saying so)."""
+    from harness_factory import settings
+    dirs = [a.prompts_dir for a in active() if a.prompts_dir.is_dir()]
+    seen = _refs(settings.PROMPTS)
+    for d in dirs:
+        refs = _refs(d)
+        clash = sorted(refs & seen)
+        if clash:
+            raise AddonError(f"{d}: prompt refs already exist: {', '.join(clash)}")
+        seen |= refs
+    return dirs
+
+
+def _refs(root: Path) -> set[str]:
+    if not root.is_dir():
+        return set()
+    return {str(p.relative_to(root).with_suffix("")).replace("\\", "/") for p in root.rglob("*.j2")}
 
 
 def tools_files() -> list[tuple[Addon, Path]]:

@@ -22,11 +22,14 @@ def agent_view(task: Task) -> Task:
 class PromptRegistry:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or settings.PROMPTS
-        self.env = Environment(loader=FileSystemLoader(str(self.root)), undefined=StrictUndefined,
+        # The built-in prompts, then the add-ons' (ADR 0021); an explicit root sees only itself.
+        from harness_factory import addons
+        self.roots = [self.root, *(addons.prompts_dirs() if root is None else [])]
+        self.env = Environment(loader=FileSystemLoader([str(r) for r in self.roots]), undefined=StrictUndefined,
                                keep_trailing_newline=False)
 
     def exists(self, ref: str) -> bool:
-        return (self.root / f"{ref}.j2").is_file()
+        return any((r / f"{ref}.j2").is_file() for r in self.roots)
 
     def render(self, ref: str, **vars: Any) -> str:
         return self.env.get_template(f"{ref}.j2").render(**vars).strip()

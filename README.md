@@ -1052,6 +1052,7 @@ environment or `.env`. With it unset the factory sees only its own catalog.
 <add-on>/catalog/tasks/<id>/      more tasks
 <add-on>/catalog/recipes/**.yaml  more recipes (`base:` may name a built-in recipe)
 <add-on>/catalog/conformance/     one fixture per add-on server (`hfx conformance --server <id>`)
+<add-on>/prompts/**.j2            more prompt templates, by ref as in prompts/ (e.g. stage/my_stage)
 ```
 
 ```yaml
@@ -1065,8 +1066,10 @@ servers:                            # server module -> its libraries
   my_addon.server: [some-lib, private-lib]
 ```
 
-- **An add-on only adds.** A server, task or recipe id, a server module or a library pin that clashes with the
-  built-in catalog or another add-on is refused. Server modules can't live in `harness_factory`.
+- **An add-on only adds.** A server, task or recipe id, a prompt ref, a server module or a library pin that
+  clashes with the built-in catalog or another add-on is refused. Server modules can't live in `harness_factory`.
+- **Prompts.** Add-on templates are found after the built-in ones, by the same refs. A recipe's hash holds the
+  source of every template it uses, wherever it lives, so editing an add-on prompt is a new recipe hash.
 - **Libraries** follow ADR 0013: each is pinned to one version, joins `env_hash` for the servers that use it, and
   is checked before a run. A library that isn't on PyPI is pinned by a git `source` at one commit; the installed
   commit is checked too. Install them yourself as the add-on describes; the `docs` extra and the image hold only

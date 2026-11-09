@@ -23,10 +23,10 @@ PromptSources = dict[str, str]          # template ref ("system/default") -> tem
 def default_prompt_sources(root: Path | None = None) -> PromptSources:
     """Every .j2 under the prompts directory, keyed by ref. Missing templates are a validator finding, not a
     hashing error, so a ref with no file simply contributes nothing here."""
-    root = root or settings.PROMPTS
-    if not root.is_dir():
-        return {}
-    return {str(p.relative_to(root).with_suffix("")).replace("\\", "/"): p.read_text() for p in sorted(root.rglob("*.j2"))}
+    from harness_factory import addons
+    roots = [root] if root is not None else [settings.PROMPTS, *addons.prompts_dirs()]   # add-ons: ADR 0021
+    return {str(p.relative_to(r).with_suffix("")).replace("\\", "/"): p.read_text()
+            for r in roots if r.is_dir() for p in sorted(r.rglob("*.j2"))}
 
 Tier = Literal["T1", "T2", "T3", "T4"]
 SideEffectName = Literal["READ", "REVERSIBLE", "IRREVERSIBLE"]

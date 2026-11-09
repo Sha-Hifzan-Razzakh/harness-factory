@@ -21,8 +21,11 @@ The usual constraints hold. Nothing may change an existing task, recipe or envir
    and a `catalog/` with the built-in layout: `tools.yaml`, `tasks/`, `recipes/`, `conformance/`.
    `harness_factory/addons.py` loads them; the existing loaders add their content where they read the built-in
    catalog: `load_tool_catalog(settings.TOOLS_FILE)`, `TaskRegistry()`, `load_recipes(settings.RECIPES_DIR)`,
-   `conformance.fixture_path` and `stale_fixtures`. A loader given another root or file sees no add-ons.
-2. **An add-on only adds.** A server id that is already declared, a task or recipe id that repeats, a stdio server
+   `conformance.fixture_path` and `stale_fixtures`. Its `prompts/` folder joins the built-in one in
+   `PromptRegistry()` and `default_prompt_sources()`, searched after it. A loader given another root or file sees
+   no add-ons.
+2. **An add-on only adds.** A server id that is already declared, a task, recipe or prompt ref that repeats (a
+   shadowing template would change a recipe silently), a stdio server
    whose module `addon.yaml` doesn't list, a module inside `harness_factory`, or a library pin the built-in
    allow-list already holds is refused, as are two add-ons that share an id, a module or a library.
 3. **Libraries follow ADR 0013.** `addon.yaml` lists its libraries and which server imports which. They join the
@@ -49,5 +52,7 @@ The usual constraints hold. Nothing may change an existing task, recipe or envir
   `hfx reference <task>` and `hfx tools freeze --check` all see it once `HF_ADDONS` is set.
 - Results don't record which add-on a task came from. Identity is the content hashes, as for built-in tasks, so
   two add-ons with identical content measure the same experiment.
-- Not covered yet: add-on prompts, skills, fault profiles and corpora, and add-on servers in Docker (vendoring
+- A recipe's hash holds the source of each template it names, wherever the file lives, so an add-on prompt edit
+  is a new recipe hash and built-in recipes keep theirs.
+- Not covered yet: add-on skills, fault profiles and corpora, and add-on servers in Docker (vendoring
   add-on modules and libraries into a per-add-on image). They can come later without changing this format.

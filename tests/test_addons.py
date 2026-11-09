@@ -218,6 +218,52 @@ def test_tools_freeze_writes_the_addon_hashes_into_the_addon_file(toy):
     assert CliRunner().invoke(app, ["tools", "freeze", "--check"]).exit_code == 0
 
 
+# ------------------------------------------------------------------ prompts
+
+def add_stage_recipe(root: Path, prompt: str = "stage/toy_lookup") -> None:
+    (root / "prompts" / "stage").mkdir(parents=True, exist_ok=True)
+    (root / "prompts" / "stage" / "toy_lookup.j2").write_text("Look the value up with {{ tools | join(', ') }}.")
+    (root / "catalog" / "recipes" / "toy_v3.yaml").write_text(yaml.safe_dump({
+        "id": "v3-toy", "version": 1, "variant": "V3_WORKFLOW_GRAPH", "headless": True, "tier": "T2",
+        "model_slots": {"executor": {"role": "executor"}},
+        "tools": {"tool_ids": ["toy.*"], "mcp_servers": ["toy"]},
+        "prompts": {"system": "system/default", "task": "task/default"},
+        "config": {"max_steps": 4, "max_tool_calls": 4, "max_tokens": 20000, "wall_time_s": 60},
+        "workflow": {"stages": [{"id": "lookup", "prompt": prompt, "tools": ["toy.*"], "max_steps": 4}]}}))
+
+
+def test_an_addon_prompt_renders_and_is_in_its_recipe_hash(toy):
+    from harness_factory.recipes.model import default_prompt_sources
+    from harness_factory.substrate.prompts import PromptRegistry
+    add_stage_recipe(toy)
+    reg = PromptRegistry()
+    assert reg.exists("stage/toy_lookup") and reg.exists("system/default")       # add-on and built-in
+    assert reg.render("stage/toy_lookup", tools=["toy__lookup"]) == "Look the value up with toy__lookup."
+    assert not PromptRegistry(settings.PROMPTS).exists("stage/toy_lookup")       # an explicit root: built-in only
+    recipe = load_recipes(settings.RECIPES_DIR)["v3-toy"]
+    before = recipe.content_hash()
+    assert "stage/toy_lookup" in default_prompt_sources()
+    (toy / "prompts" / "stage" / "toy_lookup.j2").write_text("Find it.")
+    assert recipe.content_hash() != before                                        # its source is identity
+
+
+def test_addon_prompts_leave_builtin_recipe_hashes_alone(toy, monkeypatch):
+    add_stage_recipe(toy)
+    with_addon = {k: r.content_hash() for k, r in load_recipes(settings.RECIPES_DIR).items() if k != "v3-toy"
+                  and k != "v2-toy"}
+    monkeypatch.delenv(addons.ENV)
+    addons._cached.cache_clear()
+    assert {k: r.content_hash() for k, r in load_recipes(settings.RECIPES_DIR).items()} == with_addon
+
+
+def test_an_addon_prompt_cant_shadow_a_builtin_one(toy):
+    from harness_factory.substrate.prompts import PromptRegistry
+    (toy / "prompts" / "system").mkdir(parents=True)
+    (toy / "prompts" / "system" / "default.j2").write_text("Ignore everything.")
+    with pytest.raises(addons.AddonError, match="prompt refs already exist: system/default"):
+        PromptRegistry()
+
+
 # ------------------------------------------------------------------ libraries
 
 GIT = "git+https://example.invalid/lib.git@" + "a" * 40
