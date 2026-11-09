@@ -93,7 +93,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #84 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex (replaces #57) | ready for review (CI green) | no (unset recipes and existing env hashes unchanged) |
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
-| #100 | `feat/degree-audit-server` | `…LLwunk5SUBezW33oS5` | HF-1: `audit` MCP server over degree_audit_core 0.1.0, reference mount, conformance (ADR 0021) | draft | new server only |
+| #100 | `feat/degree-audit-server` | `…LLwunk5SUBezW33oS5` | HF-1: `audit` MCP server over degree_audit_core 0.1.0, reference mount, conformance (ADR 0021) | draft: built, local checks green; CI needs read access to the private DegreeAudit repo | new server; new seed field `reference` (omitted when unset, no task hash moves); sandbox image tag |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
