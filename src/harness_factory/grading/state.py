@@ -178,7 +178,17 @@ def _number_close(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
             text, where = p.read_text(errors="replace"), c.path
         else:
             text, where = _output(ctx), "answer"
-        if c.pattern is not None:
+        if c.select is not None:
+            try:
+                found = _select(json.loads(text), c.select)
+            except ValueError as e:
+                return False, f"invalid JSON in {where}: {e}"
+            except KeyError:
+                return False, f"nothing at {c.select} in {where}"
+            if isinstance(found, bool) or not isinstance(found, (int, float, str)):
+                return False, f"not a number at {c.select} in {where}: {json.dumps(found)[:80]}"
+            text = str(found)
+        elif c.pattern is not None:
             m = re.search(c.pattern, text, re.MULTILINE)
             if m is None:
                 return False, f"no number matching {c.pattern!r} in {where}"
@@ -211,18 +221,26 @@ def _json_schema(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
     return False, f"{len(errors)} schema error(s): {shown[:300]}"
 
 
-def _pointer(doc, pointer: str):
-    """RFC 6901: the value at a JSON pointer, or KeyError."""
-    for raw in pointer.split("/")[1:]:
-        key = raw.replace("~1", "/").replace("~0", "~")
-        if isinstance(doc, list):
-            if not key.isdigit() or int(key) >= len(doc):
-                raise KeyError(pointer)
-            doc = doc[int(key)]
-        elif isinstance(doc, dict) and key in doc:
-            doc = doc[key]
-        else:
-            raise KeyError(pointer)
+_SEGMENT = re.compile(r"([^/\[\]]+)((?:\[[^=\[\]]+=[^\[\]]*\])*)")
+_FILTER = re.compile(r"\[([^=\[\]]+)=([^\[\]]*)\]")
+
+
+def _select(doc, expr: str):
+    """number_close `select`: /key segments and list indexes, each optionally followed by [field=value] filters
+    that keep the first list item whose field, as text, equals value. KeyError when nothing is there."""
+    for seg in expr.split("/")[1:]:
+        m = _SEGMENT.fullmatch(seg)
+        if m is None:
+            raise KeyError(expr)
+        doc = _pointer(doc, "/" + m.group(1))
+        if doc is _MISSING:
+            raise KeyError(expr)
+        for field, value in _FILTER.findall(m.group(2)):
+            if not isinstance(doc, list):
+                raise KeyError(expr)
+            doc = next((x for x in doc if isinstance(x, dict) and field in x and str(x[field]) == value), None)
+            if doc is None:
+                raise KeyError(expr)
     return doc
 
 
@@ -240,7 +258,7 @@ def _json_lines(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
         lines = _pointer(json.loads(p.read_text(errors="replace")), spec.pointer)
     except ValueError as e:
         return False, f"invalid JSON: {e}"
-    except KeyError:
+    if lines is _MISSING:
         return False, f"no {spec.pointer} in {c.path}"
     if not isinstance(lines, list):
         return False, f"{spec.pointer} is not a list"

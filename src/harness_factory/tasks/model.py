@@ -44,7 +44,7 @@ Normalization = Literal["whitespace", "case"]
 # kept every existing task hash (like _HASH_OMIT_WHEN_NONE for recipes).
 _CHECK_HASH_OMIT_WHEN_NONE = ("ref", "sheet", "cell", "expected", "tolerance", "style",
                               "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches",
-                              "lines")
+                              "lines", "select")
 
 _SCALAR = (str, int, float, bool, type(None))
 
@@ -72,6 +72,9 @@ class Rubric(BaseModel):
             raise ValueError(f"rubric criteria weights must sum to 1.0, got {total:.4f}")
         return self
 
+
+# number_close `select`: one or more /segments, each a key or index, optionally followed by [field=value] filters
+SELECT_RE = re.compile(r"(?:/[^/\[\]]+(?:\[[^=\[\]]+=[^\[\]]*\])*)+")
 
 LineStatus = Literal["PASS", "FAIL", "CORRECTED", "FLAG", "INFO"]
 
@@ -153,6 +156,8 @@ class WeightedCheck(BaseModel):
                                      # the task's data: a SQL table its statement names, a workspace path or glob
                                      # its path argument matches, or `arg=value` for other tools (grading/touches.py)
     lines: LinesSpec | None = None   # json_lines: the expected findings and the thresholds (path is the report)
+    select: str | None = None        # number_close on a JSON file: where the number is, as /key segments, list
+                                     # indexes and [field=value] list filters, e.g. /requirements[id=TOTAL]/deficit
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -215,6 +220,8 @@ class WeightedCheck(BaseModel):
                                          f"null), not {v!r}")
         if self.kind == "number_close":
             self._number_close_fields()
+        if self.select is not None and self.kind != "number_close":
+            raise ValueError(f"check {self.id}: select is for number_close checks")
         if self.lines is not None and self.kind != "json_lines":
             raise ValueError(f"check {self.id}: lines is for json_lines checks")
         if self.rubric is not None and self.kind != "rubric":
@@ -265,6 +272,13 @@ class WeightedCheck(BaseModel):
         if self.query is not None and (self.path is not None or self.pattern is not None):
             raise ValueError(f"check {self.id}: number_close reads a SQL scalar (query) or text (path / pattern), "
                              f"not both")
+        if self.select is not None:
+            if self.path is None or self.pattern is not None:
+                raise ValueError(f"check {self.id}: select reads the number from the JSON file at `path`, instead "
+                                 f"of a pattern")
+            if not SELECT_RE.fullmatch(self.select):
+                raise ValueError(f"check {self.id}: select is /key segments, indexes and [field=value] filters, "
+                                 f"e.g. /requirements[id=TOTAL]/deficit")
         if not math.isfinite(self.value):
             raise ValueError(f"check {self.id}: number_close value must be a finite number")
         for name in ("abs_tol", "rel_tol"):

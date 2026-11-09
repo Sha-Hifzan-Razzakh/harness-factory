@@ -672,3 +672,53 @@ def test_json_lines_needs_lines_and_takes_them_alone():
 
 def test_json_lines_field_keeps_existing_task_hashes():
     assert "lines" in _CHECK_HASH_OMIT_WHEN_NONE
+
+
+# ---- number_close: select (a number inside a JSON file) -------------------------------------------------------
+
+REPORT = {"requirements": [{"id": "MAJOR-CORE", "deficit": 0, "counted": [{"course": "X", "deficit": 9}]},
+                           {"counted": [], "deficit": 3.0, "id": "MAJOR-ELEC"}],
+          "totals": [[1, 2], [3, 4.5]], "eligible": False, "label": "7.5", "list": [1]}
+
+
+def select_ctx(tmp_path):
+    return make_ctx(tmp_path, files={"r.json": json.dumps(REPORT)})
+
+
+def test_number_close_select_filters_a_list_by_field(tmp_path):
+    ctx = select_ctx(tmp_path)
+    assert passes(check(kind="number_close", path="r.json", select="/requirements[id=MAJOR-ELEC]/deficit", value=3), ctx)
+    assert passes(check(kind="number_close", path="r.json", select="/requirements[id=MAJOR-CORE]/deficit", value=0), ctx)
+    # key order and nested objects with the same key don't matter
+    assert not passes(check(kind="number_close", path="r.json", select="/requirements[id=MAJOR-CORE]/deficit",
+                            value=9), ctx)
+
+
+def test_number_close_select_indexes_and_text_numbers(tmp_path):
+    ctx = select_ctx(tmp_path)
+    assert passes(check(kind="number_close", path="r.json", select="/totals/1/1", value=4.5), ctx)
+    assert passes(check(kind="number_close", path="r.json", select="/label", value=7.5), ctx)
+
+
+@pytest.mark.parametrize("select,why", [("/requirements[id=NOPE]/deficit", "nothing at"),
+                                        ("/missing", "nothing at"), ("/eligible", "not a number"),
+                                        ("/requirements", "not a number"), ("/list[id=1]", "nothing at")])
+def test_number_close_select_misses_fail(tmp_path, select, why):
+    ok, detail = StateDiffGrader()._check(check(kind="number_close", path="r.json", select=select, value=1),
+                                          select_ctx(tmp_path))
+    assert not ok and why in detail
+
+
+def test_number_close_select_needs_a_json_file_and_no_pattern(tmp_path):
+    ctx = make_ctx(tmp_path, files={"r.json": "{not json"})
+    ok, detail = StateDiffGrader()._check(check(kind="number_close", path="r.json", select="/a", value=1), ctx)
+    assert not ok and "invalid JSON" in detail
+    with pytest.raises(ValueError, match="instead of a pattern"):
+        check(kind="number_close", path="r.json", select="/a", pattern="x", value=1)
+    with pytest.raises(ValueError, match="instead of a pattern"):
+        check(kind="number_close", select="/a", value=1)
+    with pytest.raises(ValueError, match="select is /key segments"):
+        check(kind="number_close", path="r.json", select="requirements", value=1)
+    with pytest.raises(ValueError, match="select is for number_close"):
+        check(kind="file_regex", path="r.json", pattern="x", select="/a")
+    assert "select" in _CHECK_HASH_OMIT_WHEN_NONE
