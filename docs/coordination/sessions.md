@@ -89,6 +89,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #65 | `chore/langfuse-compose` | `…JZLSKyEhjaA4sxi9R` | Langfuse in compose | ready for review (CI green) | no |
 | #66 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks | closed by GitHub after the branch was re-signed; continued in #86 | no |
 | #67 | `docs/handoff-packages` | `…JZLSKyEhjaA4sxi9R` | Handover guide, work packages, requirements snapshot | ready for review | no |
+| #103 | `feat/openrouter-shortlist` | `…LLwunk5SUBezW33oS5` | OpenRouter: five models (four paid, one free) and limits per the platform docs | ready for review (CI green) | no (prices aren't hashed; new model ids only) |
 | #82 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3 (replaces #34) | ready for review | yes (new tasks and seeds) |
 | #83 | `feat/runner-sk-autogen` | `…JZLSKyEhjaA4sxi9R` | AutoGen runner, migration check vs Agent Framework (Semantic Kernel left out: pins pydantic<2.14, mcp<2) (replaces #55) | ready for review (stacked on #54; CI green) | no |
 | #84 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex (replaces #57) | ready for review (CI green) | no (unset recipes and existing env hashes unchanged) |
