@@ -97,7 +97,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
 | #101 | `feat/catalog-addons` | `…LLwunk5SUBezW33oS5` | Catalog add-ons through `HF_ADDONS` (tools, servers, libraries, tasks, recipes, conformance); read-only reference mount (ADR 0021) | ready for review (CI green) | no (unset: nothing changes; new optional seed field) |
-| #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | draft | no (unset: nothing changes; recipes without add-on skills keep their hashes) |
+| #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | ready for review |  no (unset: nothing changes; recipes without add-on skills keep their hashes) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
