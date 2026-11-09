@@ -27,6 +27,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
 | `session_01BgTbLLwunk5SUBezW33oS5` | `session:degree` | DegreeAudit in the lab (HF-1 … HF-6): audit server, degree recipes, tasks da-01…da-19, skills, campaigns, promotion bundle |
+| `session_01BgTbLKg8F6MXLBFVeupkLx` | `session:degree-recipes` | HF-2 only, on Hifzan's request (from `session:degree`'s plan): degree recipes, Graph A stage prompts, OpenRouter shortlist |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -94,6 +95,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
 | #100 | `feat/degree-audit-server` | `…LLwunk5SUBezW33oS5` | HF-1: `audit` MCP server over degree_audit_core 0.1.0, reference mount, conformance (ADR 0021) | draft: built, local checks green; CI needs read access to the private DegreeAudit repo | new server; new seed field `reference` (omitted when unset, no task hash moves); sandbox image tag |
+| #102 | `feat/degree-recipes` | `…KLg8F6MXLBFVeupkLx` | HF-2: degree recipes (v2-audit, v2-audit-rag, v3-audit), Graph A stage prompts, `degree` CI group, OpenRouter shortlist and limits (stacked on #100) | draft | new recipes only; no existing hash moves |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
