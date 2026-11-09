@@ -95,7 +95,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
 | #100 | `feat/degree-audit-server` | `…LLwunk5SUBezW33oS5` | HF-1: `audit` MCP server over degree_audit_core 0.1.0, reference mount, conformance (ADR 0021) | draft: built, local checks green; CI needs read access to the private DegreeAudit repo | new server; new seed field `reference` (omitted when unset, no task hash moves); sandbox image tag |
-| #102 | `feat/degree-recipes` | `…KLg8F6MXLBFVeupkLx` | HF-2: degree recipes (v2-audit, v2-audit-rag, v3-audit), Graph A stage prompts, `degree` CI group, OpenRouter shortlist and limits (stacked on #100) | draft | new recipes only; no existing hash moves |
+| #102 | `feat/degree-recipes` | `…KLg8F6MXLBFVeupkLx` | HF-2: degree recipes (v2-audit, v2-audit-rag, v3-audit), Graph A stage prompts, `degree` CI group, OpenRouter shortlist and limits (stacked on #100) | ready for review (local suite green; CI needs DegreeAudit core access, as #100) | new recipes only; no existing hash moves |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
