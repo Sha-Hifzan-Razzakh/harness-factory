@@ -26,6 +26,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLJZLSKyEhjaA4sxi9R` | `session:core` | Shapes, measurement core, task batch 3, P2 (calibration, allocation), runners, framework fidelity |
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
+| `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -82,17 +83,20 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #59 | `feat/tool-call-emulation` | `…JZLSKyEhjaA4sxi9R` | Tool-call emulation with instructor | ready for review (CI green) | no |
 | #60 | `feat/langgraph-checkpointer` | `…JZLSKyEhjaA4sxi9R` | LangGraph checkpointer: pause and resume | ready for review (CI green) | no |
 | #61 | `feat/bench-file` | `…JZLSKyEhjaA4sxi9R` | `hfx bench` and recipe-vs-recipe report | ready for review (stacked on #37; CI green) | no |
+| #104 | `feat/json-lines-check` | `…LLwunk5SUBezW33oS5` | `json_lines` check kind and `number_close` `select`: line-by-line findings vs expected lines (accuracy, correction recall, false corrections) | ready for review (CI green) | no (new kind and optional `lines` field; existing task hashes stay) |
 | #62 | `feat/selector-pooled-cells` | `…JZLSKyEhjaA4sxi9R` | Selector on calibrated pooled cells | ready for review (stacked on #35; CI green) | no |
 | #63 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class | closed by GitHub after the branch was re-signed; continued in #85 | no |
 | #64 | `chore/storage-alembic` | `…JZLSKyEhjaA4sxi9R` | Alembic migrations, Postgres in CI | ready for review (CI green) | no |
 | #65 | `chore/langfuse-compose` | `…JZLSKyEhjaA4sxi9R` | Langfuse in compose | ready for review (CI green) | no |
 | #66 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks | closed by GitHub after the branch was re-signed; continued in #86 | no |
 | #67 | `docs/handoff-packages` | `…JZLSKyEhjaA4sxi9R` | Handover guide, work packages, requirements snapshot | ready for review | no |
+| #103 | `feat/openrouter-shortlist` | `…LLwunk5SUBezW33oS5` | OpenRouter: five models (four paid, one free) and limits per the platform docs | ready for review (CI green) | no (prices aren't hashed; new model ids only) |
 | #82 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3 (replaces #34) | ready for review | yes (new tasks and seeds) |
 | #83 | `feat/runner-sk-autogen` | `…JZLSKyEhjaA4sxi9R` | AutoGen runner, migration check vs Agent Framework (Semantic Kernel left out: pins pydantic<2.14, mcp<2) (replaces #55) | ready for review (stacked on #54; CI green) | no |
 | #84 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex (replaces #57) | ready for review (CI green) | no (unset recipes and existing env hashes unchanged) |
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
+| #101 | `feat/catalog-addons` | `…LLwunk5SUBezW33oS5` | Catalog add-ons through `HF_ADDONS` (tools, servers, libraries, tasks, recipes, conformance); read-only reference mount (ADR 0021) | ready for review (CI green) | no (unset: nothing changes; new optional seed field) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
@@ -118,6 +122,7 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | 0011 | `…JZLSKyEhjaA4sxi9R` | Allocation planner (in #36) |
 | 0016 | `…JZLSKyEhjaA4sxi9R` | Runner axis (in #53) |
 | 0017 | `…JZLSKyEhjaA4sxi9R` | Retrieval on LlamaIndex (in #84, was #57) |
+| 0021 | `…LLwunk5SUBezW33oS5` | Catalog add-ons and read-only reference data (in #101) |
 
 Handing a reserved PR to another session: `handoff.md` (protocol, starter prompt, one work package per PR).
 

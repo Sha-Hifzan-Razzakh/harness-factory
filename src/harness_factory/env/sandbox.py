@@ -24,7 +24,7 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from harness_factory import settings
+from harness_factory import addons, settings
 from harness_factory.env.mcp import deps
 from harness_factory.env.mcp.impl import proc
 from harness_factory.env.mcp.servers import MCPServerSpec
@@ -43,6 +43,9 @@ PROBE_SLACK_S = 60                      # on top of the probe's own limit, befor
 BIZ_IN_CONTAINER = f"/state/{BIZ_FILE}"  # the biz server's business state, next to the database (env_seed.biz_state)
 WEB_DIR = "web"                          # the compiled web corpus (env_seed.corpus, ADR 0018): read-only, in the state
 WEB_IN_CONTAINER = f"/state/{WEB_DIR}"   # folder, never the workspace; its own read-only mount in Docker
+REF_DIR = "reference"                    # env_seed.reference (ADR 0021): read-only data a server reads, in the state
+REF_FILE = "reference.json"              # folder like the web corpus; HF_REFERENCE names the file
+REF_IN_CONTAINER = f"/state/{REF_DIR}"
 STATE_DIR_IN_CONTAINER = "/state"       # every stateful server's JSON state sits there too (env/state.JSON_STATES)
 
 
@@ -72,6 +75,7 @@ class LocalSandbox:
         self.db_path.parent.mkdir(parents=True)
         self.git_seed: str | None = None      # the seed commit of a git-seeded task
         self.web_dir.mkdir()                  # kept for the sandbox's life: Docker mounts it read-only
+        self.ref_dir.mkdir()                  # the same for the task's reference data (ADR 0021)
         self.corpus_info: dict | None = None  # the web corpus a run sees (id, version, index id), for its snapshot
 
     def reset(self, task: Task) -> None:
@@ -84,9 +88,10 @@ class LocalSandbox:
         if files:
             shutil.copytree(files, self.workspace, dirs_exist_ok=True)
         for f in self.db_path.parent.iterdir():          # database plus any journal/WAL files, installed skills
-            if f != self.web_dir:
+            if f not in (self.web_dir, self.ref_dir):
                 shutil.rmtree(f) if f.is_dir() and not f.is_symlink() else f.unlink()
         self._mount_corpus(task)
+        self._mount_reference(task)
         with sqlite3.connect(self.db_path) as c:
             if sql:
                 c.executescript(sql.read_text())
@@ -132,9 +137,29 @@ class LocalSandbox:
         self.web_dir.chmod(0o555)
         self.corpus_info = corpus.info()
 
+    def _mount_reference(self, task: Task) -> None:
+        """The task's reference file (env_seed.reference), copied read-only into reference/. As with the corpus, the
+        folder stays, emptied, so a Docker bind mount of it stays valid across resets."""
+        _writable(self.ref_dir)
+        for f in self.ref_dir.iterdir():
+            shutil.rmtree(f) if f.is_dir() and not f.is_symlink() else f.unlink()
+        src = task.env_seed.reference_file(task.source_dir)
+        if src is None:
+            return
+        if not src.is_file():
+            raise HarnessError(ErrorKind.PROVISION, f"{task.key()}: env_seed.reference {src} is not a file")
+        dest = self.ref_dir / REF_FILE
+        shutil.copyfile(src, dest)
+        dest.chmod(0o444)
+        self.ref_dir.chmod(0o555)
+
     @property
     def web_dir(self) -> Path:
         return self.db_path.parent / WEB_DIR
+
+    @property
+    def ref_dir(self) -> Path:
+        return self.db_path.parent / REF_DIR
 
     @property
     def git_dir(self) -> Path:
@@ -143,6 +168,7 @@ class LocalSandbox:
     def env(self) -> dict[str, str]:
         return {"HF_WORKSPACE": str(self.workspace), "HF_DB": str(self.db_path), "HF_SKILLS": str(self.skills_dir),
                 "HF_GIT_DIR": str(self.git_dir), "HF_BIZ": str(self.biz_path), "HF_WEB": str(self.web_dir),
+                "HF_REFERENCE": str(self.ref_dir / REF_FILE),
                 **{JSON_STATES[n][1]: str(self.state_path(n)) for n in SERVER_STATES}}
 
     @property
@@ -161,7 +187,7 @@ class LocalSandbox:
         # The server runs with the factory's own Python, so a server with libraries beyond mcp (ADR 0013) needs
         # them installed here; say so now rather than let the process die during the MCP handshake.
         deps.require_server(spec.module, spec.id)
-        return sys.executable, ["-m", spec.module], self.env()
+        return sys.executable, ["-m", spec.module], {**self.env(), **addons.server_env(spec.module)}
 
     def describe(self) -> dict[str, str]:
         return {"sandbox": self.kind}
@@ -191,6 +217,7 @@ class LocalSandbox:
 
     def teardown(self) -> None:
         _writable(self.web_dir)                            # read-only files don't delete on Windows
+        _writable(self.ref_dir)
         shutil.rmtree(self.root, ignore_errors=True)
 
     def __enter__(self):
@@ -228,6 +255,7 @@ class DockerSandbox(LocalSandbox):
             "-v", f"{self.workspace}:{WORKSPACE_IN_CONTAINER}",
             "-v", f"{self.db_path.parent}:{Path(DB_IN_CONTAINER).parent}",
             "-v", f"{self.db_path.parent / WEB_DIR}:{WEB_IN_CONTAINER}:ro",     # the web corpus (ADR 0018)
+            "-v", f"{self.db_path.parent / REF_DIR}:{REF_IN_CONTAINER}:ro",     # reference data (ADR 0021)
             "--label", "hf.sandbox=1", "--label", f"hf.task={self.label}",
         ]
         if hasattr(os, "getuid"):                          # files written in the container stay owned by you
@@ -247,9 +275,14 @@ class DockerSandbox(LocalSandbox):
         return {"HF_WORKSPACE": WORKSPACE_IN_CONTAINER, "HF_DB": DB_IN_CONTAINER, "HF_SKILLS": SKILLS_IN_CONTAINER,
                 "HF_GIT_DIR": GIT_DIR_IN_CONTAINER,
                 "HF_BIZ": BIZ_IN_CONTAINER, "HF_WEB": WEB_IN_CONTAINER,
+                "HF_REFERENCE": f"{REF_IN_CONTAINER}/{REF_FILE}",
                 **{JSON_STATES[n][1]: f"{STATE_DIR_IN_CONTAINER}/{JSON_STATES[n][0]}" for n in SERVER_STATES}}
 
     def launch(self, spec: MCPServerSpec) -> Launch:
+        owner = addons.owner(spec.module)
+        if owner is not None:            # the image vendors only the built-in servers and their libraries
+            raise HarnessError(ErrorKind.SANDBOX, f"MCP server {spec.id!r} is from the add-on {owner.id!r}; add-on "
+                                                  f"servers run in the local sandbox only (HF_SANDBOX=local)")
         env_flags = [x for k, v in self.env().items() for x in ("-e", f"{k}={v}")]
         return settings.DOCKER_BIN, ["exec", "-i", *env_flags, self.container, "python", "-m", spec.module], {}
 
@@ -272,7 +305,7 @@ class DockerSandbox(LocalSandbox):
 
 
 def _writable(web_dir: Path) -> None:
-    """Undo the read-only marks of a mounted corpus, so a reset or teardown can remove it."""
+    """Undo the read-only marks of a mounted corpus or reference, so a reset or teardown can remove it."""
     if not web_dir.is_dir():
         return
     web_dir.chmod(0o755)

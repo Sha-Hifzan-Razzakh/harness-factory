@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from harness_factory.hashing import content_hash, hash_paths
 
@@ -34,7 +34,7 @@ CheckKind = Literal["file_equals", "file_contains", "file_regex", "file_absent",
                     "output_regex", "tool_called", "remote_equals", "tests_pass", "git_log_contains",
                     "biz_equals", "biz_count", "xlsx_cell", "docx_contains",
                     "docx_paragraph_regex", "sql_rows_unordered", "number_close", "json_schema", "output_exact",
-                    "rubric", "state_equals", "state_count"]
+                    "rubric", "state_equals", "state_count", "json_lines"]
 GIT_CHECKS = ("git_log_contains",)
 STATE_CHECKS = ("state_equals", "state_count")    # any stateful mock server's JSON state: path "<state>:<pointer>"
 
@@ -43,7 +43,8 @@ Normalization = Literal["whitespace", "case"]
 # Check fields added after the first tasks were written: left out of the task hash while unset, so adding them
 # kept every existing task hash (like _HASH_OMIT_WHEN_NONE for recipes).
 _CHECK_HASH_OMIT_WHEN_NONE = ("ref", "sheet", "cell", "expected", "tolerance", "style",
-                              "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches")
+                              "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches",
+                              "lines", "select")
 
 _SCALAR = (str, int, float, bool, type(None))
 
@@ -70,6 +71,47 @@ class Rubric(BaseModel):
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"rubric criteria weights must sum to 1.0, got {total:.4f}")
         return self
+
+
+# number_close `select`: one or more /segments, each a key or index, optionally followed by [field=value] filters
+SELECT_RE = re.compile(r"(?:/[^/\[\]]+(?:\[[^=\[\]]+=[^\[\]]*\])*)+")
+
+LineStatus = Literal["PASS", "FAIL", "CORRECTED", "FLAG", "INFO"]
+
+
+class ExpectedLine(BaseModel):
+    """One finding the agent's report must contain (json_lines). An agent line answers it when its check_id is
+    the same and its attribute matches `attribute`; it is accurate when its status is the same, its processed
+    value matches `processed` and, for a correction, its correction_type is the same."""
+    model_config = ConfigDict(extra="forbid")
+    check_id: str = Field(min_length=1)
+    status: LineStatus
+    attribute: str | None = None         # regex, searched case-insensitively in the agent line's attribute
+    processed: str | None = None         # regex, searched case-insensitively in the agent line's processed value
+    correction_type: str | None = None   # a CORRECTED line must carry this type
+
+    @model_validator(mode="after")
+    def _patterns(self) -> ExpectedLine:
+        for name in ("attribute", "processed"):
+            if getattr(self, name) is not None:
+                try:
+                    re.compile(getattr(self, name))
+                except re.error as e:
+                    raise ValueError(f"expected line {self.check_id}: bad {name} pattern: {e}") from e
+        if self.correction_type is not None and self.status != "CORRECTED":
+            raise ValueError(f"expected line {self.check_id}: a correction_type needs status CORRECTED")
+        return self
+
+
+class LinesSpec(BaseModel):
+    """json_lines: the findings a report must hold and how close it must come. The report's lines are a JSON
+    list of objects (check_id, status, attribute, processed, correction_type) at `pointer` in the file."""
+    model_config = ConfigDict(extra="forbid")
+    pointer: str = Field(default="/audit_lines", pattern=r"^(/.*)?$")
+    expected: list[ExpectedLine] = Field(min_length=1)
+    min_accuracy: float = Field(default=0.9, ge=0, le=1)              # accurate expected lines / expected lines
+    min_correction_recall: float = Field(default=0.95, ge=0, le=1)    # corrections found / corrections expected
+    max_false_corrections: float = Field(default=0.05, ge=0, le=1)    # unexpected corrections / corrections made
 
 
 class WeightedCheck(BaseModel):
@@ -113,6 +155,9 @@ class WeightedCheck(BaseModel):
     touches: list[str] | None = Field(default=None, min_length=1)   # tool_called: the matching call must touch
                                      # the task's data: a SQL table its statement names, a workspace path or glob
                                      # its path argument matches, or `arg=value` for other tools (grading/touches.py)
+    lines: LinesSpec | None = None   # json_lines: the expected findings and the thresholds (path is the report)
+    select: str | None = None        # number_close on a JSON file: where the number is, as /key segments, list
+                                     # indexes and [field=value] list filters, e.g. /requirements[id=TOTAL]/deficit
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -126,7 +171,8 @@ class WeightedCheck(BaseModel):
                  "xlsx_cell": ("path", "sheet", "cell"), "docx_contains": ("path", "text"),
                  "docx_paragraph_regex": ("path", "pattern"), "sql_rows_unordered": ("query", "rows"),
                  "number_close": ("value",), "json_schema": ("path", "json_schema"), "output_exact": ("text",),
-                 "rubric": ("rubric",), "state_equals": ("path", "text"), "state_count": ("path", "text")}[self.kind]
+                 "rubric": ("rubric",), "state_equals": ("path", "text"), "state_count": ("path", "text"),
+                 "json_lines": ("path", "lines")}[self.kind]
         missing = [f for f in needs if getattr(self, f) is None]
         if missing:
             raise ValueError(f"check {self.id} ({self.kind}) needs {', '.join(missing)}")
@@ -174,6 +220,10 @@ class WeightedCheck(BaseModel):
                                          f"null), not {v!r}")
         if self.kind == "number_close":
             self._number_close_fields()
+        if self.select is not None and self.kind != "number_close":
+            raise ValueError(f"check {self.id}: select is for number_close checks")
+        if self.lines is not None and self.kind != "json_lines":
+            raise ValueError(f"check {self.id}: lines is for json_lines checks")
         if self.rubric is not None and self.kind != "rubric":
             raise ValueError(f"check {self.id}: only a rubric check takes a rubric")
         if self.kind == "rubric" and (self.weight == 0 or self.critical):
@@ -222,6 +272,13 @@ class WeightedCheck(BaseModel):
         if self.query is not None and (self.path is not None or self.pattern is not None):
             raise ValueError(f"check {self.id}: number_close reads a SQL scalar (query) or text (path / pattern), "
                              f"not both")
+        if self.select is not None:
+            if self.path is None or self.pattern is not None:
+                raise ValueError(f"check {self.id}: select reads the number from the JSON file at `path`, instead "
+                                 f"of a pattern")
+            if not SELECT_RE.fullmatch(self.select):
+                raise ValueError(f"check {self.id}: select is /key segments, indexes and [field=value] filters, "
+                                 f"e.g. /requirements[id=TOTAL]/deficit")
         if not math.isfinite(self.value):
             raise ValueError(f"check {self.id}: number_close value must be a finite number")
         for name in ("abs_tol", "rel_tol"):
@@ -261,6 +318,9 @@ class EnvSeed(BaseModel):
     corpus: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]*$")
     # Other stateful mock servers' seeds (env/state.SERVER_STATES): state name -> JSON file, a fresh copy each run.
     server_state: dict[str, str] | None = None
+    # Read-only reference data a server reads (HF_REFERENCE, ADR 0021): one file, relative to the task dir, mounted
+    # read-only in the state folder, never the workspace. The audit server reads its compiled rules there.
+    reference: str | None = None
 
     @model_validator(mode="after")
     def _known_states(self) -> EnvSeed:
@@ -285,6 +345,9 @@ class EnvSeed(BaseModel):
         from harness_factory.env.corpus import find
         return find(task_dir, self.corpus) if self.corpus else None
 
+    def reference_file(self, task_dir: Path) -> Path | None:
+        return (task_dir / self.reference).resolve() if self.reference else None
+
     def state_seeds(self, task_dir: Path) -> dict[str, Path]:
         """Every JSON state the task seeds, biz included: state name -> seed file."""
         out = {name: (task_dir / rel).resolve() for name, rel in sorted((self.server_state or {}).items())}
@@ -293,12 +356,13 @@ class EnvSeed(BaseModel):
 
     def data_hash(self, task_dir: Path) -> str:
         f, s = self.resolve(task_dir)
-        return hash_paths([p for p in (f, s, *self.state_seeds(task_dir).values()) if p is not None])
+        return hash_paths([p for p in (f, s, *self.state_seeds(task_dir).values(), self.reference_file(task_dir))
+                           if p is not None])
 
 
 # Seed fields added after tasks were first hashed: left out of the task hash while unset, so existing task hashes
 # stay the same (like recipes' _HASH_OMIT_WHEN_NONE).
-_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus", "server_state")
+_SEED_OMIT_WHEN_NONE = ("biz_state", "corpus", "server_state", "reference")
 
 # Perturbation types (TSK-04). A variant made from a base task by `hfx perturb` (tasks/perturb.py) records how it was
 # made here; the block is part of the variant's hash. memory_poisoning is reserved for MEM-06 (memory stores, #78)

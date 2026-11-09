@@ -58,6 +58,63 @@ hfx catalog rm fault slow-sql
   servers `fs`, `sql`, `search` and `skills`.
 - Files are written, never committed: review them with `git diff`.
 
+## API: `hfx serve`
+
+The same authoring rules over HTTP, plus read access to what experiments are made of and what they produced. The
+UI uses it; scripts can too.
+
+```bash
+uv sync --extra dev --extra api
+hfx serve                                  # http://127.0.0.1:8765, OpenAPI docs at /docs
+HF_API_TOKEN=... hfx serve --host 0.0.0.0  # beyond localhost a token is required
+docker compose --profile api up -d api     # in a container (needs HF_API_TOKEN in .env), host loopback only
+```
+
+| Area | Routes |
+|---|---|
+| Catalog | `GET /api/catalog[/{kind}[/{id}]]`, `POST /api/catalog/{kind}`, `PUT` / `DELETE /api/catalog/{kind}/{id}`; `?dry_run=true`, `?confirm=true`; `GET /api/check`; `POST /api/servers/stub` |
+| Experiments | `GET /api/meta` (variants, dimensions, prompt layers), `/api/tasks` (with task class), `/api/models` (and whether each provider's key is set), `/api/faults` |
+| Campaigns | `POST /api/campaigns/plan` (projection, nothing runs), `POST /api/campaigns` (202, runs in the background), `GET /api/campaigns[/{id}]` (state and progress), `DELETE /api/campaigns/{id}` (cancel) |
+| Results | `GET /api/results`, `/api/results/cells`, `/api/baselines`, `/api/report` (markdown), `/api/runs/{id}/transcript` |
+
+- **A change answers like the CLI.** 201/200 when written or dry-run, **409** when it changes an existing identity
+  (the body lists the recipes and servers; repeat with `?confirm=true`), **422** when rejected (the body lists the
+  issues; nothing was written). Kinds are `prompt`, `skill`, `recipe`, `server`, `fault`; a prompt's id is its
+  ref, slash included (`/api/catalog/prompt/system/terse`).
+- **Pasted tool code runs** when its tools are discovered, on the machine running the API. That's why it binds
+  to localhost by default and refuses any other address without `HF_API_TOKEN`; with a token, every route but
+  `/api/health` needs `Authorization: Bearer <token>`.
+- **Campaigns are `hfx smoke` in the background:** the same plan and preflight (a bucket spent today, a plan
+  past `deadline_days` or over `budget_usd` is refused with 409), `resume` to skip scored runs, progress from the
+  store as runs finish. Every campaign shares the API's one quota ledger, so campaigns started side by side are
+  paced together. Each starts from the catalog as it is then, so a recipe written through the API runs in the next
+  campaign without a restart. Cancelling tears down the runs' sandboxes and servers; finished runs stay stored.
+  The campaign list lives in memory: after a restart it is empty, the runs are not.
+- The compose service mounts `catalog/`, `prompts/` and the local tool servers' folder read-write (the `factory`
+  services keep them read-only). The image has no ruff, so a module written through it is linted by CI instead.
+
+## UI: `hfx ui`
+
+A Streamlit UI over the API. It has no rules of its own: every check, write and campaign is an API call.
+
+```bash
+uv sync --extra dev --extra api --extra ui
+hfx ui --serve            # the API and the UI together: http://127.0.0.1:8501
+hfx ui                    # just the UI, against a running API (HF_API_URL, default http://127.0.0.1:8765)
+```
+
+| Page | What it does |
+|---|---|
+| Catalog | Every prompt, skill, recipe, tool server and fault profile, with what uses it and its hash. Open one to read its file, edit it or delete it |
+| New experiment | A matrix recipe in a few clicks: pick a base, pick the one thing that changes (system prompt, skills, config, tools, delegation, or any field as YAML), check, create |
+| Add | A local tool server (tools table, stub or your own module), a remote server, a skill, a prompt, a fault profile, or a whole recipe |
+| Run | Recipes × models × tasks × faults × seeds on a provider: plan (projection per quota bucket), start, follow the progress, cancel |
+| Results | Cells (E, its 95% interval, pass rate, E₀, C, R), the paired report, recent runs and each run's transcript |
+
+**Check** is a dry run: the same validation and impact, nothing written. A change that alters existing recipe hashes
+or tool environments shows which ones and waits for **Confirm and write**. The UI listens on localhost only; with
+a token on the API, set `HF_API_TOKEN` for the UI too.
+
 ## Real models
 
 Put keys in `.env` (copy `.env.example`), then check the model ids and limits in `catalog/providers.yaml` against
@@ -740,6 +797,8 @@ src/harness_factory/
   mcp/                    MCPClient, MCPSessionPool, ToolCatalog                    (B11)
   observability/          Span, Tracer (JSONL + OTLP)
   authoring/              AuthoringService: staged, validated catalog writes (ADR 0009)
+  api/                    hfx serve: authoring and results over HTTP (extra `api`)
+  ui/                     hfx ui: Streamlit pages over the API (extra `ui`)
   cli/                    hfx
 ```
 
@@ -980,6 +1039,48 @@ repository.
 ```bash
 uv run hfx smoke --recipe v2-web --models scripted/replay --strict
 ```
+
+## Catalog add-ons
+
+An add-on is a catalog folder that lives outside this repository (ADR 0021): a private catalog, or one versioned
+with another project. Name one or more in `HF_ADDONS` (separated by `:` on Linux and macOS, `;` on Windows), in the
+environment or `.env`. With it unset the factory sees only its own catalog.
+
+```
+<add-on>/addon.yaml               id, python_path, libraries, servers
+<add-on>/catalog/tools.yaml       more MCP servers (frozen with `hfx tools freeze`, into this file)
+<add-on>/catalog/tasks/<id>/      more tasks
+<add-on>/catalog/recipes/**.yaml  more recipes (`base:` may name a built-in recipe)
+<add-on>/catalog/conformance/     one fixture per add-on server (`hfx conformance --server <id>`)
+<add-on>/prompts/**.j2            more prompt templates, by ref as in prompts/ (e.g. stage/my_stage)
+```
+
+```yaml
+# addon.yaml
+id: my-addon
+python_path: [src]                  # where its server modules import from
+libraries:                          # what its servers may import beyond mcp and the standard library
+- {dist: some-lib, version: 1.2.3, imports: some_lib}
+- {dist: private-lib, version: 0.1.0, imports: private_lib, source: "git+https://...@<commit>"}
+servers:                            # server module -> its libraries
+  my_addon.server: [some-lib, private-lib]
+```
+
+- **An add-on only adds.** A server, task or recipe id, a prompt ref, a server module or a library pin that
+  clashes with the built-in catalog or another add-on is refused. Server modules can't live in `harness_factory`.
+- **Prompts.** Add-on templates are found after the built-in ones, by the same refs. A recipe's hash holds the
+  source of every template it uses, wherever it lives, so editing an add-on prompt is a new recipe hash.
+- **Libraries** follow ADR 0013: each is pinned to one version, joins `env_hash` for the servers that use it, and
+  is checked before a run. A library that isn't on PyPI is pinned by a git `source` at one commit; the installed
+  commit is checked too. Install them yourself as the add-on describes; the `docs` extra and the image hold only
+  the built-in servers' libraries.
+- **Sandboxes.** Add-on servers run in the local sandbox, with their `python_path` on `PYTHONPATH`. The Docker
+  sandbox refuses them, since its image carries only the built-in servers.
+- **Reference data.** A task can mount one read-only file for its servers with `env_seed.reference: <file>`. Each
+  reset copies it into the state folder (never the workspace) as `reference/reference.json`; `HF_REFERENCE` names
+  it, and Docker mounts the folder `:ro`. The file is part of the task hash; tasks without one keep theirs.
+- **Identity** is the same as for built-in content: tool specs, pins and task contents go into the same hashes,
+  wherever the files live. Campaign results don't say which add-on a task came from, only its id and hashes.
 
 ## Runners
 
@@ -1607,14 +1708,38 @@ Every task ships a `reference.py`. `hfx reference` must pass before the task is 
 | Kind | Fields | Passes when |
 |---|---|---|
 | `sql_rows_unordered` | `query`, `rows` | the query returns these rows in any order, duplicates counted (a multiset) |
-| `number_close` | `value`, `abs_tol` / `rel_tol`; the number from `query` (one SQL value), `path` (+ optional `pattern`), or the final answer (optional `pattern`) | \|actual − value\| ≤ max(`abs_tol`, `rel_tol` × max(\|actual\|, \|value\|)); neither tolerance set = `rel_tol` 1e-9. NULL, NaN, no rows, several values or text that isn't a number fail |
+| `number_close` | `value`, `abs_tol` / `rel_tol`; the number from `query` (one SQL value), `path` (+ optional `pattern`, or `select` into a JSON file), or the final answer (optional `pattern`) | \|actual − value\| ≤ max(`abs_tol`, `rel_tol` × max(\|actual\|, \|value\|)); neither tolerance set = `rel_tol` 1e-9. NULL, NaN, no rows, several values or text that isn't a number fail |
 | `json_schema` | `path`, `json_schema` (inline) | the file is JSON and validates against the schema (checked at load time) |
 | `output_exact` | `text`, `normalize: [whitespace, case]` | the final answer equals `text` after trimming both ends, and optionally collapsing whitespace and ignoring case |
+| `json_lines` | `path`, `lines: {expected, pointer, min_accuracy, min_correction_recall, max_false_corrections}` | the report's findings (a JSON list at `pointer`, default `/audit_lines`) answer the expected lines: line accuracy ≥ 0.9, correction recall ≥ 0.95 and a false-correction rate ≤ 0.05 by default (below) |
 
 `sql_rows` stays an exact, ordered comparison. Use it when an `ORDER BY` fixes the order and the values are
 integers or text. Use `sql_rows_unordered` for a query without a defined order, and `number_close` for anything
 computed in floating point (`0.1 + 0.2` is not `0.3`). A `pattern` in `number_close` uses its first group, or
 the whole match; `1,866.88` style thousands separators are accepted.
+`select` reads the number from a JSON file instead, wherever its key order puts it: `/key` segments, list
+indexes and `[field=value]` filters that keep the first list item whose field, as text, equals the value, e.g.
+`select: /requirements[id=MAJOR-ELEC]/deficit`. Nothing there, or something that isn't a number, fails.
+
+`json_lines` grades a report that lists findings line by line: each line is an object with `check_id`,
+`status` (PASS, FAIL, CORRECTED, FLAG, INFO), `attribute`, `processed` and, for a correction, `correction_type`.
+Each expected line is answered by the first unused report line with the same `check_id` whose `attribute`
+matches the expected `attribute` regex (case-insensitive; any attribute when left out). It is accurate when the
+status is the same, `processed` matches the expected `processed` regex (if given) and a correction carries the
+expected `correction_type`. Correction recall counts the expected CORRECTED lines answered by a CORRECTED line;
+the false-correction rate is the share of the report's CORRECTED lines that answer no expected correction.
+Extra PASS or INFO lines cost nothing. A missing file, a pointer that isn't a list, or invalid JSON fails.
+
+```yaml
+- id: audit_lines
+  kind: json_lines
+  weight: 0.15
+  path: audits/S1.json
+  lines:
+    expected:
+      - {check_id: DA-27, status: FAIL, attribute: MAJOR-ELEC}
+      - {check_id: DA-04, status: CORRECTED, processed: "2022", correction_type: CT-16}
+```
 
 ### Rubric checks (open-ended deliverables)
 

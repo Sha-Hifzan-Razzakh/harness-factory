@@ -23,10 +23,10 @@ PromptSources = dict[str, str]          # template ref ("system/default") -> tem
 def default_prompt_sources(root: Path | None = None) -> PromptSources:
     """Every .j2 under the prompts directory, keyed by ref. Missing templates are a validator finding, not a
     hashing error, so a ref with no file simply contributes nothing here."""
-    root = root or settings.PROMPTS
-    if not root.is_dir():
-        return {}
-    return {str(p.relative_to(root).with_suffix("")).replace("\\", "/"): p.read_text() for p in sorted(root.rglob("*.j2"))}
+    from harness_factory import addons
+    roots = [root] if root is not None else [settings.PROMPTS, *addons.prompts_dirs()]   # add-ons: ADR 0021
+    return {str(p.relative_to(r).with_suffix("")).replace("\\", "/"): p.read_text()
+            for r in roots if r.is_dir() for p in sorted(r.rglob("*.j2"))}
 
 Tier = Literal["T1", "T2", "T3", "T4"]
 SideEffectName = Literal["READ", "REVERSIBLE", "IRREVERSIBLE"]
@@ -365,7 +365,9 @@ def load_recipes(root: Path) -> dict[str, HarnessRecipe]:
     names the one dimension it varies). The hash is taken of the resolved recipe, base id included, so editing a
     base changes every recipe built on it."""
     raw: dict[str, dict] = {}
-    for p in sorted(root.rglob("*.yaml")):
+    from harness_factory import addons
+    roots = [root, *addons.recipes_dirs()] if root.resolve() == settings.RECIPES_DIR.resolve() else [root]
+    for p in [f for r in roots for f in sorted(r.rglob("*.yaml"))]:   # add-on recipes after the built-in ones
         data = yaml.safe_load(p.read_text())
         rid = data.get("id")
         if rid in raw:

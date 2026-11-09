@@ -15,6 +15,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from pydantic import BaseModel
 
+from harness_factory import addons
 from harness_factory.env.mcp.servers import MCPServerSpec
 
 # What a tool-server process may inherit from the factory's environment. Everything else (API keys above all)
@@ -118,7 +119,7 @@ class MCPClient:
             if self.launcher is not None:                   # the sandbox decides how the server process starts
                 cmd, args, extra = self.launcher(self.spec)
             else:
-                (cmd, args), extra = self.spec.command(), self.env
+                (cmd, args), extra = self.spec.command(), {**self.env, **addons.server_env(self.spec.module)}
             params = StdioServerParameters(command=cmd, args=args, env=process_env(extra))
             read, write = await self._stack.enter_async_context(stdio_client(params))
             self._session = await self._stack.enter_async_context(ClientSession(read, write))

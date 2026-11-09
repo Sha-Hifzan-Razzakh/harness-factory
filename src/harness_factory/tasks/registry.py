@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from harness_factory import settings
+from harness_factory import addons, settings
 from harness_factory.tasks.model import Split, Task, load_task
 
 
@@ -12,7 +12,8 @@ class TaskRegistry:
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or settings.TASKS_DIR
         self._tasks: dict[str, Task] = {}
-        for task_yaml in sorted(self.root.glob("*/task.yaml")):
+        roots = [self.root] if root is not None else [self.root, *addons.tasks_dirs()]   # add-ons: ADR 0021
+        for task_yaml in [t for r in roots for t in sorted(r.glob("*/task.yaml"))]:
             task = load_task(task_yaml.parent)
             if task.id in self._tasks:
                 raise ValueError(f"duplicate task id {task.id}")

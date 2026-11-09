@@ -280,14 +280,15 @@ def test_adding_code_and_git_moved_no_existing_identity(factory):
     def before_this_pr(t):                    # the task hash formula as it was: no `git`, no `ref`
         data = t.model_dump(mode="json", exclude={"status", "split", "tags"})
         data["env_seed"].pop("git")
-        for k in ("biz_state", "corpus", "server_state"):     # added by later PRs (#46, #72, #73), omitted when unset
+        for k in ("biz_state", "corpus", "server_state",      # added by later PRs (#46, #72, #73, #100),
+                  "reference"):                               # omitted when unset
             if data["env_seed"].get(k) is None:
                 data["env_seed"].pop(k, None)
         for c in data["oracle"]["checks"]:
             c.pop("ref")
             for k in ("sheet", "cell", "expected", "tolerance", "style",     # check fields from #47, unset
                       "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric",   # #48, #49
-                      "touches"):                                                          # and #69
+                      "touches", "lines", "select"):                         # #69, and #104
                 if c.get(k) is None:
                     c.pop(k, None)
         data["seed_hash"] = t.env_seed.data_hash(t.source_dir)
