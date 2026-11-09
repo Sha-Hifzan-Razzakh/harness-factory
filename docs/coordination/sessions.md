@@ -83,6 +83,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #59 | `feat/tool-call-emulation` | `…JZLSKyEhjaA4sxi9R` | Tool-call emulation with instructor | ready for review (CI green) | no |
 | #60 | `feat/langgraph-checkpointer` | `…JZLSKyEhjaA4sxi9R` | LangGraph checkpointer: pause and resume | ready for review (CI green) | no |
 | #61 | `feat/bench-file` | `…JZLSKyEhjaA4sxi9R` | `hfx bench` and recipe-vs-recipe report | ready for review (stacked on #37; CI green) | no |
+| #104 | `feat/json-lines-check` | `…LLwunk5SUBezW33oS5` | `json_lines` check kind and `number_close` `select`: line-by-line findings vs expected lines (accuracy, correction recall, false corrections) | ready for review (CI green) | no (new kind and optional `lines` field; existing task hashes stay) |
 | #62 | `feat/selector-pooled-cells` | `…JZLSKyEhjaA4sxi9R` | Selector on calibrated pooled cells | ready for review (stacked on #35; CI green) | no |
 | #63 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class | closed by GitHub after the branch was re-signed; continued in #85 | no |
 | #64 | `chore/storage-alembic` | `…JZLSKyEhjaA4sxi9R` | Alembic migrations, Postgres in CI | ready for review (CI green) | no |

@@ -1708,14 +1708,38 @@ Every task ships a `reference.py`. `hfx reference` must pass before the task is 
 | Kind | Fields | Passes when |
 |---|---|---|
 | `sql_rows_unordered` | `query`, `rows` | the query returns these rows in any order, duplicates counted (a multiset) |
-| `number_close` | `value`, `abs_tol` / `rel_tol`; the number from `query` (one SQL value), `path` (+ optional `pattern`), or the final answer (optional `pattern`) | \|actual − value\| ≤ max(`abs_tol`, `rel_tol` × max(\|actual\|, \|value\|)); neither tolerance set = `rel_tol` 1e-9. NULL, NaN, no rows, several values or text that isn't a number fail |
+| `number_close` | `value`, `abs_tol` / `rel_tol`; the number from `query` (one SQL value), `path` (+ optional `pattern`, or `select` into a JSON file), or the final answer (optional `pattern`) | \|actual − value\| ≤ max(`abs_tol`, `rel_tol` × max(\|actual\|, \|value\|)); neither tolerance set = `rel_tol` 1e-9. NULL, NaN, no rows, several values or text that isn't a number fail |
 | `json_schema` | `path`, `json_schema` (inline) | the file is JSON and validates against the schema (checked at load time) |
 | `output_exact` | `text`, `normalize: [whitespace, case]` | the final answer equals `text` after trimming both ends, and optionally collapsing whitespace and ignoring case |
+| `json_lines` | `path`, `lines: {expected, pointer, min_accuracy, min_correction_recall, max_false_corrections}` | the report's findings (a JSON list at `pointer`, default `/audit_lines`) answer the expected lines: line accuracy ≥ 0.9, correction recall ≥ 0.95 and a false-correction rate ≤ 0.05 by default (below) |
 
 `sql_rows` stays an exact, ordered comparison. Use it when an `ORDER BY` fixes the order and the values are
 integers or text. Use `sql_rows_unordered` for a query without a defined order, and `number_close` for anything
 computed in floating point (`0.1 + 0.2` is not `0.3`). A `pattern` in `number_close` uses its first group, or
 the whole match; `1,866.88` style thousands separators are accepted.
+`select` reads the number from a JSON file instead, wherever its key order puts it: `/key` segments, list
+indexes and `[field=value]` filters that keep the first list item whose field, as text, equals the value, e.g.
+`select: /requirements[id=MAJOR-ELEC]/deficit`. Nothing there, or something that isn't a number, fails.
+
+`json_lines` grades a report that lists findings line by line: each line is an object with `check_id`,
+`status` (PASS, FAIL, CORRECTED, FLAG, INFO), `attribute`, `processed` and, for a correction, `correction_type`.
+Each expected line is answered by the first unused report line with the same `check_id` whose `attribute`
+matches the expected `attribute` regex (case-insensitive; any attribute when left out). It is accurate when the
+status is the same, `processed` matches the expected `processed` regex (if given) and a correction carries the
+expected `correction_type`. Correction recall counts the expected CORRECTED lines answered by a CORRECTED line;
+the false-correction rate is the share of the report's CORRECTED lines that answer no expected correction.
+Extra PASS or INFO lines cost nothing. A missing file, a pointer that isn't a list, or invalid JSON fails.
+
+```yaml
+- id: audit_lines
+  kind: json_lines
+  weight: 0.15
+  path: audits/S1.json
+  lines:
+    expected:
+      - {check_id: DA-27, status: FAIL, attribute: MAJOR-ELEC}
+      - {check_id: DA-04, status: CORRECTED, processed: "2022", correction_type: CT-16}
+```
 
 ### Rubric checks (open-ended deliverables)
 
