@@ -56,3 +56,15 @@ The usual constraints hold. Nothing may change an existing task, recipe or envir
   is a new recipe hash and built-in recipes keep theirs.
 - Not covered yet: add-on skills, fault profiles and corpora, and add-on servers in Docker (vendoring
   add-on modules and libraries into a per-add-on image). They can come later without changing this format.
+
+## Addendum: add-on skills (#105)
+
+- An add-on can bring skills in `<add-on>/catalog/skills/<id>/SKILL.md`. `addons.skills_dirs()` lists them, and
+  `load_skills()` adds them after the built-in skills when it reads its default place. Everything that reads the
+  library picks them up: recipe validation and hashes, the upfront prompt, the skills installed for `skills.load`,
+  conformance fixtures and the authoring snapshot. A loader given another root sees no add-ons.
+- A skill id that repeats a built-in skill or another add-on's is refused, like a prompt ref: a skill that shadowed
+  another would change every recipe using it without saying so.
+- A recipe's hash already holds the text of each skill it names, so an add-on skill edit is a new recipe hash and
+  built-in recipes keep theirs.
+- Fault profiles and corpora in add-ons, and add-on servers in Docker, are still not covered.

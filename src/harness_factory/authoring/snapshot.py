@@ -47,7 +47,7 @@ def take() -> dict[str, Any]:
     from harness_factory.recipes.model import default_prompt_sources, load_recipes
     from harness_factory.recipes.validate import validate_recipe
     from harness_factory.shapes.base import ShapeRegistry
-    from harness_factory.skills.library import parse_skill
+    from harness_factory.skills.library import parse_skill, skill_files
     from harness_factory.tasks.registry import TaskRegistry
 
     root = settings.ROOT
@@ -75,15 +75,20 @@ def take() -> dict[str, Any]:
 
     # Skills, one file at a time so one bad header doesn't hide the others.
     skills = {}
-    for p in sorted(settings.SKILLS_DIR.glob("*/SKILL.md")) if settings.SKILLS_DIR.is_dir() else []:
+    try:
+        files = skill_files()                # the built-in skills, then the add-ons' (ADR 0021)
+    except ValueError as e:                  # AddonError: an add-on skill repeats an id
+        err("skill", "*", str(e))
+        files = sorted(settings.SKILLS_DIR.glob("*/SKILL.md")) if settings.SKILLS_DIR.is_dir() else []
+    for p in files:
         try:
             s = parse_skill(p.parent.name, p.read_text())
         except ValueError as e:
             err("skill", p.parent.name, str(e))
             continue
         skills[s.id] = s
-        out["skills"][s.id] = {"path": _rel(p, root), "name": s.name, "description": s.description,
-                               "hash": content_hash(s.text, 12)}
+        out["skills"][s.id] = {"path": _rel(p, root) if p.is_relative_to(root) else str(p), "name": s.name,
+                               "description": s.description, "hash": content_hash(s.text, 12)}
 
     # Tool servers: the env-hash part of each server's tools.
     declared = None

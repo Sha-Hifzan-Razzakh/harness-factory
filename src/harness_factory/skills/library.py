@@ -9,6 +9,9 @@ picks how they reach the model (`skills.loading`):
 
 A skill's full text is part of the recipe hash, like a prompt template's source: editing a skill changes every
 recipe that uses it.
+
+Catalog add-ons (ADR 0021) can bring more skills in `<add-on>/catalog/skills/<id>/SKILL.md`. They join the library
+when it is loaded from its default place; an id that repeats a built-in skill or another add-on's is refused.
 """
 
 from __future__ import annotations
@@ -42,10 +45,12 @@ def parse_skill(skill_id: str, text: str) -> Skill:
                  body=body.strip(), text=text)
 
 
+def skill_files(root: Path | None = None) -> list[Path]:
+    """Every SKILL.md the library reads: the built-in ones, then the add-ons'. An explicit root sees only itself."""
+    from harness_factory import addons
+    roots = [root] if root is not None else [settings.SKILLS_DIR, *addons.skills_dirs()]   # add-ons: ADR 0021
+    return [p for r in roots if r.is_dir() for p in sorted(r.glob("*/SKILL.md"))]
+
+
 def load_skills(root: Path | None = None) -> dict[str, Skill]:
-    root = root or settings.SKILLS_DIR
-    out: dict[str, Skill] = {}
-    if root.is_dir():
-        for p in sorted(root.glob("*/SKILL.md")):
-            out[p.parent.name] = parse_skill(p.parent.name, p.read_text())
-    return out
+    return {p.parent.name: parse_skill(p.parent.name, p.read_text()) for p in skill_files(root)}
