@@ -26,6 +26,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLJZLSKyEhjaA4sxi9R` | `session:core` | Shapes, measurement core, task batch 3, P2 (calibration, allocation), runners, framework fidelity |
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
+| `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -93,6 +94,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #84 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex (replaces #57) | ready for review (CI green) | no (unset recipes and existing env hashes unchanged) |
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
+| #101 | `feat/catalog-addons` | `…LLwunk5SUBezW33oS5` | Catalog add-ons through `HF_ADDONS` (tools, servers, libraries, tasks, recipes, conformance); read-only reference mount (ADR 0021) | ready for review (CI green) | no (unset: nothing changes; new optional seed field) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
@@ -118,6 +120,7 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | 0011 | `…JZLSKyEhjaA4sxi9R` | Allocation planner (in #36) |
 | 0016 | `…JZLSKyEhjaA4sxi9R` | Runner axis (in #53) |
 | 0017 | `…JZLSKyEhjaA4sxi9R` | Retrieval on LlamaIndex (in #84, was #57) |
+| 0021 | `…LLwunk5SUBezW33oS5` | Catalog add-ons and read-only reference data (in #101) |
 
 Handing a reserved PR to another session: `handoff.md` (protocol, starter prompt, one work package per PR).
 

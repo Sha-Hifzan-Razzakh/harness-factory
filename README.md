@@ -1040,6 +1040,48 @@ repository.
 uv run hfx smoke --recipe v2-web --models scripted/replay --strict
 ```
 
+## Catalog add-ons
+
+An add-on is a catalog folder that lives outside this repository (ADR 0021): a private catalog, or one versioned
+with another project. Name one or more in `HF_ADDONS` (separated by `:` on Linux and macOS, `;` on Windows), in the
+environment or `.env`. With it unset the factory sees only its own catalog.
+
+```
+<add-on>/addon.yaml               id, python_path, libraries, servers
+<add-on>/catalog/tools.yaml       more MCP servers (frozen with `hfx tools freeze`, into this file)
+<add-on>/catalog/tasks/<id>/      more tasks
+<add-on>/catalog/recipes/**.yaml  more recipes (`base:` may name a built-in recipe)
+<add-on>/catalog/conformance/     one fixture per add-on server (`hfx conformance --server <id>`)
+<add-on>/prompts/**.j2            more prompt templates, by ref as in prompts/ (e.g. stage/my_stage)
+```
+
+```yaml
+# addon.yaml
+id: my-addon
+python_path: [src]                  # where its server modules import from
+libraries:                          # what its servers may import beyond mcp and the standard library
+- {dist: some-lib, version: 1.2.3, imports: some_lib}
+- {dist: private-lib, version: 0.1.0, imports: private_lib, source: "git+https://...@<commit>"}
+servers:                            # server module -> its libraries
+  my_addon.server: [some-lib, private-lib]
+```
+
+- **An add-on only adds.** A server, task or recipe id, a prompt ref, a server module or a library pin that
+  clashes with the built-in catalog or another add-on is refused. Server modules can't live in `harness_factory`.
+- **Prompts.** Add-on templates are found after the built-in ones, by the same refs. A recipe's hash holds the
+  source of every template it uses, wherever it lives, so editing an add-on prompt is a new recipe hash.
+- **Libraries** follow ADR 0013: each is pinned to one version, joins `env_hash` for the servers that use it, and
+  is checked before a run. A library that isn't on PyPI is pinned by a git `source` at one commit; the installed
+  commit is checked too. Install them yourself as the add-on describes; the `docs` extra and the image hold only
+  the built-in servers' libraries.
+- **Sandboxes.** Add-on servers run in the local sandbox, with their `python_path` on `PYTHONPATH`. The Docker
+  sandbox refuses them, since its image carries only the built-in servers.
+- **Reference data.** A task can mount one read-only file for its servers with `env_seed.reference: <file>`. Each
+  reset copies it into the state folder (never the workspace) as `reference/reference.json`; `HF_REFERENCE` names
+  it, and Docker mounts the folder `:ro`. The file is part of the task hash; tasks without one keep theirs.
+- **Identity** is the same as for built-in content: tool specs, pins and task contents go into the same hashes,
+  wherever the files live. Campaign results don't say which add-on a task came from, only its id and hashes.
+
 ## Runners
 
 A runner is what executes a recipe. Until now that was always the factory's own graphs (`native`). A recipe can name

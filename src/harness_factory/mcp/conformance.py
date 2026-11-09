@@ -117,7 +117,11 @@ class FixtureError(Exception):
 
 
 def fixture_path(server_id: str, fixtures_dir: Path = FIXTURES_DIR) -> Path:
-    return fixtures_dir / f"{server_id}.yaml"
+    path = fixtures_dir / f"{server_id}.yaml"
+    if fixtures_dir == FIXTURES_DIR and not path.is_file():         # an add-on server's fixture (ADR 0021)
+        from harness_factory import addons
+        path = next((p for d in addons.conformance_dirs() if (p := d / f"{server_id}.yaml").is_file()), path)
+    return path
 
 
 def load_fixture(server_id: str, fixtures_dir: Path = FIXTURES_DIR) -> tuple[Fixture, Path]:
@@ -136,8 +140,10 @@ def load_fixture(server_id: str, fixtures_dir: Path = FIXTURES_DIR) -> tuple[Fix
 
 def stale_fixtures(declared: ToolCatalogFile, fixtures_dir: Path = FIXTURES_DIR) -> list[Path]:
     """Fixtures for servers tools.yaml doesn't declare (renamed or removed): stale, so the suite fails on them."""
+    from harness_factory import addons
     ids = {s.id for s in declared.servers}
-    return sorted(p for p in fixtures_dir.glob("*.yaml") if p.stem not in ids) if fixtures_dir.is_dir() else []
+    dirs = [fixtures_dir, *(addons.conformance_dirs() if fixtures_dir == FIXTURES_DIR else [])]
+    return sorted(p for d in dirs if d.is_dir() for p in d.glob("*.yaml") if p.stem not in ids)
 
 
 def coverage_problems(spec: MCPServerSpec, fx: Fixture) -> list[str]:
