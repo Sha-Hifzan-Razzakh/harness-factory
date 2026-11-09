@@ -26,6 +26,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLJZLSKyEhjaA4sxi9R` | `session:core` | Shapes, measurement core, task batch 3, P2 (calibration, allocation), runners, framework fidelity |
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
+| `session_01BgTbLLwunk5SUBezW33oS5` | `session:degree` | DegreeAudit in the lab (HF-1 … HF-6): audit server, degree recipes, tasks da-01…da-19, skills, campaigns, promotion bundle |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -68,7 +69,6 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #79 | `feat/task-profiler` | `…KhAFMPUEPRU3mK2t2` | Task profiler: 10-dimension profiles, rules + LLM profiler, agreement (PRF-01, 03-05) | draft, reserved (wave 6) | no (profiles are labels) |
 | #80 | `feat/recipe-generator` | `…KhAFMPUEPRU3mK2t2` | Recipe generator and logged hard-rule pruning (RCP-04, RUN-02 campaign) | draft, reserved (wave 6) | new recipes only |
 | #81 | `feat/self-metrics` | `…KhAFMPUEPRU3mK2t2` | Self-metrics and compressed traces with retention (NFR-08, NFR-09) | draft, reserved (wave 6) | no |
-=======
 | #34 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3, written by an independent author | closed by GitHub after the branch was re-signed; continued in #82 | yes (new tasks and seeds) |
 | #35 | `feat/provider-calibration` | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (P2) | ready for review | no (two nullable run columns, one table) |
 | #36 | `feat/allocation-planner` | `…JZLSKyEhjaA4sxi9R` | Allocation planner (P2) | ready for review (stacked on #35; CI green) | no |
@@ -93,6 +93,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #84 | `feat/retrieval-llamaindex` | `…JZLSKyEhjaA4sxi9R` | Retrieval dimension on LlamaIndex (replaces #57) | ready for review (CI green) | no (unset recipes and existing env hashes unchanged) |
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
+| #100 | `feat/degree-audit-server` | `…LLwunk5SUBezW33oS5` | HF-1: `audit` MCP server over degree_audit_core 0.1.0, reference mount, conformance (ADR 0021) | draft | new server only |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
@@ -113,11 +114,11 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | 0018 | `…KhAFMPUEPRU3mK2t2` | Recorded corpora and their versioning (in #72) |
 | 0019 | `…KhAFMPUEPRU3mK2t2` | Approval gate and scripted approver (in #75) |
 | 0020 | `…KhAFMPUEPRU3mK2t2` | Memory stores and the write policy (in #78) |
-=======
 | 0010 | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (in #35) |
 | 0011 | `…JZLSKyEhjaA4sxi9R` | Allocation planner (in #36) |
 | 0016 | `…JZLSKyEhjaA4sxi9R` | Runner axis (in #53) |
 | 0017 | `…JZLSKyEhjaA4sxi9R` | Retrieval on LlamaIndex (in #84, was #57) |
+| 0021 | `…LLwunk5SUBezW33oS5` | Degree audit server: pinned core and read-only reference data (in #100) |
 
 Handing a reserved PR to another session: `handoff.md` (protocol, starter prompt, one work package per PR).
 
