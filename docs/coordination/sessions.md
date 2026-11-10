@@ -28,7 +28,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
 | `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 | `session_01BgTbLKg8F6MXLBFVeupkLx` | `session:addon-skills` | Add-on skills: skills in a catalog add-on |
-| `session_01BgTbLM73ireRFcS43br5Ny` | `session:triage` | Review of the DegreeAudit lab runs (9–10 Nov); reserves the fixes it found for the sessions that own that code (#108–#114) |
+| `session_01BgTbLM73ireRFcS43br5Ny` | `session:triage` | Review of the DegreeAudit lab runs (9–10 Nov); reserves the fixes it found for the sessions that own that code (#108–#114, #116–#117) |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -110,6 +110,8 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #113 | `feat/projection-fallbacks` | `…JZLSKyEhjaA4sxi9R` | Projection: realistic estimates without history (lab E2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
 | #114 | `feat/bench-progress-signals` | `…JZLSKyEhjaA4sxi9R` | Bench report: progress signals next to E, optional (lab C2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
 | #115 | `chore/ledger-lab-fixes` | `…M73ireRFcS43br5Ny` | These ledger rows | open | no |
+| #116 | `feat/phoenix-readable-traces` | `…JZLSKyEhjaA4sxi9R` | Phoenix-readable traces: OpenInference input/output, chat messages and metadata on run, model and tool spans; `HF_TRACE_MESSAGES`, optional `HF_TRACE_MCP_SPANS` | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (observability only) |
+| #117 | `feat/trace-turn-spans` | `…JZLSKyEhjaA4sxi9R` | Turn spans (CHAIN) grouping each model response with its tool calls; stacked on #116 | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (new span kind; readers audited, numbers unchanged) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
