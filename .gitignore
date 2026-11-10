@@ -7,3 +7,5 @@ var/
 .env
 dist/
 *.egg-info/
+web/node_modules/
+src/harness_factory/web_dist/

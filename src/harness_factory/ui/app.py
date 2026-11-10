@@ -13,6 +13,7 @@ import streamlit as st
 import yaml
 
 from harness_factory.ui.client import Api, ApiError
+from harness_factory.ui.guided import pages as guided_pages
 
 KIND_LABELS = {"prompt": "Prompts", "skill": "Skills", "recipe": "Recipes", "server": "Tool servers",
                "fault": "Fault profiles"}
@@ -503,8 +504,10 @@ def page_results() -> None:
                         st.code(json.dumps(call, indent=1, default=str), language="json")
 
 
-PAGES = {"Catalog": page_catalog, "New experiment": page_experiment, "Add": page_add, "Run": page_run,
-         "Results": page_results}
+ADVANCED = {"Catalog": page_catalog, "New experiment": page_experiment, "Add": page_add, "Run": page_run,
+            "Results": page_results}
+GUIDED = guided_pages(api, fetch, campaigns_panel)        # Playbook, What we can test with, Cards, Build
+PAGES = {**GUIDED, **ADVANCED}
 
 
 def main() -> None:
@@ -516,7 +519,12 @@ def main() -> None:
         st.error(f"Can't reach the API at {api().base_url}: {problem}")
         st.code("hfx serve        # in another terminal, or: hfx ui --serve", language="bash")
         st.stop()
-    page = st.sidebar.radio("Page", list(PAGES), key="page")
+    page = st.sidebar.radio("Page", list(PAGES), key="page",
+                            captions=["Start here: what it is, playbooks, glossary",
+                                      "Every task, harness, model, tool, skill, prompt, fault",
+                                      "Spec cards; saved final spec cards",
+                                      "Task → harness → model → spec cards → run → final card"]
+                            + ["Advanced"] * len(ADVANCED))
     if st.sidebar.button("Refresh"):
         refresh()
     issues = fetch("/api/check")

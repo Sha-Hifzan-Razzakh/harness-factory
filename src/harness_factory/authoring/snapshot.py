@@ -119,6 +119,14 @@ def take() -> dict[str, Any]:
         providers = load_provider_catalog(settings.PROVIDERS_FILE)
     except Exception as e:  # noqa: BLE001  (a finding, not a crash)
         err("providers", "providers.yaml", str(e))
+    out["models"] = {}
+    for p in providers.providers if providers is not None else []:
+        for m in p.models:
+            out["models"][f"{p.id}/{m.canonical}"] = {
+                "provider": p.id, "canonical": m.canonical, "provider_model_id": m.provider_model_id,
+                "kind": p.kind, "hash": content_hash(m.model_dump(mode="json"), 12),
+                "summary": f"{m.provider_model_id} · ctx {m.caps.context_len:,} · ${m.price_in:g}/${m.price_out:g}"
+                           f" per M{' · free' if m.free else ''}"}
 
     # Recipes: raw files (paths, bases) and the resolved, validated recipes.
     raw: dict[str, dict[str, Any]] = {}
@@ -157,7 +165,10 @@ def take() -> dict[str, Any]:
 
     try:
         tasks = TaskRegistry().all(include_held_out=True)
-        out["tasks"] = {t.id: {"allowed_tools": list(t.allowed_tools), "split": t.split.value} for t in tasks}
+        out["tasks"] = {t.id: {"allowed_tools": list(t.allowed_tools), "split": t.split.value,
+                               "hash": t.content_hash(), "version": t.version, "key": t.key(),
+                               "path": _rel(t.source_dir, root) if t.source_dir else None,
+                               "instruction": t.instruction[:200]} for t in tasks}
         graders = default_pipeline()
         for t in tasks:                      # same rule as `hfx validate` and plan(): no unknown grader ids
             unknown = graders.unknown(t)
@@ -172,6 +183,11 @@ def take() -> dict[str, Any]:
                     err("task", t.id, stale)
     except Exception as e:  # noqa: BLE001  (a finding, not a crash)
         err("task", "*", str(e))
+
+    judge = settings.CATALOG / "judge" / "judge.yaml"
+    if judge.is_file():
+        data = yaml.safe_load(judge.read_text()) or {}
+        out["judge"] = {"provider": data.get("provider"), "model": data.get("model")}
 
     sel = settings.CATALOG / "selector.yaml"
     if sel.is_file():

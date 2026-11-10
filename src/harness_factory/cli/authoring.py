@@ -28,6 +28,7 @@ catalog_app = typer.Typer(no_args_is_help=True, help="List, show, check and remo
 DRY = typer.Option(False, "--dry-run", help="check and show the impact; write nothing")
 YES = typer.Option(False, "--yes", "-y", help="confirm a change to an existing recipe hash or tool environment")
 UPDATE = typer.Option(False, "--update", help="replace an existing item instead of creating a new one")
+WHY = typer.Option("", "--why", "-m", help="why: recorded with the new version in the catalog history")
 
 
 def register(app: typer.Typer) -> None:
@@ -37,6 +38,8 @@ def register(app: typer.Typer) -> None:
     app.add_typer(catalog_app, name="catalog")
     app.command("serve")(serve)
     app.command("ui")(ui)
+    from harness_factory.cli.history import register as register_history  # history, diff, restore, model, ...
+    register_history(new_app, catalog_app)
 
 
 def _service() -> AuthoringService:
@@ -108,14 +111,16 @@ def show_result(r: ChangeResult) -> None:
                       f"new runs start new cells)")
     if r.status == "needs_confirm":
         console.print("  [yellow]this changes existing identities: run again with --yes to write it")
+    if r.status == "applied" and r.version:
+        console.print(f"  [green]recorded as v{r.version}[/] of {r.kind} {r.id} (hfx catalog history {r.kind} {r.id})")
     if r.status == "applied" and r.files:
         console.print("  [dim]files are written, not committed: review with git diff[/]")
 
 
-def _run(kind: str, payload: dict[str, Any], update: bool, dry_run: bool, yes: bool) -> None:
+def _run(kind: str, payload: dict[str, Any], update: bool, dry_run: bool, yes: bool, why: str = "") -> None:
     svc = _service()
     try:
-        r = (svc.update if update else svc.create)(kind, payload, dry_run=dry_run, confirm=yes)
+        r = (svc.update if update else svc.create)(kind, payload, dry_run=dry_run, confirm=yes, note=why)
     except AuthoringError as e:
         _fail(str(e))
     show_result(r)
@@ -137,10 +142,10 @@ def _edit(template: str, what: str) -> str:
 def new_prompt(ref: str = typer.Argument(..., help="<layer>/<name>, e.g. system/terse"),
                file: str | None = typer.Option(None, "--file", "-f", help="template file ('-' = stdin)"),
                text: str | None = typer.Option(None, "--text", help="template text"),
-               update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES) -> None:
+               update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES, why: str = WHY) -> None:
     """A Jinja2 prompt template. System prompts get `tools` and `recipe`; task prompts get `task`."""
     body = text or _read(file) or _edit("You are an automation agent...\n", "prompt text")
-    _run("prompt", {"ref": ref, "text": body}, update, dry_run, yes)
+    _run("prompt", {"ref": ref, "text": body}, update, dry_run, yes, why)
 
 
 @new_app.command("skill")
@@ -148,12 +153,12 @@ def new_skill(skill_id: str = typer.Argument(..., metavar="ID"),
               name: str | None = typer.Option(None, "--name"),
               description: str | None = typer.Option(None, "--description", help="one line: when it applies"),
               body_file: str | None = typer.Option(None, "--body-file", "-f", help="the how-to ('-' = stdin)"),
-              update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES) -> None:
+              update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES, why: str = WHY) -> None:
     """A general how-to a recipe can give the model (never a task's answer)."""
     name = name or typer.prompt("Name (a title for the how-to)")
     description = description or typer.prompt("Description (one line: when it applies)")
     body = _read(body_file) or _edit("1. ...\n2. ...\n", "skill body")
-    _run("skill", {"id": skill_id, "name": name, "description": description, "body": body}, update, dry_run, yes)
+    _run("skill", {"id": skill_id, "name": name, "description": description, "body": body}, update, dry_run, yes, why)
 
 
 @new_app.command("recipe")
@@ -162,12 +167,12 @@ def new_recipe(recipe_id: str = typer.Argument(..., metavar="ID"),
                sets: list[str] = typer.Option([], "--set", help="field.path=value (YAML value); repeatable"),  # noqa: B008
                file: str | None = typer.Option(None, "--file", "-f", help="YAML mapping of the fields to set"),
                note: str = typer.Option("", "--note", help="what this recipe changes and why (file comment)"),
-               update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES) -> None:
+               update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES, why: str = WHY) -> None:
     """A recipe. With a base it is a matrix recipe: the base plus the one dimension you change, e.g.
     `hfx new recipe v2-terse --set prompts.system=system/terse`."""
     fields = _set(_spec(file) if file else {}, sets)
     _run("recipe", {"id": recipe_id, "base": None if base.lower() == "none" else base, "fields": fields,
-                    "note": note}, update, dry_run, yes)
+                    "note": note}, update, dry_run, yes, why or note)
 
 
 @new_app.command("tool")
@@ -180,7 +185,7 @@ def new_tool(server_id: str | None = typer.Argument(None, metavar="SERVER", help
              description: str = typer.Option("", "--description"),
              params: list[str] = typer.Option([], "--param",  # noqa: B008
                                        help="name:type for the stub (str|int|float|bool)"),
-             update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES) -> None:
+             update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES, why: str = WHY) -> None:
     """A local tool server (runs in the offline sandbox; imports only mcp and the standard library).
     Quick form: `hfx new tool calc --tool add --param a:float --param b:float` writes a stub to fill in."""
     if spec:
@@ -202,23 +207,23 @@ def new_tool(server_id: str | None = typer.Argument(None, metavar="SERVER", help
     if code:
         payload["code"] = _read(code)
     payload.setdefault("transport", "stdio")
-    _run("server", payload, update, dry_run, yes)
+    _run("server", payload, update, dry_run, yes, why)
 
 
 @new_app.command("remote-tool")
 def new_remote_tool(spec: str = typer.Option(..., "--spec", help="YAML: id, url, version, auth_env, tools[]"),
-                    update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES) -> None:
+                    update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES, why: str = WHY) -> None:
     """An existing MCP server reached over streamable HTTP. auth_env names the env var with the token."""
     payload = _spec(spec)
     payload["transport"] = "streamable_http"
-    _run("server", payload, update, dry_run, yes)
+    _run("server", payload, update, dry_run, yes, why)
 
 
 @new_app.command("fault")
 def new_fault(spec: str = typer.Option(..., "--spec", help="YAML: id, description, rules[]"),
-              update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES) -> None:
+              update: bool = UPDATE, dry_run: bool = DRY, yes: bool = YES, why: str = WHY) -> None:
     """A fault profile: tools that fail on purpose, to measure robustness."""
-    _run("fault", _spec(spec), update, dry_run, yes)
+    _run("fault", _spec(spec), update, dry_run, yes, why)
 
 
 # ---- hfx catalog -----------------------------------------------------------------------------------------------
@@ -270,10 +275,10 @@ def catalog_check() -> None:
 
 @catalog_app.command("rm")
 def catalog_rm(kind: str, item_id: str = typer.Argument(..., metavar="ID"), dry_run: bool = DRY,
-               yes: bool = YES) -> None:
-    """Remove an item nothing uses any more."""
+               yes: bool = YES, why: str = WHY) -> None:
+    """Archive an item nothing uses any more: it leaves the catalog, its history stays (`hfx catalog restore`)."""
     try:
-        r = _service().delete(kind, item_id, dry_run=dry_run, confirm=yes)
+        r = _service().delete(kind, item_id, dry_run=dry_run, confirm=yes, note=why)
     except AuthoringError as e:
         _fail(str(e))
     show_result(r)

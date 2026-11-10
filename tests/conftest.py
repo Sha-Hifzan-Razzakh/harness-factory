@@ -47,6 +47,8 @@ def own_var_files(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "QUOTA_STATE", var / "quota_ledger.json")
     monkeypatch.setattr(settings, "RESULTS_URL", f"sqlite:///{var / 'results.db'}")
     monkeypatch.setattr(settings, "CORPORA_DIR", var / "corpora")       # compiled web corpora (ADR 0018)
+    monkeypatch.setattr(settings, "HISTORY_DIR", var / "catalog_history")   # catalog versions (authoring)
+    monkeypatch.setattr(settings, "EXPERIMENTS_DIR", var / "experiments")   # saved experiments (API/UI)
     return var
 
 

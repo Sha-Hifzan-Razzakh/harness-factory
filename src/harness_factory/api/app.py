@@ -159,30 +159,35 @@ def create_app(service: AuthoringService | None = None, token: str | None = None
     @app.post("/api/catalog/{kind}", dependencies=guarded, response_model=ChangeResult,
               responses={409: {"model": ChangeResult}, 422: {"model": ChangeResult}})
     def create_item(kind: str, payload: dict[str, Any] = Body(...), dry_run: bool = False,  # noqa: B008
-                    confirm: bool = False) -> JSONResponse:
+                    confirm: bool = False, note: str = "", author: str | None = None) -> JSONResponse:
         try:
-            return _change_response(state.service.create(kind, payload, dry_run=dry_run, confirm=confirm), True)
+            return _change_response(state.service.create(kind, payload, dry_run=dry_run, confirm=confirm,
+                                                         note=note, author=author), True)
         except (AuthoringError, LockTimeout) as e:
             raise _authoring_error(e) from e
 
     @app.put("/api/catalog/{kind}/{item_id:path}", dependencies=guarded, response_model=ChangeResult,
              responses={409: {"model": ChangeResult}, 422: {"model": ChangeResult}})
     def update_item(kind: str, item_id: str, payload: dict[str, Any] = Body(...),  # noqa: B008
-                    dry_run: bool = False, confirm: bool = False) -> JSONResponse:
+                    dry_run: bool = False, confirm: bool = False, note: str = "",
+                    author: str | None = None) -> JSONResponse:
         key = "ref" if kind.rstrip("s") == "prompt" else "id"
         if payload.get(key, item_id) != item_id:
             raise HTTPException(status_code=400, detail=f"payload {key} {payload.get(key)!r} is not {item_id!r}")
         try:
             return _change_response(state.service.update(kind, {**payload, key: item_id}, dry_run=dry_run,
-                                                         confirm=confirm))
+                                                         confirm=confirm, note=note, author=author))
         except (AuthoringError, LockTimeout) as e:
             raise _authoring_error(e) from e
 
     @app.delete("/api/catalog/{kind}/{item_id:path}", dependencies=guarded, response_model=ChangeResult,
                 responses={409: {"model": ChangeResult}, 422: {"model": ChangeResult}})
-    def delete_item(kind: str, item_id: str, dry_run: bool = False, confirm: bool = False) -> JSONResponse:
+    def delete_item(kind: str, item_id: str, dry_run: bool = False, confirm: bool = False, note: str = "",
+                    author: str | None = None) -> JSONResponse:
+        """Archives the item (its history stays; POST /api/history/.../restore brings it back)."""
         try:
-            return _change_response(state.service.delete(kind, item_id, dry_run=dry_run, confirm=confirm))
+            return _change_response(state.service.delete(kind, item_id, dry_run=dry_run, confirm=confirm,
+                                                         note=note, author=author))
         except (AuthoringError, LockTimeout) as e:
             raise _authoring_error(e) from e
 
@@ -320,6 +325,17 @@ def create_app(service: AuthoringService | None = None, token: str | None = None
         if not p.is_relative_to(state.var_dir) or not p.is_file():
             raise HTTPException(status_code=404, detail=f"transcript of run {run_id} is not readable here")
         return json.loads(p.read_text())
+
+    from harness_factory.api.cards import add_routes as _card_routes  # cards, options (Playbook/Build pages)
+    _card_routes(app, state, guarded)
+    from harness_factory.api.history import (
+        add_routes as _history_routes,  # versions, diffs, restore, activity
+    )
+    _history_routes(app, state, guarded)
+    from harness_factory.api.experiments import add_routes as _experiment_routes  # experiments, dashboard
+    _experiment_routes(app, state, guarded)
+    from harness_factory.api.web import mount as _mount_web  # the React workspace at /app, when built
+    _mount_web(app)
 
     return app
 

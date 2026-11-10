@@ -1,0 +1,3 @@
+# Run inside Linux: keep LF even on a Windows checkout with core.autocrlf=true.
+*.sh text eol=lf
+Dockerfile text eol=lf

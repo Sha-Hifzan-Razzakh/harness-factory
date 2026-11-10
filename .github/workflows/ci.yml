@@ -89,20 +89,42 @@ jobs:
       - name: Reference solutions pass their oracles
         run: uv run --no-sync hfx reference
 
+  # The React workspace (web/, ADR 0022): type-check and build exactly as `hfx web --build` does.
+  web:
+    name: web workspace (typecheck + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install (locked)
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check and build
+        working-directory: web
+        run: npm run build
+
   test:
     name: test (py${{ matrix.python }})
     if: always()
-    needs: [tests, catalog]
+    needs: [tests, catalog, web]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
       matrix:
         python: ["3.12", "3.13"]
     steps:
-      - name: Every test shard and the catalog checks passed
+      - name: Every test shard, the catalog checks and the web build passed
         run: |
-          echo "tests: ${{ needs.tests.result }}   catalog: ${{ needs.catalog.result }}"
-          test "${{ needs.tests.result }}" = success && test "${{ needs.catalog.result }}" = success
+          echo "tests: ${{ needs.tests.result }}   catalog: ${{ needs.catalog.result }}   web: ${{ needs.web.result }}"
+          test "${{ needs.tests.result }}" = success && test "${{ needs.catalog.result }}" = success && test "${{ needs.web.result }}" = success
 
   # Offline gates: every shape and matrix recipe solves the visible tasks with the scripted model, in parallel
   # parts. The recipe lists come from the catalog (scripts/ci/recipes.py, a group and optionally a part i/n): a new
