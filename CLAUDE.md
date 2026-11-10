@@ -111,6 +111,12 @@ The gates' recipe lists are derived from the catalog (`scripts/ci/recipes.py`: s
 runners; `tests/test_ci_recipe_groups.py` checks every recipe is in one), so adding a recipe never edits `ci.yml`.
 Shapes, planned matrix recipes and framework runners run without `long` tasks.
 
+Slow work runs in parallel jobs: the suite in three shards per Python (`HF_TEST_SHARD=i/n`, `tests/conftest.py`:
+round-robin over the collected tests), the gates and the Docker gate in parts (`recipes.py <group> i/n` splits a
+group). The checks the main ruleset requires keep their names as summary jobs (`test (py3.12)`, `offline gates`,
+...) that run with `if: always()` and fail unless every part passed: a skipped required check counts as passing.
+A new CI step goes into a part, never into a summary job; renaming a summary job means updating the ruleset.
+
 ## Git
 
 Branch from `main` (`feat/…`, `fix/…`, `ci/…`), one concern per PR, CI green before merge.
