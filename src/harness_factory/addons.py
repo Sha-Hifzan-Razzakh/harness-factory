@@ -8,6 +8,7 @@ separately versioned catalog needs, in the same layout as `catalog/`:
     <add-on>/catalog/tasks/<id>/      more tasks
     <add-on>/catalog/recipes/**.yaml  more recipes (they may extend built-in ones with `base:`)
     <add-on>/catalog/conformance/     a conformance fixture per add-on server
+    <add-on>/catalog/skills/<id>/     more skills (SKILL.md), by id like catalog/skills/
     <add-on>/prompts/**.j2            more prompt templates (system, task, stage...), by ref like prompts/
 
 `addon.yaml`:
@@ -22,8 +23,8 @@ separately versioned catalog needs, in the same layout as `catalog/`:
 
 Nothing in the repository depends on an add-on, and with `HF_ADDONS` unset the factory sees exactly its own
 catalog. An add-on adds; it never replaces: a server, task or recipe id, a module or a library that clashes with
-the built-in catalog or another add-on is refused, and so is a prompt ref the built-in prompts or another add-on
-already have. Add-on servers run in the local sandbox; the Docker sandbox
+the built-in catalog or another add-on is refused, and so is a prompt ref or a skill id the built-in catalog or
+another add-on already has. Add-on servers run in the local sandbox; the Docker sandbox
 image carries only the built-in servers and refuses them. Their identity works as for built-in ones: tool specs,
 pinned libraries and task contents go into the same hashes, wherever the files live.
 """
@@ -88,6 +89,10 @@ class Addon(BaseModel):
     @property
     def conformance_dir(self) -> Path:
         return self.catalog / "conformance"
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.catalog / "skills"
 
     @property
     def prompts_dir(self) -> Path:
@@ -173,6 +178,25 @@ def prompts_dirs() -> list[Path]:
             raise AddonError(f"{d}: prompt refs already exist: {', '.join(clash)}")
         seen |= refs
     return dirs
+
+
+def skills_dirs() -> list[Path]:
+    """The active add-ons' skill folders, after checking that no skill id repeats one the built-in skills or an
+    earlier add-on already have (a skill that shadowed another would change every recipe using it)."""
+    from harness_factory import settings
+    dirs = [a.skills_dir for a in active() if a.skills_dir.is_dir()]
+    seen = _skill_ids(settings.SKILLS_DIR)
+    for d in dirs:
+        ids = _skill_ids(d)
+        clash = sorted(ids & seen)
+        if clash:
+            raise AddonError(f"{d}: skill ids already exist: {', '.join(clash)}")
+        seen |= ids
+    return dirs
+
+
+def _skill_ids(root: Path) -> set[str]:
+    return {p.parent.name for p in root.glob("*/SKILL.md")} if root.is_dir() else set()
 
 
 def _refs(root: Path) -> set[str]:

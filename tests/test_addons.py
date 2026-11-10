@@ -264,6 +264,115 @@ def test_an_addon_prompt_cant_shadow_a_builtin_one(toy):
         PromptRegistry()
 
 
+# ------------------------------------------------------------------ skills
+
+SKILL = "---\nname: Toy lookups\ndescription: How to look a value up in the reference data.\n---\n" \
+        "1. Call lookup with the exact key.\n2. Report the value as it is.\n"
+
+
+def add_skill(root: Path, skill_id: str = "toy-lookups", text: str = SKILL) -> Path:
+    d = root / "catalog" / "skills" / skill_id
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(text)
+    return d / "SKILL.md"
+
+
+def add_skill_recipe(root: Path, loading: str = "upfront") -> None:
+    data = {"id": f"v2-toy-skills-{loading.replace('_', '-')}", "version": 1, "base": "v2-toy",
+            "skills": {"skill_ids": ["toy-lookups"], "loading": loading}}
+    if loading == "on_demand":
+        data["tools"] = {"tool_ids": ["toy.*", "skills.*"], "mcp_servers": ["toy", "skills"]}
+    (root / "catalog" / "recipes" / f"toy_skills_{loading}.yaml").write_text(yaml.safe_dump(data))
+
+
+def test_an_addon_skill_joins_the_library(toy):
+    from harness_factory.skills.library import load_skills
+    add_skill(toy)
+    lib = load_skills()
+    assert lib["toy-lookups"].name == "Toy lookups" and "sql-analysis" in lib            # add-on and built-in
+    assert "toy-lookups" not in load_skills(settings.SKILLS_DIR)                         # an explicit root: built-in only
+
+
+def test_without_addons_the_library_is_only_the_repo(toy, monkeypatch):
+    from harness_factory.skills.library import load_skills
+    add_skill(toy)
+    monkeypatch.delenv(addons.ENV)
+    addons._cached.cache_clear()
+    assert "toy-lookups" not in load_skills()
+
+
+def test_a_recipe_using_an_addon_skill_validates_and_hashes_its_text(toy):
+    from harness_factory.recipes.validate import validate_recipe
+    skill = add_skill(toy)
+    add_skill_recipe(toy)
+    recipe = load_recipes(settings.RECIPES_DIR)["v2-toy-skills-upfront"]
+    issues = validate_recipe(recipe, load_tool_catalog(settings.TOOLS_FILE))
+    assert not [i for i in issues if i.rule.startswith("skill")]                       # (the toy isn't frozen)
+    before = recipe.content_hash()
+    skill.write_text(SKILL.replace("exact key", "key as given"))
+    assert recipe.content_hash() != before                                               # its text is identity
+
+
+def test_addon_skills_leave_builtin_recipe_hashes_alone(toy, monkeypatch):
+    add_skill(toy)
+    add_skill_recipe(toy)
+    mine = {"v2-toy", "v2-toy-skills-upfront"}
+    with_addon = {k: r.content_hash() for k, r in load_recipes(settings.RECIPES_DIR).items() if k not in mine}
+    monkeypatch.delenv(addons.ENV)
+    addons._cached.cache_clear()
+    assert {k: r.content_hash() for k, r in load_recipes(settings.RECIPES_DIR).items()} == with_addon
+
+
+def test_an_addon_skill_reaches_the_model_upfront(toy):
+    from harness_factory.substrate.prompts import PromptAssembler
+    add_skill(toy)
+    add_skill_recipe(toy)
+    recipe = load_recipes(settings.RECIPES_DIR)["v2-toy-skills-upfront"]
+    system = PromptAssembler().assemble(recipe, load_task(toy / "catalog" / "tasks" / "toy-01"), ["toy__lookup"])[0]
+    assert "1. Call lookup with the exact key." in system["content"]
+
+
+def test_an_addon_skill_is_installed_for_on_demand_loading(toy):
+    from harness_factory.provision.provisioner import install_skills
+    add_skill(toy)
+    add_skill_recipe(toy, "on_demand")
+    recipe = load_recipes(settings.RECIPES_DIR)["v2-toy-skills-on-demand"]
+    with LocalSandbox("addon-skills") as sb:
+        install_skills(sb, recipe)
+        assert (sb.skills_dir / "toy-lookups" / "SKILL.md").read_text() == SKILL
+
+
+def test_an_addon_skill_cant_shadow_a_builtin_one(toy):
+    from harness_factory.skills.library import load_skills
+    add_skill(toy, "sql-analysis", SKILL)
+    with pytest.raises(addons.AddonError, match="skill ids already exist: sql-analysis"):
+        load_skills()
+
+
+def test_two_addons_cant_share_a_skill_id(tmp_path, use):
+    from harness_factory.skills.library import load_skills
+    a = make_addon(tmp_path / "a", addon_id="addon-a", servers={}, tools=[])
+    b = make_addon(tmp_path / "b", addon_id="addon-b", servers={}, tools=[])
+    for root in (a, b):
+        (root / "catalog" / "tasks" / "toy-01" / "task.yaml").unlink()
+        (root / "catalog" / "recipes" / "toy.yaml").unlink()
+        add_skill(root)
+    use(a, b)
+    with pytest.raises(addons.AddonError, match="skill ids already exist: toy-lookups"):
+        load_skills()
+
+
+def test_the_snapshot_sees_addon_skills_with_the_factorys_hashes(toy):
+    from harness_factory.authoring.snapshot import take
+    skill = add_skill(toy)
+    add_skill_recipe(toy)
+    snap = take()
+    assert snap["skills"]["toy-lookups"]["path"] == str(skill)
+    recipe = load_recipes(settings.RECIPES_DIR)["v2-toy-skills-upfront"]
+    assert snap["recipes"]["v2-toy-skills-upfront"]["hash"] == recipe.content_hash()
+    assert not [e for e in snap["errors"] if e["kind"] == "skill"]
+
+
 # ------------------------------------------------------------------ libraries
 
 GIT = "git+https://example.invalid/lib.git@" + "a" * 40

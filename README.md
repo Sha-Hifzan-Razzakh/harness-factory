@@ -1052,6 +1052,7 @@ environment or `.env`. With it unset the factory sees only its own catalog.
 <add-on>/catalog/tasks/<id>/      more tasks
 <add-on>/catalog/recipes/**.yaml  more recipes (`base:` may name a built-in recipe)
 <add-on>/catalog/conformance/     one fixture per add-on server (`hfx conformance --server <id>`)
+<add-on>/catalog/skills/<id>/     more skills (SKILL.md), by id as in catalog/skills/
 <add-on>/prompts/**.j2            more prompt templates, by ref as in prompts/ (e.g. stage/my_stage)
 ```
 
@@ -1070,6 +1071,9 @@ servers:                            # server module -> its libraries
   clashes with the built-in catalog or another add-on is refused. Server modules can't live in `harness_factory`.
 - **Prompts.** Add-on templates are found after the built-in ones, by the same refs. A recipe's hash holds the
   source of every template it uses, wherever it lives, so editing an add-on prompt is a new recipe hash.
+- **Skills.** Add-on skills join the library after the built-in ones. A recipe names them by id like any skill,
+  for both loadings (`upfront`, `on_demand`). An id the built-in skills or another add-on already have is refused.
+  A recipe's hash holds the text of every skill it uses, so editing an add-on skill is a new recipe hash.
 - **Libraries** follow ADR 0013: each is pinned to one version, joins `env_hash` for the servers that use it, and
   is checked before a run. A library that isn't on PyPI is pinned by a git `source` at one commit; the installed
   commit is checked too. Install them yourself as the add-on describes; the `docs` extra and the image hold only

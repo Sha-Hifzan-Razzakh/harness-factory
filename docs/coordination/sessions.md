@@ -27,6 +27,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLJtRe49bgfAAmdaB6W` | `session:authoring` | Authoring core, CLI, API, UI for tools, skills, prompts, recipes, faults |
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
 | `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
+| `session_01BgTbLKg8F6MXLBFVeupkLx` | `session:addon-skills` | Add-on skills: skills in a catalog add-on |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -97,6 +98,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #85 | `feat/analysis-shape-by-model` | `…JZLSKyEhjaA4sxi9R` | Analysis: shape × model by task class, crossover by depth (replaces #63) | ready for review (CI green) | no |
 | #86 | `feat/promptfoo-smoke` | `…JZLSKyEhjaA4sxi9R` | promptfoo prompt checks (replaces #66) | ready for review (CI green) | no |
 | #101 | `feat/catalog-addons` | `…LLwunk5SUBezW33oS5` | Catalog add-ons through `HF_ADDONS` (tools, servers, libraries, tasks, recipes, conformance); read-only reference mount (ADR 0021) | ready for review (CI green) | no (unset: nothing changes; new optional seed field) |
+| #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | ready for review |  no (unset: nothing changes; recipes without add-on skills keep their hashes) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
