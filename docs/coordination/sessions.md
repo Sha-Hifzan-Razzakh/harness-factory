@@ -28,6 +28,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
 | `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 | `session_01BgTbLKg8F6MXLBFVeupkLx` | `session:addon-skills` | Add-on skills: skills in a catalog add-on |
+| `session_01BgTbLM73ireRFcS43br5Ny` | `session:triage` | Review of the DegreeAudit lab runs (9–10 Nov); reserves the fixes it found for the sessions that own that code (#108–#114) |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -101,6 +102,14 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | ready for review |  no (unset: nothing changes; recipes without add-on skills keep their hashes) |
 | #106 | `fix/scripted-plan-lines` | `…LKg8F6MXLBFVeupkLx` | Scripted planner: cut long string arguments in plan lines (V4/V5 offline runs on long-write tasks no longer overflow the 32K scripted context) | ready for review | no (scripted backend text isn't hashed) |
 | #107 | `feat/my-refinements` | `…JtRe49bgfAAmdaB6W` | Catalog history and versions, models as an authoring kind, spec cards, saved experiments + dashboard, React workspace (`hfx web`), guided UI pages, dev container (ADR 0022); from Hifzan's refinements | ready for review (CI green) | no (history and experiments live under `var/`; no hashed input changes) |
+| #108 | `fix/replay-cut-tool-args` | `…KhAFMPUEPRU3mK2t2` | Don't replay tool calls cut off at the output limit; record `finish_reason` (lab D2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no hash; run status logic (output-limit cut-offs no longer ERROR) |
+| #109 | `feat/check-requires` | `…LLwunk5SUBezW33oS5` | Checks that depend on other checks: optional `requires` (lab C1) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (new optional check field; existing task hashes stay) |
+| #110 | `fix/campaign-reach` | `…JZLSKyEhjaA4sxi9R` | Campaign reach: `granted_by` substitutes count, skipped pairs reported, opt-in for reduced tool sets (lab B4) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (plans change; RunKeys don't) |
+| #111 | `fix/quota-ledger-windows` | `…KhAFMPUEPRU3mK2t2` | Quota ledger: first load under the lock, rename retried on Windows (lab D1) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
+| #112 | `fix/validate-upfront-skills` | `…JZLSKyEhjaA4sxi9R` | `hfx validate` refuses up-front skills with the skills server (lab D3) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
+| #113 | `feat/projection-fallbacks` | `…JZLSKyEhjaA4sxi9R` | Projection: realistic estimates without history (lab E2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
+| #114 | `feat/bench-progress-signals` | `…JZLSKyEhjaA4sxi9R` | Bench report: progress signals next to E, optional (lab C2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
+| #115 | `chore/ledger-lab-fixes` | `…M73ireRFcS43br5Ny` | These ledger rows | open | no |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
