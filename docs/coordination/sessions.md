@@ -100,6 +100,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #101 | `feat/catalog-addons` | `…LLwunk5SUBezW33oS5` | Catalog add-ons through `HF_ADDONS` (tools, servers, libraries, tasks, recipes, conformance); read-only reference mount (ADR 0021) | ready for review (CI green) | no (unset: nothing changes; new optional seed field) |
 | #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | ready for review |  no (unset: nothing changes; recipes without add-on skills keep their hashes) |
 | #106 | `fix/scripted-plan-lines` | `…LKg8F6MXLBFVeupkLx` | Scripted planner: cut long string arguments in plan lines (V4/V5 offline runs on long-write tasks no longer overflow the 32K scripted context) | ready for review | no (scripted backend text isn't hashed) |
+| #107 | `feat/my-refinements` | `…JtRe49bgfAAmdaB6W` | Catalog history and versions, models as an authoring kind, spec cards, saved experiments + dashboard, React workspace (`hfx web`), guided UI pages, dev container (ADR 0022); from Hifzan's refinements | ready for review (CI green) | no (history and experiments live under `var/`; no hashed input changes) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
@@ -126,6 +127,7 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | 0016 | `…JZLSKyEhjaA4sxi9R` | Runner axis (in #53) |
 | 0017 | `…JZLSKyEhjaA4sxi9R` | Retrieval on LlamaIndex (in #84, was #57) |
 | 0021 | `…LLwunk5SUBezW33oS5` | Catalog add-ons and read-only reference data (in #101) |
+| 0022 | `…JtRe49bgfAAmdaB6W` | Catalog history, spec cards and the web workspace (in #107) |
 
 Handing a reserved PR to another session: `handoff.md` (protocol, starter prompt, one work package per PR).
 

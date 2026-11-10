@@ -9,8 +9,11 @@ from pydantic import BaseModel, Field, field_validator
 
 from harness_factory.authoring.toolcode import ToolDef
 
-Kind = Literal["prompt", "skill", "recipe", "server", "fault"]
-KINDS: tuple[str, ...] = ("prompt", "skill", "recipe", "server", "fault")
+Kind = Literal["prompt", "skill", "recipe", "server", "fault", "model"]
+KINDS: tuple[str, ...] = ("prompt", "skill", "recipe", "server", "fault", "model")
+# Kinds that are versioned and shown but not edited through authoring: a task needs a reference solution, trap
+# scripts and a do-nothing check (CLAUDE.md), so it is written by hand and its history is recorded by sync().
+READ_ONLY_KINDS: tuple[str, ...] = ("task",)
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,62}$")
 PROMPT_REF = re.compile(r"^[a-z0-9_]+/[a-z0-9_\-]+$")
@@ -103,8 +106,31 @@ class FaultIn(BaseModel):
         return _slug(v)
 
 
+class ModelCapsIn(BaseModel):
+    tool_calling: Literal["native", "emulated", "none"] = "native"
+    structured_output: bool = True
+    context_len: int = Field(32_768, gt=0)
+
+
+class ModelIn(BaseModel):
+    """One model a provider serves (catalog/providers.yaml). The item id is "<provider>/<canonical>". The provider
+    model id is part of every run's env_hash; prices are not."""
+    provider: str
+    canonical: str = Field(min_length=1)
+    provider_model_id: str = Field(min_length=1)
+    price_in: float = Field(0.0, ge=0)          # $ per million input tokens (reference price for free tiers)
+    price_out: float = Field(0.0, ge=0)
+    free: bool = False
+    caps: ModelCapsIn = Field(default_factory=ModelCapsIn)
+    limits: dict[str, Any] | None = None        # this model's own rate limits, when they differ from the provider's
+
+    @property
+    def id(self) -> str:
+        return f"{self.provider}/{self.canonical}"
+
+
 PAYLOADS: dict[str, type[BaseModel]] = {"prompt": PromptIn, "skill": SkillIn, "recipe": RecipeIn,
-                                        "server": ServerIn, "fault": FaultIn}
+                                        "server": ServerIn, "fault": FaultIn, "model": ModelIn}
 
 
 class Issue(BaseModel):
@@ -124,17 +150,22 @@ class Impact(BaseModel):
     recipes_removed: list[str] = Field(default_factory=list)
     env_changed: dict[str, list[str]] = Field(default_factory=dict)  # server -> existing recipes that open it
     stale_results: int | None = None     # stored runs of the changed recipes at their current identity
+    models_changed: list[str] = Field(default_factory=list)   # "<provider>/<model>" whose provider model id changed
+                                                              # or that were removed: their runs' env_hash moves
 
     @property
     def touches_existing(self) -> bool:
-        return bool(self.recipes_changed or self.recipes_removed or any(self.env_changed.values()))
+        return bool(self.recipes_changed or self.recipes_removed or any(self.env_changed.values())
+                    or self.models_changed)
 
 
 class ChangeResult(BaseModel):
     kind: str
     id: str
-    action: Literal["create", "update", "delete"]
+    action: Literal["create", "update", "delete", "archive", "restore", "purge"]
     status: Literal["applied", "dry_run", "needs_confirm", "rejected"]
+    version: int | None = None           # the item's version after an applied change (catalog_history)
+    diff: str = ""                       # unified diff of the item's files: current -> proposed
     files: list[FileChange] = Field(default_factory=list)
     issues: list[Issue] = Field(default_factory=list)       # blocking: nothing was written
     notes: list[str] = Field(default_factory=list)          # not blocking

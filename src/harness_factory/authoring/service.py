@@ -8,7 +8,9 @@ Every change goes through the same steps:
 4. refuse the change if the staged catalog has any error or recipe issue the current one doesn't;
 5. report the impact: recipes whose hash changes, servers whose environment changes, stored runs that go stale;
 6. write it, all files or none, under a lock, unless it is a dry run or it touches an existing identity
-   without `confirm`.
+   without `confirm`;
+7. record it as a new version of the item in the catalog history (authoring/history.py): who, when, why, the
+   files before and after. Delete archives: the item leaves the catalog, its history stays and it can be restored.
 """
 
 from __future__ import annotations
@@ -29,9 +31,11 @@ from pydantic import BaseModel, ValidationError
 from harness_factory import settings
 from harness_factory.authoring import fsops, toolcode
 from harness_factory.authoring.fsops import FileOp
+from harness_factory.authoring.history import HistoryMixin
 from harness_factory.authoring.models import (
     KINDS,
     PAYLOADS,
+    READ_ONLY_KINDS,
     ChangeResult,
     FaultIn,
     FileChange,
@@ -50,6 +54,16 @@ DIMENSIONS = ("variant", "tier", "model_slots", "tools", "skills", "prompts", "c
               "retrieval", "workflow", "delegation", "planning")
 
 
+def default_author() -> str:
+    """Who a version entry names: HF_AUTHOR, else the OS user."""
+    import getpass
+    try:
+        user = getpass.getuser()
+    except (OSError, KeyError):
+        user = "unknown"
+    return os.environ.get("HF_AUTHOR") or user
+
+
 class AuthoringError(Exception):
     """A request that can't be turned into a change at all (unknown kind or id, bad payload)."""
 
@@ -63,13 +77,17 @@ def _comment(text: str) -> str:
     return "".join(f"# {line}\n" for line in textwrap.wrap(text, 108)) if text else ""
 
 
-class AuthoringService:
+class AuthoringService(HistoryMixin):
     def __init__(self, root: Path | None = None, results_url: str | None = None,
-                 lock_path: Path | None = None) -> None:
+                 lock_path: Path | None = None, author: str | None = None) -> None:
+        from harness_factory.authoring.versions import Journal
         self.root = (root or settings.ROOT).resolve()
         own = self.root == settings.ROOT.resolve()
         self.results_url = results_url if results_url is not None else (settings.RESULTS_URL if own else None)
-        self.lock_path = lock_path or ((settings.VAR if own else self.root / "var") / "authoring.lock")
+        var = settings.VAR if own else self.root / "var"
+        self.lock_path = lock_path or (var / "authoring.lock")
+        self.journal = Journal(settings.HISTORY_DIR if own else var / "catalog_history")
+        self.author = author or default_author()
         self._cache: tuple[str, dict[str, Any]] | None = None
 
     # ---- snapshots -------------------------------------------------------------------------------------------
@@ -136,6 +154,9 @@ class AuthoringService:
             out += [f"server {s} (granted_by)" for s, v in snap.get("servers", {}).items() if s != item_id
                     and any(g.split(".")[0] == item_id for t in v["tools"] for g in (t["granted_by"] or []))]
             return out
+        if kind == "model":
+            judge = snap.get("judge") or {}
+            return ["catalog/judge/judge.yaml"] if item_id == f"{judge.get('provider')}/{judge.get('model')}" else []
         return []
 
     def _items(self, snap: dict, kind: str) -> list[Item]:
@@ -171,6 +192,8 @@ class AuthoringService:
             for fid, v in snap.get("faults", {}).items():
                 out.append(Item(kind=kind, id=fid, path=self._fault_path(fid), hash=v["hash"],
                                 summary=v["description"]))
+        else:
+            out += self._extra_items(snap, kind, errors)          # model, task (history.py)
         for it in out:
             it.used_by = self.used_by(snap, kind, it.id)
         return out
@@ -179,14 +202,19 @@ class AuthoringService:
         snap = snap or self.snapshot()
         if "crash" in snap:
             raise AuthoringError(snap["crash"])
-        kinds = [self._kind(kind)] if kind else list(KINDS)
+        kinds = [self._kind(kind, read_only=True)] if kind else list(KINDS)
         return [it for k in kinds for it in self._items(snap, k)]
 
     def get(self, kind: str, item_id: str, snap: dict | None = None) -> Item:
-        kind = self._kind(kind)
+        kind = self._kind(kind, read_only=True)
+        snap = snap or self.snapshot()
         for it in self.list(kind, snap):
             if it.id == item_id:
-                if kind == "server":
+                if kind == "model":
+                    it.text = "".join(self.parts(kind, item_id, snap).values())
+                elif kind == "task":
+                    it.text = "".join(f"# ---- {k}\n{v}" for k, v in self.parts(kind, item_id, snap).items())
+                elif kind == "server":
                     it.text = _dump_yaml(self._tools_entry(item_id))
                     module = self.root / toolcode.module_path(item_id)
                     if it.detail.get("transport") == "stdio" and module.is_file():
@@ -208,17 +236,21 @@ class AuthoringService:
 
     # ---- writing ---------------------------------------------------------------------------------------------
 
-    def create(self, kind: str, payload: dict | BaseModel, dry_run: bool = False, confirm: bool = False) -> ChangeResult:
-        return self._change(kind, payload, "create", dry_run, confirm)
+    def create(self, kind: str, payload: dict | BaseModel, dry_run: bool = False, confirm: bool = False,
+               note: str = "", author: str | None = None) -> ChangeResult:
+        return self._change(kind, payload, "create", dry_run, confirm, note, author)
 
-    def update(self, kind: str, payload: dict | BaseModel, dry_run: bool = False, confirm: bool = False) -> ChangeResult:
-        return self._change(kind, payload, "update", dry_run, confirm)
+    def update(self, kind: str, payload: dict | BaseModel, dry_run: bool = False, confirm: bool = False,
+               note: str = "", author: str | None = None) -> ChangeResult:
+        return self._change(kind, payload, "update", dry_run, confirm, note, author)
 
-    def delete(self, kind: str, item_id: str, dry_run: bool = False, confirm: bool = False) -> ChangeResult:
+    def delete(self, kind: str, item_id: str, dry_run: bool = False, confirm: bool = False,
+               note: str = "", author: str | None = None) -> ChangeResult:
+        """Archive the item: its files leave the catalog, its history stays, `restore` brings it back."""
         kind = self._kind(kind)
         with fsops.catalog_lock(self.lock_path):
             snap = self.snapshot()
-            result = ChangeResult(kind=kind, id=item_id, action="delete", status="rejected")
+            result = ChangeResult(kind=kind, id=item_id, action="archive", status="rejected")
             if "crash" in snap:
                 result.issues = [Issue(where="catalog", detail=snap["crash"])]
                 return result
@@ -231,9 +263,11 @@ class AuthoringService:
             if users:
                 result.issues = [Issue(where=f"{kind} {item_id}", detail=f"still used by {', '.join(users)}")]
                 return result
-            return self._stage_and_apply(result, snap, self._delete_ops(kind, item_id, snap), dry_run, confirm)
+            return self._stage_and_apply(result, snap, self._delete_ops(kind, item_id, snap), dry_run, confirm,
+                                         note=note, author=author)
 
-    def _change(self, kind: str, payload: dict | BaseModel, action: str, dry_run: bool, confirm: bool) -> ChangeResult:
+    def _change(self, kind: str, payload: dict | BaseModel, action: str, dry_run: bool, confirm: bool,
+                note: str = "", author: str | None = None) -> ChangeResult:
         kind = self._kind(kind)
         model = PAYLOADS[kind]
         try:
@@ -260,16 +294,20 @@ class AuthoringService:
             if issues:
                 result.issues = issues
                 return result
-            return self._stage_and_apply(result, snap, ops, dry_run, confirm)
+            return self._stage_and_apply(result, snap, ops, dry_run, confirm, note=note, author=author)
 
     def _stage_and_apply(self, result: ChangeResult, cur: dict, ops: list[FileOp], dry_run: bool,
-                         confirm: bool) -> ChangeResult:
+                         confirm: bool, note: str = "", author: str | None = None) -> ChangeResult:
         """`cur` is the snapshot taken under the same lock, so nothing changed the catalog in between."""
         result.files = [FileChange(path=op.path, action=op.action) for op in ops]
+        before = self.parts(result.kind, result.id, cur) if self._exists(cur, result.kind, result.id) else {}
         with tempfile.TemporaryDirectory(prefix="hf-stage-") as d:
             staged = Path(d) / "repo"
             fsops.stage(self.root, staged, [op for op in ops if not op.path.startswith("src/")])
             new = self._staged_snapshot(staged)
+            after = ({} if result.action == "archive" or "crash" in new
+                     else self.parts(result.kind, result.id, new, root=staged, ops=ops))
+        result.diff = self._diff_text(before, after)
         if "crash" in new:
             result.issues = [Issue(where="catalog", detail=new["crash"])]
             return result
@@ -282,8 +320,10 @@ class AuthoringService:
         elif result.impact.touches_existing and not confirm:
             result.status = "needs_confirm"
         else:
+            self._record_baselines(cur, result)               # first contact: the current state is version 1
             fsops.apply(self.root, ops)
             result.status = "applied"
+            self._record_change(result, cur, new, before, after, note, author)
         return result
 
     @staticmethod
@@ -305,9 +345,14 @@ class AuthoringService:
         for sid, v in cs.items():
             if sid not in ns or ns[sid]["env"] != v["env"]:
                 imp.env_changed[sid] = sorted(r for r, rv in cr.items() if sid in rv["servers"])
+        cm, nm = cur.get("models", {}), new.get("models", {})
+        imp.models_changed = sorted(m for m, v in cm.items()
+                                    if m not in nm or nm[m]["provider_model_id"] != v["provider_model_id"])
         affected = set(imp.recipes_changed) | set(imp.recipes_removed) | {r for rs in imp.env_changed.values()
                                                                           for r in rs}
         imp.stale_results = self._stale(cr, affected) if affected else 0
+        if imp.models_changed and imp.stale_results is not None:
+            imp.stale_results += self._stale_models(imp.models_changed)
         return imp
 
     def _stale(self, recipes: dict, affected: set[str]) -> int | None:
@@ -326,9 +371,14 @@ class AuthoringService:
     # ---- per-kind file operations ----------------------------------------------------------------------------
 
     @staticmethod
-    def _kind(kind: str | None) -> str:
+    def _kind(kind: str | None, read_only: bool = False) -> str:
         k = (kind or "").lower().rstrip("s")
         k = {"tool": "server", "remote-tool": "server"}.get(k, k)
+        if k in READ_ONLY_KINDS and read_only:
+            return k
+        if k in READ_ONLY_KINDS:
+            raise AuthoringError(f"a {k} is written by hand (it needs a reference solution and trap tests); "
+                                 f"its history is recorded by sync")
         if k not in KINDS:
             raise AuthoringError(f"unknown kind {kind!r}; kinds: {', '.join(KINDS)}")
         return k
@@ -339,6 +389,16 @@ class AuthoringService:
 
     def _skill_ops(self, item: SkillIn, snap: dict, exists: bool):
         header = _dump_yaml({"name": item.name, "description": " ".join(item.description.split())})
+        path = self.root / f"catalog/skills/{item.id}/SKILL.md"
+        if exists and path.is_file():         # keep the header as written when name and description are unchanged:
+            from harness_factory.skills.library import parse_skill  # its text is in every user's recipe hash
+            cur = path.read_text()
+            try:
+                old = parse_skill(item.id, cur)
+            except ValueError:
+                old = None
+            if old is not None and old.name == item.name and old.description == " ".join(item.description.split()):
+                header = cur[4:].split("\n---\n", 1)[0] + "\n"
         text = f"---\n{header}---\n{item.body.strip()}\n"
         return [FileOp(path=f"catalog/skills/{item.id}/SKILL.md", text=text)], [], []
 
@@ -506,6 +566,8 @@ class AuthoringService:
         return [ln.split(":", 1)[-1].strip() for ln in p.stdout.splitlines() if ln.strip()] if p.returncode else []
 
     def _delete_ops(self, kind: str, item_id: str, snap: dict) -> list[FileOp]:
+        if kind == "model":
+            return self._model_delete_ops(item_id)
         if kind == "server":
             ops = [self._tools_op(item_id, None)]
             if snap["servers"][item_id]["transport"] == "stdio" and (self.root / toolcode.module_path(item_id)).is_file():

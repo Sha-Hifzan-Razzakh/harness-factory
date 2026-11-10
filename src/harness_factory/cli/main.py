@@ -696,6 +696,12 @@ _register_corpus(app)
 from harness_factory.cli.conformance import register as _register_conformance  # hfx conformance (MCP-11)
 
 _register_conformance(app)
+from harness_factory.cli.cards import register as _register_cards  # hfx card (spec cards)
+
+_register_cards(app)
+from harness_factory.cli.web import web as _web  # hfx web (the React workspace)
+
+app.command("web")(_web)
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":

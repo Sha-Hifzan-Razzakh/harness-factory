@@ -1,0 +1,59 @@
+// Dev container for harness-factory. Only this project folder is bind-mounted; everything else the container
+// writes (venv, node_modules, uv cache, Claude Code state) lives in Docker volumes, not on the host.
+// Setup notes: .devcontainer/README.md
+{
+  "name": "harness-factory (dev)",
+  "build": { "dockerfile": "Dockerfile" },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+  },
+  "remoteUser": "vscode",
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "mounts": [
+    // Linux venv outside the workspace: the host .venv is a Windows venv and stays untouched.
+    "source=hf-venvs-${devcontainerId},target=/home/vscode/.venvs,type=volume",
+    // Linux node_modules over web/node_modules (the host copy has Windows binaries).
+    "source=hf-web-node-modules-${devcontainerId},target=${containerWorkspaceFolder}/web/node_modules,type=volume",
+    "source=hf-uv-cache,target=/home/vscode/.cache/uv,type=volume",
+    // Claude Code settings, login and memory, kept across rebuilds.
+    "source=hf-claude-${devcontainerId},target=/home/vscode/.claude,type=volume"
+  ],
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.venvs/main",
+    "UV_LINK_MODE": "copy",
+    "HF_SANDBOX": "local",
+    // The telemetry stack runs on the host (docker compose up -d); .env's localhost URLs don't reach it from here.
+    // Real environment variables win over .env (settings._load_dotenv uses setdefault). Ports = HF_*_PORT in .env.
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://host.docker.internal:14318",
+    "MLFLOW_TRACKING_URI": "http://host.docker.internal:15000",
+    // Git overrides for this container only (the repo's .git/config is shared with Windows and is not edited):
+    // Git for Windows sets core.autocrlf=true in its system config, which the container doesn't see; without it
+    // every CRLF file would show as modified. The signing key path points at a copy of the PUBLIC key; the
+    // private key stays on the host and signs through the forwarded ssh-agent.
+    "GIT_CONFIG_COUNT": "3",
+    "GIT_CONFIG_KEY_0": "core.autocrlf",
+    "GIT_CONFIG_VALUE_0": "true",
+    "GIT_CONFIG_KEY_1": "user.signingkey",
+    "GIT_CONFIG_VALUE_1": "${containerWorkspaceFolder}/.devcontainer/local/signing.pub",
+    "GIT_CONFIG_KEY_2": "gpg.ssh.allowedSignersFile",
+    "GIT_CONFIG_VALUE_2": "${containerWorkspaceFolder}/.devcontainer/local/allowed_signers"
+  },
+  "remoteEnv": {
+    "PATH": "/home/vscode/.venvs/main/bin:${containerEnv:PATH}"
+  },
+  "forwardPorts": [18501, 8765, 5173],
+  "portsAttributes": {
+    "18501": { "label": "hfx ui" },
+    "8765": { "label": "hfx serve (API)" },
+    "5173": { "label": "web (vite)" }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": ["anthropic.claude-code", "ms-python.python", "charliermarsh.ruff"],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/vscode/.venvs/main/bin/python"
+      }
+    }
+  }
+}

@@ -115,6 +115,34 @@ hfx ui                    # just the UI, against a running API (HF_API_URL, defa
 or tool environments shows which ones and waits for **Confirm and write**. The UI listens on localhost only; with
 a token on the API, set `HF_API_TOKEN` for the UI too.
 
+## Catalog history, cards and the workspace: `hfx web`
+
+Every change made through `hfx new`, the API or a UI is recorded as a new version of the item: who, when, why
+(`--why`), and its files before and after (ADR 0022). The history lives in `var/catalog_history/`; files stay the
+source of truth and nothing is committed.
+
+```bash
+hfx catalog history skill sql-analysis      # versions, authors, notes
+hfx catalog diff skill sql-analysis 1 3     # what changed between two versions
+hfx catalog restore skill sql-analysis 1    # bring a version back (checked like any change)
+hfx catalog activity                        # every recorded change, newest first
+hfx catalog sync                            # record changes made outside authoring (an editor, git pull)
+hfx catalog archived                        # deleted items: their history stays, restore brings them back
+hfx catalog results recipe v2-base          # scored runs per version of an item
+hfx new model groq/gpt-oss-20b --id openai/gpt-oss-20b --free --context 131072   # a model entry in providers.yaml (comments are kept)
+hfx card harness v2-base                    # spec cards: model, harness, task, tool, fault
+hfx card spec --task sql-01 --recipe v2-base --model scripted/replay --provider scripted --run   # the final card of one experiment
+hfx web                                     # the React workspace at http://127.0.0.1:8765/app/
+```
+
+- **`hfx web`** builds `web/` with npm the first time (or with `--build` after pulling `web/` changes) and then
+  needs no Node: the API serves the app. It records outside changes first (`--no-sync` to skip).
+- **Deleting archives:** the item leaves the catalog and can be restored; `hfx catalog purge` drops its history.
+- **Tasks** are versioned and shown, but still written by hand.
+- **Experiments** (workspace and API) are saved with the exact runs they planned, so they survive restarts.
+- The Streamlit UI gains guided pages (Playbook, What we can test with, Cards, Build) before the existing ones.
+- `.devcontainer/` opens the repo in a dev container (see its README).
+
 ## Real models
 
 Put keys in `.env` (copy `.env.example`), then check the model ids and limits in `catalog/providers.yaml` against
