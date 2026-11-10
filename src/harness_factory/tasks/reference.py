@@ -42,6 +42,16 @@ def load_reference(task: Task) -> Reference:
     return Reference(plan=list(mod.PLAN), final=str(mod.FINAL))
 
 
+PLAN_ARG_CHARS = 120     # a planner names a call's arguments; it doesn't write them out (a file's content)
+
+
+def _brief(args: dict) -> str:
+    """A plan line's arguments: each string value cut at PLAN_ARG_CHARS, as a planner would sketch the call."""
+    short = {k: (v[:PLAN_ARG_CHARS] + "..." if isinstance(v, str) and len(v) > PLAN_ARG_CHARS else v)
+             for k, v in args.items()}
+    return json.dumps(short)
+
+
 class PlanBackend:
     """Scripted model that follows the reference plan but only calls tools it is offered right now.
 
@@ -64,7 +74,8 @@ class PlanBackend:
     retrieve), so one plan drives recipes with and without it.
 
     Every style answers a compaction request (the compactor slot) with a fixed summary of it, without moving the
-    plan. Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step. In a V4
+    plan. Every style plans when called in the planner slot (V4, V5): one numbered line per remaining plan step,
+    each long string argument cut at PLAN_ARG_CHARS (the step itself calls the tool with the full arguments). In a V4
     step ("Step i of n: ...") or a V5 worker's part ("Your part: ..."), it makes the next plan call and then closes
     the step, so one plan step runs per V4 step or V5 worker.
 
@@ -142,7 +153,7 @@ class PlanBackend:
             msg = self._msg(content=json.dumps({"steps": self._structured_plan(shown)}))
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
         if getattr(slot, "role", None) == "planner":
-            lines = [f"{n}. Call {s['tool']} with {json.dumps(s['args'])}"
+            lines = [f"{n}. Call {s['tool']} with {_brief(s['args'])}"
                      for n, s in enumerate(self.plan[self.i:], 1)] or ["1. Give the final answer."]
             msg = self._msg(content="\n".join(lines))
             return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
@@ -223,7 +234,7 @@ class PlanBackend:
                 last_write, reads = sid, []
             if sid in self.started:
                 continue
-            steps.append({"id": sid, "instruction": f"Call {call['tool']} with {json.dumps(call['args'])}",
+            steps.append({"id": sid, "instruction": f"Call {call['tool']} with {_brief(call['args'])}",
                           "tools": [model_name(call["tool"])], "depends_on": deps,
                           "done_when": f"{call['tool']} has answered"})
         return steps or [{"id": f"s{len(self.plan) + 1}", "instruction": "Give the final answer.",
