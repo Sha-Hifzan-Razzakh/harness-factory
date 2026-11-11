@@ -11,6 +11,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from harness_factory import atomicfile
+
 
 class FileOp(BaseModel):
     """One file to write (`text`) or delete (`text is None`), relative to the repository root."""
@@ -58,7 +60,7 @@ def _write_atomic(target: Path, text: str) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(f".{target.name}.authoring-tmp")
     tmp.write_text(text, encoding="utf-8", newline="\n")
-    os.replace(tmp, target)
+    atomicfile.replace(tmp, target)
 
 
 def _prune_empty_dirs(start: Path, stop: Path) -> None:
