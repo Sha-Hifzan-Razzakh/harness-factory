@@ -318,7 +318,7 @@ async def test_calls_go_through_the_router_pinned_to_the_cells_provider(factory,
              if d["model_name"] == "gpt-oss-120b"}
     assert set(group) == {"groq|gpt-oss-120b", "openrouter|gpt-oss-120b"}
     assert group["groq|gpt-oss-120b"]["rpm"] == 30 and group["groq|gpt-oss-120b"]["tpm"] == 8000   # scope: model
-    assert group["openrouter|gpt-oss-120b"]["rpm"] == 20 and "tpm" not in group["openrouter|gpt-oss-120b"]
+    assert "rpm" not in group["openrouter|gpt-oss-120b"] and "tpm" not in group["openrouter|gpt-oss-120b"]  # #119
     assert not any(d["model_name"].startswith("scripted/") for d in router.get_model_list())
     assert len(calls) == 1 and calls[0]["model"] == "groq/openai/gpt-oss-120b"
     assert calls[0]["model_info"]["id"] == "groq|gpt-oss-120b"           # the Router made this call

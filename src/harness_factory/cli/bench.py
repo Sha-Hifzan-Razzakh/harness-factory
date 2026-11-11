@@ -132,7 +132,7 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
         keys = set(_manifest_keys(out_dir))
         mine = [r for r in rows if r["run_key"] in keys]
         text = build_report(f, mine, baseline, title=f"Benchmark {spec.name}",
-                            compare=spec.judge.compare.pairs() if spec.judge.compare else None)
+                            compare=spec.judge.compare.pairs() if spec.judge.compare else None, signals=True)
         if section := b.reach_section(left_out, reduced, no_model):
             text = f"{text}\n\n{section}"
         report_path = out_dir / "report.md"

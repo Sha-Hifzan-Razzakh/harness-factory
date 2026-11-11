@@ -724,7 +724,8 @@ OpenTelemetry alone, never into the JSONL trace, the results store, grading or a
 
 **Traces in MLflow.** The collector also forwards every trace to MLflow (`otlphttp/mlflow`: MLflow 3.6 or later
 takes OTLP over HTTP at `/v1/traces`, into the experiment the `x-mlflow-experiment-id` header names; compose's
-SQLite store is the SQL store it needs). MLflow's Overview and Traces tabs then show one trace per run, with the
+SQLite store is the SQL store it needs; compose pins `MLFLOW_TAG` to `v3.18.0`, the version this was checked
+against). MLflow's Overview and Traces tabs then show one trace per run, with the
 same span types, inputs and outputs, models and token counts. The header's id is the number in MLflow's
 `/#/experiments/<id>` URL for `harness-factory`: `1` on a fresh MLflow, where it is the first experiment created;
 set `HF_MLFLOW_EXPERIMENT_ID` if yours differs. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector (`:4318`), not
@@ -2007,6 +2008,14 @@ hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption
 (the second recipe minus the first), wins/losses/ties, a bootstrap 95% interval and a verdict only when the
 interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
 recipe it extends) is unchanged.
+
+**Progress signals.** When every run scores E = 0, every pair ties and every verdict is "no clear difference",
+although the traces can still tell recipes apart. A bench report always adds section 2b (`hfx report --signals`
+adds it to any report): per recipe and model, the scored runs that wrote a file the oracle grades, that called a
+domain server ("engine": anything but fs, fsx, search, sql and harness tools), that read, that wrote, and that
+passed every `json_schema` check, plus the median position of the first write and the median number of tool calls.
+They are read from the stored rows and traces (`results/signals.py`): next to E, never in it, and nothing is graded
+again.
 
 ## Analysis
 
