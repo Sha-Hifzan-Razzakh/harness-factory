@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from harness_factory import atomicfile
 from harness_factory.env.state import JSON_STATES
 from harness_factory.grading.base import GradeContext
 
@@ -108,7 +109,7 @@ def save_endstate(trace_path: Path, ctx: GradeContext, **meta: Any) -> str | Non
                 z.writestr(zipfile.ZipInfo(DB, _DATE), db, compress_type=zipfile.ZIP_DEFLATED)
             z.writestr(zipfile.ZipInfo(META, _DATE), json.dumps(doc, default=str),
                        compress_type=zipfile.ZIP_DEFLATED)
-        os.replace(tmp, out)
+        atomicfile.replace(tmp, out)
         return str(out)
     except (OSError, sqlite3.Error, ValueError, TypeError) as e:   # disk full, unreadable file, odd output
         log.warning("end state of %s not kept: %s: %s", trace_path.name, type(e).__name__, e)
