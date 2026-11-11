@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from harness_factory import settings
 from harness_factory.hashing import content_hash
@@ -86,6 +86,22 @@ class CompactionSpec(BaseModel):
     prompt: str = "compaction/summary"
 
 
+class BudgetNotice(BaseModel):
+    """C1 (#125): tell the model what budget it has left, in one short line after its tool results. each_result:
+    after every tool batch; thresholds: once each time the used share of tool calls or steps first reaches a value
+    in `at`. It adds tokens, never steps or tool calls, and says nothing about faults or grading."""
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["each_result", "thresholds"] = "each_result"
+    at: list[float] = Field(default_factory=lambda: [0.5, 0.8])
+
+    @field_validator("at")
+    @classmethod
+    def _fractions(cls, v: list[float]) -> list[float]:
+        if not v or any(not 0 < x < 1 for x in v) or len(set(v)) != len(v):
+            raise ValueError(f"at: distinct fractions between 0 and 1, e.g. [0.5, 0.8]; got {v}")
+        return sorted(v)
+
+
 class RuntimeConfig(BaseModel):
     max_steps: int = Field(30, gt=0)
     max_tool_calls: int = Field(50, gt=0)
@@ -100,6 +116,7 @@ class RuntimeConfig(BaseModel):
     # with the error and the real tool list, at most this many times per run. None/0 = the run ends there.
     recover_malformed: int | None = Field(None, ge=0)
     compaction: CompactionSpec | None = None          # summarise old turns near the context limit (ADR 0015)
+    budget_notice: BudgetNotice | None = None         # tell the model the budget left (C1, #125)
 
     @field_validator("recover_malformed")
     @classmethod
@@ -220,6 +237,7 @@ _HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_p
 _HASH_OMIT_WHEN_NONE += ("config.compaction",)                                                  # ADR 0015
 _HASH_OMIT_WHEN_NONE += ("planning.structured", "planning.max_parallel", "planning.plan_retries")
 _HASH_OMIT_WHEN_NONE += ("runtime",)                                                       # ADR 0016
+_HASH_OMIT_WHEN_NONE += ("config.budget_notice",)                                          # C1, #125
 
 # Planning fields only V4 reads (V5's steps are delegate calls bounded by the worker's own config), so they are not
 # part of a V5 recipe's identity.
