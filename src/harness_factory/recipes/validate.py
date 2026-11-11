@@ -12,6 +12,7 @@ from harness_factory.recipes.model import (
     STRUCTURED_PLAN_PROMPTS,
     HarnessRecipe,
     MemoryProfile,
+    ModelSlot,
     RuntimeConfig,
     ToolSlice,
     Variant,
@@ -153,20 +154,98 @@ def _context_issues(recipe: HarnessRecipe, prompts: PromptRegistry, providers: P
                     pass                                   # reported as model_served
     else:
         served = [m for p in providers.providers if p.status == "active" for m in p.models]
-    exec_slot = recipe.model_slots.get("executor")
     for m in served:
-        for s in recipe.model_slots.values():
-            if s.max_output_tokens >= m.caps.context_len:
-                out.append(ValidationIssue(rule="context_fits_reply",
-                                           detail=f"{s.role} max_output_tokens {s.max_output_tokens} leaves no room "
-                                                  f"for a prompt in {m.canonical}'s context_len {m.caps.context_len}"))
-        if spec is not None and exec_slot is not None and spec.keep_last_turns * exec_slot.max_output_tokens \
-                >= m.caps.context_len - exec_slot.max_output_tokens:
-            out.append(ValidationIssue(rule="compaction_fits_context",
-                                       detail=f"keep_last_turns {spec.keep_last_turns} replies of up to "
-                                              f"{exec_slot.max_output_tokens} tokens fill {m.canonical}'s "
-                                              f"context_len {m.caps.context_len}: compacting could not make room"))
+        out += _fit_issues(recipe, m, recipe.model_slots.values())
+        if provider_id:                       # the run's own models: their known caps are checked too (A3, #122)
+            run_model = (recipe.model_slots.get("executor") or ModelSlot()).canonical_model
+            out += _caps_issues([s for s in recipe.model_slots.values()
+                                 if (s.canonical_model or run_model) == m.canonical], m)
     return sorted({(i.rule, i.detail): i for i in out}.values(), key=lambda i: (i.rule, i.detail))
+
+
+def _fit_issues(recipe: HarnessRecipe, m, slots) -> list[ValidationIssue]:
+    """The reply budget leaves room for a prompt in the model's context, and compaction can make room."""
+    out: list[ValidationIssue] = []
+    spec, exec_slot = recipe.config.compaction, recipe.model_slots.get("executor")
+    for s in slots:
+        if s.max_output_tokens >= m.caps.context_len:
+            out.append(ValidationIssue(rule="context_fits_reply",
+                                       detail=f"{s.role} max_output_tokens {s.max_output_tokens} leaves no room "
+                                              f"for a prompt in {m.canonical}'s context_len {m.caps.context_len}"))
+    if spec is not None and exec_slot is not None and spec.keep_last_turns * exec_slot.max_output_tokens \
+            >= m.caps.context_len - exec_slot.max_output_tokens:
+        out.append(ValidationIssue(rule="compaction_fits_context",
+                                   detail=f"keep_last_turns {spec.keep_last_turns} replies of up to "
+                                          f"{exec_slot.max_output_tokens} tokens fill {m.canonical}'s "
+                                          f"context_len {m.caps.context_len}: compacting could not make room"))
+    return out
+
+
+def _caps_issues(slots, m) -> list[ValidationIssue]:
+    """What a model's known caps rule out (#121): a slot asking for more output than the model returns. Unknown caps
+    pass (`pair_notes` says what wasn't checked)."""
+    out: list[ValidationIssue] = []
+    cap, reasoning = m.caps.max_output_tokens, m.caps.reasoning
+    for s in slots:
+        if cap is not None and s.max_output_tokens > cap:
+            out.append(ValidationIssue(rule="model_max_output",
+                                       detail=f"{s.role} asks for up to {s.max_output_tokens} output tokens; "
+                                              f"{m.canonical} returns at most {cap}"))
+        effort = getattr(s, "reasoning_effort", None)
+        if effort is not None and reasoning is not None:                       # A4 (#123)
+            if reasoning.mode == "none":
+                out.append(ValidationIssue(rule="model_reasoning",
+                                           detail=f"{s.role} sets reasoning_effort {effort}; {m.canonical} "
+                                                  f"doesn't reason"))
+            elif reasoning.efforts and effort not in reasoning.efforts:
+                out.append(ValidationIssue(rule="model_reasoning",
+                                           detail=f"{s.role} sets reasoning_effort {effort}; {m.canonical} accepts "
+                                                  f"{', '.join(reasoning.efforts)}"))
+    return out
+
+
+def _pair_slots(recipe: HarnessRecipe, providers: ProviderCatalog, provider_id: str, canonical: str):
+    """(served model, the slots it serves) for one run of `recipe` on `canonical`: empty slots use the run's model,
+    pinned ones their own (when this provider serves it; otherwise `model_served` reports it at provisioning)."""
+    groups: dict[str, list] = {}
+    for s in recipe.model_slots.values():
+        groups.setdefault(s.canonical_model or canonical, []).append(s)
+    if not recipe.model_slots:
+        groups[canonical] = []
+    out = []
+    for mid, slots in groups.items():
+        try:
+            out.append((providers.served(provider_id, mid), slots))
+        except KeyError:
+            pass
+    return out
+
+
+def pair_issues(recipe: HarnessRecipe, providers: ProviderCatalog, provider_id: str,
+                canonical: str) -> list[ValidationIssue]:
+    """A3 (#122): can this recipe run on this model at all? The reply fits the model's context (and compaction can
+    make room), and no slot asks for more output than the model returns. Campaign planning leaves a failing pair out
+    and says why; provisioning refuses it (`validate_recipe` with a provider); `hfx validate --models` reports it.
+    The recipe is never adjusted to fit."""
+    out: list[ValidationIssue] = []
+    for m, slots in _pair_slots(recipe, providers, provider_id, canonical):
+        out += _fit_issues(recipe, m, slots) + _caps_issues(slots, m)
+    return sorted({(i.rule, i.detail): i for i in out}.values(), key=lambda i: (i.rule, i.detail))
+
+
+def pair_notes(recipe: HarnessRecipe, providers: ProviderCatalog, provider_id: str, canonical: str) -> list[str]:
+    """What the pair check couldn't check, because the catalog doesn't know it (#121's fields left unset), and
+    what it can't size yet: a model that always reasons spends part of the reply budget on reasoning (C5)."""
+    out: list[str] = []
+    for m, slots in _pair_slots(recipe, providers, provider_id, canonical):
+        if slots and m.caps.max_output_tokens is None:
+            out.append(f"{m.canonical}: maximum output unknown (caps.max_output_tokens), so max_output_tokens "
+                       f"is not checked against it")
+        if m.caps.reasoning is not None and m.caps.reasoning.mode == "always":
+            out.append(f"{m.canonical} always reasons: its reasoning tokens come out of the reply budget")
+        if m.caps.reasoning is None and any(getattr(s, "reasoning_effort", None) for s in slots):
+            out.append(f"{m.canonical}: reasoning unknown (caps.reasoning), so reasoning_effort is sent unchecked")
+    return out
 
 
 def _structured_issues(recipe: HarnessRecipe, prompts: PromptRegistry) -> list[ValidationIssue]:

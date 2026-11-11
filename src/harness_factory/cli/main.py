@@ -148,7 +148,10 @@ def tasks() -> None:
 
 
 @app.command()
-def validate() -> None:
+def validate(models: str | None = typer.Option(
+        None, "--models", help="also check every recipe against these models (comma-separated canonical ids), on "
+                               "every provider that serves them: reply fits the context, output within the "
+                               "model's maximum (#122)")) -> None:
     """Validate every task's graders, and every recipe against the tool catalog, prompts and providers."""
     from harness_factory.recipes.validate import validate_recipe
     f = _factory(store=False)
@@ -165,10 +168,36 @@ def validate() -> None:
         for i in issues:
             console.print(f"    {i.rule}: {i.detail}")
         bad += bool(issues)
+    if models:
+        bad += _validate_pairs(f, models.split(","))
     bad += _validate_judge(f)
     from harness_factory.cli.corpus import validate_corpora  # recorded web corpora (ADR 0018)
     bad += validate_corpora(f.tasks.all(include_held_out=True))
     raise typer.Exit(code=1 if bad else 0)
+
+
+def _validate_pairs(f, models: list[str]) -> int:
+    """Recipes carry no model, so the recipe x model check (A3) runs for the models named: one line per pair that
+    can't run, and what the catalog doesn't know (unchecked). Returns how many pairs failed."""
+    from harness_factory.recipes.validate import pair_issues, pair_notes
+    bad = 0
+    for m in models:
+        serving = [p.id for p in f.providers.providers if any(x.canonical == m for x in p.models)]
+        if not serving:
+            console.print(f"[red]FAIL[/] model {m}: no provider serves it")
+            bad += 1
+            continue
+        for pid in serving:
+            for rid, recipe in f.recipes.items():
+                issues = pair_issues(recipe, f.providers, pid, m)
+                if issues:
+                    bad += 1
+                    console.print(f"[red]FAIL[/] {rid} on {m} ({pid}): "
+                                  + "; ".join(f"{i.rule}: {i.detail}" for i in issues), highlight=False)
+            notes = sorted({n for recipe in f.recipes.values() for n in pair_notes(recipe, f.providers, pid, m)})
+            for n in notes:
+                console.print(f"[dim]note[/] {n} ({pid})", highlight=False)
+    return bad
 
 
 def _validate_judge(f) -> bool:
@@ -264,6 +293,12 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
         console.print(f"left out {len(left_out)} task x recipe pair(s) whose recipe can't call every tool the "
                       f"task allows:\n" + "\n".join(f"  {line}" for line in describe_pairs(left_out)),
                       highlight=False)
+    from harness_factory.runner.runner import describe_models_left_out, models_left_out
+    no_model = models_left_out(f, recipe.split(","), provider,
+                               models.split(",") if models else [m.canonical for m in f.providers.get(provider).models])
+    if no_model:
+        console.print(f"left out {len(no_model)} recipe x model pair(s) that can't run:\n"
+                      + "\n".join(f"  {line}" for line in describe_models_left_out(no_model)), highlight=False)
     if dry_run or resume:
         console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
                       f"{len(status.retry)}   new {len(status.new)}"

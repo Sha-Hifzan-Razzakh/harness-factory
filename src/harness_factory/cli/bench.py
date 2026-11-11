@@ -58,6 +58,11 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
     if reduced:
         console.print(f"planned {len(reduced)} pair(s) on a reduced tool set (plan_unreachable):\n"
                       + "\n".join(f"  {line}" for line in describe_pairs(reduced)), highlight=False)
+    from harness_factory.runner.runner import describe_models_left_out
+    no_model = b.model_reach(f, spec)
+    if no_model:
+        console.print(f"[yellow]left out {len(no_model)} recipe x model pair(s) that can't run:\n"
+                      + "\n".join(f"  {line}" for line in describe_models_left_out(no_model)), highlight=False)
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
     console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
@@ -128,7 +133,7 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
         mine = [r for r in rows if r["run_key"] in keys]
         text = build_report(f, mine, baseline, title=f"Benchmark {spec.name}",
                             compare=spec.judge.compare.pairs() if spec.judge.compare else None, signals=True)
-        if section := b.reach_section(left_out, reduced):
+        if section := b.reach_section(left_out, reduced, no_model):
             text = f"{text}\n\n{section}"
         report_path = out_dir / "report.md"
         report_path.write_text(text + "\n")

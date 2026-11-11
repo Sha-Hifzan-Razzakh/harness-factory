@@ -256,12 +256,21 @@ def reach(f, bench: BenchmarkFile) -> tuple[list, list]:
             reduced_pairs(f, bench.recipes, tasks, bench.plan_unreachable))
 
 
-def reach_section(left_out: list, reduced: list) -> str:
+def model_reach(f, bench: BenchmarkFile) -> list:
+    """(recipe id, model, reasons) per recipe x model pair that can't run (A3, #122); the plan leaves it out."""
+    from harness_factory.runner.runner import models_left_out
+    return [x for p in bench.providers() for x in models_left_out(f, bench.recipes, p, bench.models_for(p))]
+
+
+def reach_section(left_out: list, reduced: list, no_model: list | None = None) -> str:
     """The report's account of pairs left out or planned on a reduced tool set. Empty when there are none."""
-    from harness_factory.runner.runner import describe_pairs
-    if not left_out and not reduced:
+    from harness_factory.runner.runner import describe_models_left_out, describe_pairs
+    if not left_out and not reduced and not no_model:
         return ""
     parts = ["## Reach", ""]
+    if no_model:
+        parts += [f"Left out {len(no_model)} recipe x model pair(s) that can't run (`hfx validate --models`):", ""]
+        parts += [f"- {line}" for line in describe_models_left_out(no_model)] + [""]
     if left_out:
         parts += [(f"Left out {len(left_out)} task x recipe pair(s): the recipe can't call every tool the task "
                    "allows (add the recipe to `plan_unreachable` to run them anyway)."), ""]
@@ -317,6 +326,9 @@ def store_file(f, bench: BenchmarkFile, raw: bytes, source: Path, specs: list, *
     if left_out or reduced:              # only then, so manifests of benches that reach everywhere don't change
         manifest["left_out"] = [{"task": t, "recipe": r, "missing": m} for t, r, m in left_out]
         manifest["reduced"] = [{"task": t, "recipe": r, "missing": m} for t, r, m in reduced]
+    no_model = model_reach(f, bench)
+    if no_model:
+        manifest["models_left_out"] = [{"recipe": r, "model": m, "reasons": why} for r, m, why in no_model]
     manifest_path.write_text(json.dumps(manifest, indent=1))
     return d
 
