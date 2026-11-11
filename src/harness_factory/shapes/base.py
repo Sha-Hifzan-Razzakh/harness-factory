@@ -36,6 +36,8 @@ class HarnessInstance:
     stop_error: str | None = None                                 # why a tool batch ended the run (a delegate's
                                                                   # INCOMPLETE / ERROR); finish() reports it
     checkpoint: Any = None                                        # shapes.checkpoint.Checkpoint, or None (off)
+    turns: int = 0                                                # model turns so far at this level: numbers the
+                                                                  # trace's turn spans (a resume keeps counting)
 
 
 class Harness(Protocol):

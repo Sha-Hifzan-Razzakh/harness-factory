@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from harness_factory import settings
+from harness_factory.observability import openinference
+from harness_factory.observability.span import SpanKind
 from harness_factory.recipes.model import ModelSlot
 from harness_factory.shapes import batch, compaction, delegate
 from harness_factory.shapes.base import HarnessInstance
@@ -49,6 +52,27 @@ class Turn:
 
 async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict[str, Any]],
                      tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None) -> Turn:
+    """One model turn, in a `turn <n>` span (CHAIN in Phoenix) that holds its model calls: the reply, any recovered
+    replies and a compaction summary. The tool batch the reply asks for gets `turn <n> · tools` (run_tool_calls):
+    shapes run the two in separate graph nodes, and no span stays open across a node boundary (a checkpointed run
+    may pause there). Trace only: no count, budget or score reads turn spans."""
+    inst.turns += 1
+    n = inst.turns
+    with inst.tracer.span(SpanKind.turn, f"turn {n}", turn=n) as span:
+        turn = await _model_turn(inst, slot, messages, tools, response_format)
+        msg = turn.message
+        names = [c["function"]["name"] for c in (msg or {}).get("tool_calls") or []]
+        if turn.stop:
+            span.attributes["stop"] = turn.stop
+        span.otel.update(openinference.turn_io(
+            {"turn": n, "model_calls": turn.calls, "tool_calls_requested": len(names)},
+            (f"stopped: {turn.stop}" if turn.stop else ", ".join(names) or str((msg or {}).get("content") or "")),
+            settings.trace_max_chars()))
+    return turn
+
+
+async def _model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict[str, Any]],
+                      tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None) -> Turn:
     """One model call under the budget.
 
     With `config.recover_malformed`, a reply the provider rejects as malformed (MODEL_PARSE, e.g. a call to a tool
@@ -132,7 +156,24 @@ async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
                          restrict: Callable[[str], bool] | None = None,
                          scope: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
     """Execute the tool calls of one assistant message, in order. Returns (tool messages, stop reason).
-    With `config.parallel_tool_calls`, a batch of READ calls only runs concurrently (shapes/batch.py)."""
+    With `config.parallel_tool_calls`, a batch of READ calls only runs concurrently (shapes/batch.py).
+    The batch is a `turn <n> · tools` span, n being the turn that asked for it (model_turn); concurrent calls run
+    in tasks that copy the context, so each nests under it."""
+    n = inst.turns
+    names = [c["function"]["name"] for c in message.get("tool_calls") or []]
+    with inst.tracer.span(SpanKind.turn, f"turn {n} · tools", turn=n, calls=len(names)) as span:
+        out, stop = await _run_tool_calls(inst, message, restrict, scope)
+        if stop:
+            span.attributes["stop"] = stop
+        span.otel.update(openinference.turn_io({"turn": n, "tool_calls": len(names)},
+                                               (f"stopped: {stop}; " if stop else "") + ", ".join(names),
+                                               settings.trace_max_chars()))
+    return out, stop
+
+
+async def _run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
+                          restrict: Callable[[str], bool] | None = None,
+                          scope: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
     if inst.recipe.config.parallel_tool_calls and batch.all_reads(inst, message, restrict):
         return await batch.run_reads(inst, message, restrict, scope)
     out: list[dict[str, Any]] = []

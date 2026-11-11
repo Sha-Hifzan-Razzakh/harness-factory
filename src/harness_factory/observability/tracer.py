@@ -84,7 +84,7 @@ _OPEN: ContextVar[tuple[tuple[str, str], ...]] = ContextVar("hf_open_spans", def
 
 _OPENINFERENCE_KIND = {SpanKind.run: OIKind.AGENT, SpanKind.model_call: OIKind.LLM,
                        SpanKind.tool_call: OIKind.TOOL, SpanKind.retrieval: OIKind.RETRIEVER,
-                       SpanKind.grade: OIKind.EVALUATOR}
+                       SpanKind.grade: OIKind.EVALUATOR, SpanKind.turn: OIKind.CHAIN}
 
 
 def _annotate(otel, s: Span) -> None:

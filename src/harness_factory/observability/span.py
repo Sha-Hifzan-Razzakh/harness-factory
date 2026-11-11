@@ -24,6 +24,7 @@ class SpanKind(str, Enum):
     memory_write = "memory_write"
     mcp_request = "mcp_request"
     grade = "grade"
+    turn = "turn"              # trace only: groups a model turn, or the tool batch it asked for (#117)
 
 
 class Span(BaseModel):
