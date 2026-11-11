@@ -169,12 +169,18 @@ def _with_server(factory, module: str):
     return dataclasses.replace(factory, declared=declared), recipe
 
 
-@pytest.mark.parametrize("module, why", [("hang_server", "no answer within 1 s"),
-                                         ("crash_server", "is unhealthy: ")])
+# The deadline applies to every server, and the healthy ones (fs) start first: on a loaded CI worker fs alone can
+# take over a second, which named fs, not ext, as the unhealthy server. The crash needs no short deadline (it is
+# seen at once); the hang gets one fs always meets and that still ends well inside the 15 s bound.
+@pytest.mark.parametrize("module, why, timeout_s", [("hang_server", "no answer within 5 s", "5"),
+                                                    ("crash_server", "is unhealthy: ", None)])
 async def test_an_unhealthy_server_makes_provisioning_an_error_quickly_and_cleans_up(
-        factory, monkeypatch, own_sandboxes_dir, module, why):
+        factory, monkeypatch, own_sandboxes_dir, module, why, timeout_s):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(STANDINS), os.environ.get("PYTHONPATH", "")]))
-    monkeypatch.setenv("HF_MCP_HEALTH_TIMEOUT_S", "1")
+    if timeout_s:
+        monkeypatch.setenv("HF_MCP_HEALTH_TIMEOUT_S", timeout_s)
+    else:
+        monkeypatch.delenv("HF_MCP_HEALTH_TIMEOUT_S", raising=False)
     f, recipe = _with_server(factory, module)
     t0 = time.monotonic()
     with pytest.raises(HarnessError) as e:
