@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from harness_factory.authoring.toolcode import ToolDef
+from harness_factory.providers.catalog import EndpointPrefs, ModelCaps
 
 Kind = Literal["prompt", "skill", "recipe", "server", "fault", "model"]
 KINDS: tuple[str, ...] = ("prompt", "skill", "recipe", "server", "fault", "model")
@@ -106,10 +107,8 @@ class FaultIn(BaseModel):
         return _slug(v)
 
 
-class ModelCapsIn(BaseModel):
-    tool_calling: Literal["native", "emulated", "none"] = "native"
-    structured_output: bool = True
-    context_len: int = Field(32_768, gt=0)
+# The catalog's own models, so authoring accepts exactly what providers.yaml loads (and refuses what it refuses).
+ModelCapsIn = ModelCaps
 
 
 class ModelIn(BaseModel):
@@ -123,6 +122,7 @@ class ModelIn(BaseModel):
     free: bool = False
     caps: ModelCapsIn = Field(default_factory=ModelCapsIn)
     limits: dict[str, Any] | None = None        # this model's own rate limits, when they differ from the provider's
+    endpoint: EndpointPrefs | None = None       # router endpoint preferences (OpenRouter); see providers/catalog.py
 
     @property
     def id(self) -> str:
@@ -150,7 +150,8 @@ class Impact(BaseModel):
     recipes_removed: list[str] = Field(default_factory=list)
     env_changed: dict[str, list[str]] = Field(default_factory=dict)  # server -> existing recipes that open it
     stale_results: int | None = None     # stored runs of the changed recipes at their current identity
-    models_changed: list[str] = Field(default_factory=list)   # "<provider>/<model>" whose provider model id changed
+    models_changed: list[str] = Field(default_factory=list)   # "<provider>/<model>" whose provider model id (or
+                                                              # pinned endpoint, #124) changed
                                                               # or that were removed: their runs' env_hash moves
 
     @property

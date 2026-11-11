@@ -179,6 +179,7 @@ async def run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
     names = [c["function"]["name"] for c in message.get("tool_calls") or []]
     with inst.tracer.span(SpanKind.turn, f"turn {n} · tools", turn=n, calls=len(names)) as span:
         out, stop = await _run_tool_calls(inst, message, restrict, scope)
+        budget_notice(inst, out)
         if stop:
             span.attributes["stop"] = stop
         span.otel.update(openinference.turn_io({"turn": n, "tool_calls": len(names)},
@@ -208,6 +209,28 @@ async def _run_tool_calls(inst: HarnessInstance, message: dict[str, Any],
         if stop:                    # a helper ended on infrastructure or a setup failure: so does this run
             return out, stop
     return out, None
+
+
+def budget_notice(inst: HarnessInstance, tool_messages: list[dict[str, Any]]) -> None:
+    """C1 (#125, `config.budget_notice`): append one short line to the batch's last tool result saying what budget
+    is left, after every batch (each_result) or the first time the used share of tool calls or steps reaches each
+    threshold (thresholds). Every shape runs its tools through run_tool_calls, so every shape gets it the same way.
+    It costs tokens only; it never mentions faults, checks or grading."""
+    spec = inst.recipe.config.budget_notice
+    if spec is None or not tool_messages:
+        return
+    b, left = inst.budget, inst.budget.remaining()
+    line = (f"[budget] tool calls left: {max(0, left['tool_calls'])} of {b.limits.max_tool_calls}; "
+            f"steps left: {max(0, left['steps'])} of {b.limits.max_steps}")
+    if spec.mode == "thresholds":
+        used = max(b.used_tool_calls / b.limits.max_tool_calls, b.used_steps / b.limits.max_steps)
+        sent = inst.snapshot.setdefault("budget_notices", [])     # survives a checkpoint resume (same instance)
+        due = [x for x in spec.at if used >= x and x not in sent]
+        if not due:
+            return
+        sent.extend(due)
+    last = tool_messages[-1]
+    last["content"] = f"{last.get('content') or ''}\n\n{line}"
 
 
 # Harness-attributable early stops: the run is still graded on the environment, and the reason is recorded as a

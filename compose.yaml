@@ -80,7 +80,9 @@ services:
     volumes: [pgdata:/var/lib/postgresql/data]
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:${MLFLOW_TAG:-latest}
+    # Pinned: trace ingestion over OTLP (the collector's otlphttp/mlflow) needs MLflow >= 3.6. 3.18.0 is the
+    # version the collector config was checked against (2026-11-11); tags follow vX.Y.Z (mlflow.org, Docker).
+    image: ghcr.io/mlflow/mlflow:${MLFLOW_TAG:-v3.18.0}
     command: >
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db

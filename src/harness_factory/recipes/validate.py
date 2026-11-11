@@ -218,6 +218,10 @@ def _runtime_issues(recipe: HarnessRecipe, provisioning: bool = False) -> list[V
         out.append(ValidationIssue(rule="runtime_harness_tools",
                                    detail=f"runtime {recipe.runner}: config.finish_check adds a turn in the native "
                                           f"loop; a framework runner decides itself when it is done"))
+    if recipe.config.budget_notice is not None:
+        out.append(ValidationIssue(rule="runtime_harness_tools",
+                                   detail=f"runtime {recipe.runner}: config.budget_notice is added to tool results "
+                                          f"by the native loop; a framework runner keeps its own"))
     missing = missing_packages(recipe.runner) if provisioning else []
     if missing:                 # the environment's problem, not the recipe's: checked when a run is provisioned
         out.append(ValidationIssue(rule="runner_installed",

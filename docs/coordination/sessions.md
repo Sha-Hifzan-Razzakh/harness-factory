@@ -28,7 +28,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLKhAFMPUEPRU3mK2t2` | `session:review` | Review of `main` (#38) and its work plan: scoring fixes, environment, graders, harness depth, task batch 4 |
 | `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 | `session_01BgTbLKg8F6MXLBFVeupkLx` | `session:addon-skills` | Add-on skills: skills in a catalog add-on |
-| `session_01BgTbLM73ireRFcS43br5Ny` | `session:triage` | Review of the DegreeAudit lab runs (9–10 Nov); reserves the fixes it found for the sessions that own that code (#108–#114, #116–#117) |
+| `session_01BgTbLM73ireRFcS43br5Ny` | `session:triage` | Review of the DegreeAudit lab runs (9–10 Nov); reserves the fixes it found for the sessions that own that code (#108–#114, #116–#117), and the model-routing plan's MR0–MR1 work (#119–#126) |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -71,7 +71,6 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #79 | `feat/task-profiler` | `…KhAFMPUEPRU3mK2t2` | Task profiler: 10-dimension profiles, rules + LLM profiler, agreement (PRF-01, 03-05) | draft, reserved (wave 6) | no (profiles are labels) |
 | #80 | `feat/recipe-generator` | `…KhAFMPUEPRU3mK2t2` | Recipe generator and logged hard-rule pruning (RCP-04, RUN-02 campaign) | draft, reserved (wave 6) | new recipes only |
 | #81 | `feat/self-metrics` | `…KhAFMPUEPRU3mK2t2` | Self-metrics and compressed traces with retention (NFR-08, NFR-09) | draft, reserved (wave 6) | no |
-=======
 | #34 | `feat/task-batch-3` | `…JZLSKyEhjaA4sxi9R` | Task batch 3, written by an independent author | closed by GitHub after the branch was re-signed; continued in #82 | yes (new tasks and seeds) |
 | #35 | `feat/provider-calibration` | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (P2) | ready for review | no (two nullable run columns, one table) |
 | #36 | `feat/allocation-planner` | `…JZLSKyEhjaA4sxi9R` | Allocation planner (P2) | ready for review (stacked on #35; CI green) | no |
@@ -109,10 +108,19 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #112 | `fix/validate-upfront-skills` | `…JtRe49bgfAAmdaB6W` | `hfx validate` refuses up-front skills with the skills server (lab D3) | merged | no |
 | #113 | `feat/projection-fallbacks` | `…JtRe49bgfAAmdaB6W` | Projection: realistic estimates without history (lab E2) | merged | no |
 | #114 | `feat/bench-progress-signals` | `…JtRe49bgfAAmdaB6W` | Bench report: progress signals next to E, optional (lab C2) | ready for review (CI green) | no |
-| #115 | `chore/ledger-lab-fixes` | `…M73ireRFcS43br5Ny` | These ledger rows | open | no |
-| #116 | `feat/phoenix-readable-traces` | `…JtRe49bgfAAmdaB6W` | Phoenix-readable traces: OpenInference input/output, chat messages and metadata on run, model and tool spans; `HF_TRACE_MESSAGES`, optional `HF_TRACE_MCP_SPANS`; MLflow: collector exporter, `otel_trace_id` on the MLflow run, `hfx traces replay` | ready for review (CI green) | no (observability only) |
-| #117 | `feat/trace-turn-spans` | `…JtRe49bgfAAmdaB6W` | Turn spans (CHAIN) grouping each model response with its tool calls; stacked on #116 | ready for review (stacked on #116; CI green) | no (new span kind; readers audited, numbers unchanged) |
-| #118 | `fix/health-test-timeout` | `…JtRe49bgfAAmdaB6W` | Health-probe test: the healthy servers keep a deadline they meet on a loaded CI worker (flaky on #110, #116) | ready for review | no (test only) |
+| #115 | `chore/ledger-lab-fixes` | `…M73ireRFcS43br5Ny` | These ledger rows | merged | no |
+| #116 | `feat/phoenix-readable-traces` | `…JtRe49bgfAAmdaB6W` | Phoenix-readable traces: OpenInference input/output, chat messages and metadata on run, model and tool spans; `HF_TRACE_MESSAGES`, optional `HF_TRACE_MCP_SPANS`; MLflow: collector exporter, `otel_trace_id` on the MLflow run, `hfx traces replay` | merged | no (observability only) |
+| #117 | `feat/trace-turn-spans` | `…JtRe49bgfAAmdaB6W` | Turn spans (CHAIN) grouping each model response with its tool calls; stacked on #116 | merged | no (new span kind; readers audited, numbers unchanged) |
+| #118 | `fix/health-test-timeout` | `…JtRe49bgfAAmdaB6W` | Health-probe test: the healthy servers keep a deadline they meet on a loaded CI worker (flaky on #110, #116) | merged | no (test only) |
+| #119 | `fix/providers-context-and-limits` | `…JtRe49bgfAAmdaB6W` | Providers: OpenRouter's 20/min only on `:free` models; real context for llama-3.3-70b, gpt-oss-120b, qwen3-32b (plan A0, MR0) | ready for review (CI green) | no hash; pacing and context checks change |
+| #120 | `feat/collector-mlflow-traces` | `…JtRe49bgfAAmdaB6W` | MLflow image pinned to v3.18.0 (the exporter itself shipped in #116) (plan E2, MR0) | ready for review (CI green) | no (config) |
+| #121 | `feat/model-caps` | `…JtRe49bgfAAmdaB6W` | Model catalog: max output, reasoning, supported parameters, input modalities, endpoint (plan A1, MR1) | ready for review (CI green) | no (optional catalog fields) |
+| #122 | `feat/recipe-model-validation` | `…JtRe49bgfAAmdaB6W` | Recipe × model validation before a run; `hfx validate --models` (plan A3, MR1; stacked on #121) | ready for review (stacked on #121; CI green) | no (plans leave out impossible pairs) |
+| #123 | `feat/reasoning-effort` | `…JtRe49bgfAAmdaB6W` | Recipe dimension: reasoning effort (plan A4, MR1; stacked on #122) | ready for review (stacked on #122; CI green) | no until a recipe sets it |
+| #124 | `feat/pinned-endpoints` | `…JtRe49bgfAAmdaB6W` | Pinned OpenRouter endpoints per model; `served_by` recorded (plan A5, MR1; stacked on #121) | ready for review (stacked on #121; CI green) | env hash for pinned models only; one nullable run column (Alembic 0004) |
+| #125 | `feat/budget-notice` | `…JtRe49bgfAAmdaB6W` | Recipe dimension: budget notice (calls and steps left) (plan C1, MR1) | ready for review (CI green) | no until a recipe sets it |
+| #126 | `feat/finish-check` | `…JtRe49bgfAAmdaB6W` | Recipe dimension: finish check before the run ends (plan C2, MR1) | ready for review (CI green) | no until a recipe sets it |
+| #127 | `chore/ledger-mr-plan` | `…JtRe49bgfAAmdaB6W` | These ledger rows: #119–#127, statuses of #115–#118, two conflict-marker lines removed | open | no |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
@@ -133,7 +141,6 @@ lines at the end), `.github/workflows/ci.yml` (`--extra api --extra ui` on the t
 | 0018 | `…KhAFMPUEPRU3mK2t2` | Recorded corpora and their versioning (in #72) |
 | 0019 | `…KhAFMPUEPRU3mK2t2` | Approval gate and scripted approver (in #75) |
 | 0020 | `…KhAFMPUEPRU3mK2t2` | Memory stores and the write policy (in #78) |
-=======
 | 0010 | `…JZLSKyEhjaA4sxi9R` | Cross-provider equivalence calibration (in #35) |
 | 0011 | `…JZLSKyEhjaA4sxi9R` | Allocation planner (in #36) |
 | 0016 | `…JZLSKyEhjaA4sxi9R` | Runner axis (in #53) |

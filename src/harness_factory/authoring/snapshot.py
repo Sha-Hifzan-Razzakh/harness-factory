@@ -32,6 +32,22 @@ def _rel(p: Path, root: Path) -> str:
     return p.relative_to(root).as_posix()
 
 
+
+# Fields added to the catalog's models after their history began (#121): left out of an item's hash while unset, so
+# adding the fields didn't make every existing model look changed (catalog history, sync).
+_LATER_CAPS = ("max_output_tokens", "reasoning", "supported_params", "input_modalities")
+
+
+def _model_identity(m) -> dict:
+    d = m.model_dump(mode="json")
+    if d.get("endpoint") is None:
+        d.pop("endpoint", None)
+    for k in _LATER_CAPS:
+        if d["caps"].get(k) is None:
+            d["caps"].pop(k, None)
+    return d
+
+
 def take() -> dict[str, Any]:
     import jinja2
     import yaml
@@ -124,7 +140,8 @@ def take() -> dict[str, Any]:
         for m in p.models:
             out["models"][f"{p.id}/{m.canonical}"] = {
                 "provider": p.id, "canonical": m.canonical, "provider_model_id": m.provider_model_id,
-                "kind": p.kind, "hash": content_hash(m.model_dump(mode="json"), 12),
+                "env_model": m.env_model_id(),          # what env_hash sees: the id, plus a pinned endpoint (#124)
+                "kind": p.kind, "hash": content_hash(_model_identity(m), 12),
                 "summary": f"{m.provider_model_id} · ctx {m.caps.context_len:,} · ${m.price_in:g}/${m.price_out:g}"
                            f" per M{' · free' if m.free else ''}"}
 
@@ -209,3 +226,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

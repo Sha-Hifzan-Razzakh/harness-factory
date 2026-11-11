@@ -724,7 +724,8 @@ OpenTelemetry alone, never into the JSONL trace, the results store, grading or a
 
 **Traces in MLflow.** The collector also forwards every trace to MLflow (`otlphttp/mlflow`: MLflow 3.6 or later
 takes OTLP over HTTP at `/v1/traces`, into the experiment the `x-mlflow-experiment-id` header names; compose's
-SQLite store is the SQL store it needs). MLflow's Overview and Traces tabs then show one trace per run, with the
+SQLite store is the SQL store it needs; compose pins `MLFLOW_TAG` to `v3.18.0`, the version this was checked
+against). MLflow's Overview and Traces tabs then show one trace per run, with the
 same span types, inputs and outputs, models and token counts. The header's id is the number in MLflow's
 `/#/experiments/<id>` URL for `harness-factory`: `1` on a fresh MLflow, where it is the first experiment created;
 set `HF_MLFLOW_EXPERIMENT_ID` if yours differs. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector (`:4318`), not
@@ -982,6 +983,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
 | config | `v2-finish-check` | When the model is about to end on a reply without tool calls, it gets one generic reminder ("check that every file the task asks for exists ... then reply", `config.finish_check: {note}`) and one more turn, at most once per run. The extra call is a step; it fires only where a reply ends the run (V3's last stage, V4's last step) and only if the budget allows another call; never names the task's files or checks. Native loop only |
+| config | `v2-budget-notice` | After each tool batch the last result ends with `[budget] tool calls left: N of M; steps left: K of L` (`config.budget_notice: {mode: each_result}`; `mode: thresholds, at: [0.5, 0.8]` says it once per threshold instead). Tokens only: no step, no tool call, nothing about faults or grading. Native loop only (framework runners refuse it) |
 | config | `v2-compact` | Context compaction: past 75% of the model's `context_len`, older turns are replaced by a summary the model writes; the last two turns stay verbatim (`config.compaction`, ADR 0015) |
 | tools | `v2-calendar` | Adds the `calendar` server (REVERSIBLE writes; see [Outbox and calendar](#outbox-and-calendar)). The only recipe besides `v2-outbox` that reaches `cal-02` |
 | sending | `v2-outbox` | Calendar and outbox servers with `IRREVERSIBLE: AUTO` and tier T3, on a slice whose only IRREVERSIBLE tools are the two sends (no `fs.write_file`, `fs.delete_file` or `sql`). The only recipe that reaches `cal-01` and `out-01` |
@@ -1465,6 +1467,24 @@ plus 4 per message. That over-counts prose and JSON, so it errs towards acting e
   characters and 64 spills per run; past that, output is cut as before.
 - **Validation.** `hfx validate` checks every slot's `max_output_tokens` against the `context_len` of every served
   model, and at provisioning against the run's model.
+
+**Model capabilities** (`catalog/providers.yaml`, under a model's `caps`). Besides `tool_calling`,
+`structured_output` and `context_len`, a model can record `max_output_tokens` (the most it returns in one reply),
+`reasoning` (`mode: none | optional | always`, and the `efforts` it accepts: minimal, low, medium, high),
+`supported_params` (the request parameters, as the provider lists them) and `input_modalities` (text, image, audio,
+video, file; text always). A served model can also record `endpoint`, its router endpoint preferences (OpenRouter:
+`order`, `quantizations`, `require_parameters`, `allow_fallbacks`). Every one is optional: absent means unknown and
+nothing is checked against it; a key the catalog doesn't know is refused. None of them is in `env_hash` (the
+provider model id is), except `endpoint`, below. Authoring (`hfx new model`, the API, the workspace) writes and
+versions them, keeping `providers.yaml`'s comments.
+
+**Pinned endpoints** (OpenRouter). OpenRouter serves one model id from several upstream providers and picks the
+cheapest by default, which may be a quantised copy or one that ignores parameters. With `endpoint` set, each call
+sends it as OpenRouter's `provider` preferences (`order`, `quantizations`, `require_parameters`, `allow_fallbacks`);
+other providers never get it. The upstream that answered is recorded as `served_by` on each `model_call` span and
+on the run (the results store's `served_by`, next to `served_id`; comma-joined when fallbacks mixed endpoints). A
+pinned endpoint is part of `env_hash` (the model id plus an endpoint fingerprint), so pinning, or changing a pin,
+starts new cells and authoring asks to confirm it; unpinned models keep their env hash.
 
 ## Pausing and resuming a run (checkpoints)
 
@@ -1989,6 +2009,14 @@ hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption
 (the second recipe minus the first), wins/losses/ties, a bootstrap 95% interval and a verdict only when the
 interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
 recipe it extends) is unchanged.
+
+**Progress signals.** When every run scores E = 0, every pair ties and every verdict is "no clear difference",
+although the traces can still tell recipes apart. A bench report always adds section 2b (`hfx report --signals`
+adds it to any report): per recipe and model, the scored runs that wrote a file the oracle grades, that called a
+domain server ("engine": anything but fs, fsx, search, sql and harness tools), that read, that wrote, and that
+passed every `json_schema` check, plus the median position of the first write and the median number of tool calls.
+They are read from the stored rows and traces (`results/signals.py`): next to E, never in it, and nothing is graded
+again.
 
 ## Analysis
 

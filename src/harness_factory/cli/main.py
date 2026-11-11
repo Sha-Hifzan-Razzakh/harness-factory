@@ -638,7 +638,10 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
            title: str = typer.Option("Campaign report", "--title"),
            compare: str | None = typer.Option(None, "--compare",
                                               help="recipe pairs base:variant, comma-separated, e.g. "
-                                                   "v2-base:v3-staged,v2-base:v4-planner")) -> None:
+                                                   "v2-base:v3-staged,v2-base:v4-planner"),
+           signals: bool = typer.Option(False, "--signals",
+                                        help="add progress signals per cell (output written, tool classes, first "
+                                             "write, tool calls, schema valid), read from the traces")) -> None:
     """A markdown campaign report from the results store: status, paired matrix-vs-base deltas, any recipe pairs
     asked for with --compare, selector picks, failures and unscored runs."""
     from pathlib import Path
@@ -651,7 +654,8 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
         raise typer.BadParameter(str(e), param_hint="--compare") from None
     f = _factory()
     rows, b = _evidence(f, baseline)
-    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None, compare=pairs)
+    text = build_report(f, rows, b, title=title, models=models.split(",") if models else None, compare=pairs,
+                        signals=signals)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(text + "\n")

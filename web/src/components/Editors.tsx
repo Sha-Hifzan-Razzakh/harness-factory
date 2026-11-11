@@ -70,7 +70,14 @@ export function PayloadEditor({ kind, id, initial, method, onSaved, saveLabel }:
 
 export interface ModelForm {
   provider: string; canonical: string; provider_model_id: string; price_in: number; price_out: number; free: boolean;
-  caps: { tool_calling: string; structured_output: boolean; context_len: number }; limits?: Record<string, unknown>;
+  caps: {
+    tool_calling: string; structured_output: boolean; context_len: number;
+    // #121: optional, unknown when absent; the form keeps whatever the model already has
+    max_output_tokens?: number | null; reasoning?: { mode: string; efforts?: string[] } | null;
+    supported_params?: string[] | null; input_modalities?: string[] | null;
+  };
+  limits?: Record<string, unknown>;
+  endpoint?: { order?: string[]; quantizations?: string[]; require_parameters?: boolean; allow_fallbacks?: boolean } | null;
 }
 
 /** Models: a form (providers.yaml keeps its comments; only this model's line changes). */
@@ -97,6 +104,7 @@ export function ModelEditor({ initial, providers, isNew, onSaved }: {
         <label className="field"><span>Price out ($/M tokens)</span><input type="number" step="0.01" value={m.price_out} onChange={(e) => set({ price_out: Number(e.target.value) })} /></label>
         <label className="field"><span>Free tier</span><input type="checkbox" checked={m.free} onChange={(e) => set({ free: e.target.checked })} /></label>
         <label className="field"><span>Context window (tokens)</span><input type="number" value={m.caps.context_len} onChange={(e) => caps({ context_len: Number(e.target.value) })} /></label>
+        <label className="field"><span>Max output (tokens, blank = unknown)</span><input type="number" value={m.caps.max_output_tokens ?? ""} onChange={(e) => caps({ max_output_tokens: e.target.value === "" ? null : Number(e.target.value) })} /></label>
         <label className="field"><span>Tool calling</span>
           <select value={m.caps.tool_calling} onChange={(e) => caps({ tool_calling: e.target.value })}>
             <option>native</option><option>emulated</option><option>none</option></select></label>
