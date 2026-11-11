@@ -185,12 +185,22 @@ def _caps_issues(slots, m) -> list[ValidationIssue]:
     """What a model's known caps rule out (#121): a slot asking for more output than the model returns. Unknown caps
     pass (`pair_notes` says what wasn't checked)."""
     out: list[ValidationIssue] = []
-    cap = m.caps.max_output_tokens
+    cap, reasoning = m.caps.max_output_tokens, m.caps.reasoning
     for s in slots:
         if cap is not None and s.max_output_tokens > cap:
             out.append(ValidationIssue(rule="model_max_output",
                                        detail=f"{s.role} asks for up to {s.max_output_tokens} output tokens; "
                                               f"{m.canonical} returns at most {cap}"))
+        effort = getattr(s, "reasoning_effort", None)
+        if effort is not None and reasoning is not None:                       # A4 (#123)
+            if reasoning.mode == "none":
+                out.append(ValidationIssue(rule="model_reasoning",
+                                           detail=f"{s.role} sets reasoning_effort {effort}; {m.canonical} "
+                                                  f"doesn't reason"))
+            elif reasoning.efforts and effort not in reasoning.efforts:
+                out.append(ValidationIssue(rule="model_reasoning",
+                                           detail=f"{s.role} sets reasoning_effort {effort}; {m.canonical} accepts "
+                                                  f"{', '.join(reasoning.efforts)}"))
     return out
 
 
@@ -233,6 +243,8 @@ def pair_notes(recipe: HarnessRecipe, providers: ProviderCatalog, provider_id: s
                        f"is not checked against it")
         if m.caps.reasoning is not None and m.caps.reasoning.mode == "always":
             out.append(f"{m.canonical} always reasons: its reasoning tokens come out of the reply budget")
+        if m.caps.reasoning is None and any(getattr(s, "reasoning_effort", None) for s in slots):
+            out.append(f"{m.canonical}: reasoning unknown (caps.reasoning), so reasoning_effort is sent unchecked")
     return out
 
 
