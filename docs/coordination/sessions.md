@@ -101,6 +101,7 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | ready for review |  no (unset: nothing changes; recipes without add-on skills keep their hashes) |
 | #106 | `fix/scripted-plan-lines` | `…LKg8F6MXLBFVeupkLx` | Scripted planner: cut long string arguments in plan lines (V4/V5 offline runs on long-write tasks no longer overflow the 32K scripted context) | ready for review | no (scripted backend text isn't hashed) |
 | #107 | `feat/my-refinements` | `…JtRe49bgfAAmdaB6W` | Catalog history and versions, models as an authoring kind, spec cards, saved experiments + dashboard, React workspace (`hfx web`), guided UI pages, dev container (ADR 0022); from Hifzan's refinements | ready for review (CI green) | no (history and experiments live under `var/`; no hashed input changes) |
+| #118 | `fix/health-test-timeout` | `…JtRe49bgfAAmdaB6W` | Health-probe test: the healthy servers keep a deadline they meet on a loaded CI worker (flaky on #110, #116) | ready for review | no (test only) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
