@@ -52,6 +52,10 @@ class ModelSlot(BaseModel):
     temperature: float = 0.0
     max_output_tokens: int = 4096
     seed: int | None = None
+    # A4 (#123): how much the model reasons, sent to the provider (OpenRouter `reasoning.effort`); None = the
+    # provider's default, and no key in the recipe hash (`_SLOT_OMIT_WHEN_NONE`). The levels match the catalog's
+    # ReasoningCaps.efforts; a model whose caps rule the level out is refused before the run (validate.pair_issues).
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
 
 
 class ToolSlice(BaseModel):
@@ -258,6 +262,8 @@ _V5_UNUSED_PLANNING = ("step_prompt", "step_max_steps")
 # Campaign axes: set per run, never part of the recipe's identity. The model is a cell axis; the seed is a RunKey
 # axis. Both are nulled before hashing.
 _SLOT_AXES = ("canonical_model", "seed")
+# Optional slot fields left out of the hash while unset, so slots that don't set them keep their recipe's hash.
+_SLOT_OMIT_WHEN_NONE = ("reasoning_effort",)
 
 
 def _drop_none(data: dict, dotted: str) -> None:
@@ -338,6 +344,9 @@ class HarnessRecipe(BaseModel):
         for slot in data["model_slots"].values():
             for axis in _SLOT_AXES:
                 slot[axis] = None
+            for k in _SLOT_OMIT_WHEN_NONE:
+                if slot.get(k) is None:
+                    slot.pop(k, None)
         if data.get("runtime") == "native":             # native is the default: spelled out or not, same harness
             data["runtime"] = None
         for dotted in _HASH_OMIT_WHEN_NONE:

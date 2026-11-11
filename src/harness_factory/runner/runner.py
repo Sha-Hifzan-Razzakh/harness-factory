@@ -485,13 +485,36 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
     for t in tasks:
         f.graders.check(t)                                   # unknown grader: likewise
     skip = {(t, r) for t, r, _ in skipped_pairs(f, recipe_ids, tasks, unreachable_ok)}
+    # A recipe that can't run on a model at all (A3: its reply doesn't fit, or asks for more output than the model
+    # returns) is left out for that model, with the reason (`models_left_out`); the recipe is never adjusted.
+    no_model = {(r, m) for r, m, _ in models_left_out(f, recipe_ids, provider_id, models)}
     # A variant that binds its own faults (tool_failure, slow_tool; TSK-04) is run clean only: a campaign fault
     # profile on it is refused (provision), so the plan leaves those runs out instead of failing them.
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
                     fault=None if fid in (None, NO_FAULTS) else fid)
             for t in tasks for r in recipe_ids if (t.id, r) not in skip
-            for m in models for fid in faults if fid in (None, NO_FAULTS) or t.bound_faults() is None
+            for m in models if (r, m) not in no_model
+            for fid in faults if fid in (None, NO_FAULTS) or t.bound_faults() is None
             for s in range(seeds)]
+
+
+def models_left_out(f: Factory, recipe_ids: list[str], provider_id: str,
+                    models: list[str]) -> list[tuple[str, str, list[str]]]:
+    """(recipe id, model, reasons) for each recipe x model pair that can't run (`validate.pair_issues`, #122)."""
+    from harness_factory.recipes.validate import pair_issues
+    out = []
+    for r in recipe_ids:
+        if r not in f.recipes:
+            continue
+        for m in models:
+            issues = pair_issues(f.recipes[r], f.providers, provider_id, m)
+            if issues:
+                out.append((r, m, [f"{i.rule}: {i.detail}" for i in issues]))
+    return out
+
+
+def describe_models_left_out(pairs: list[tuple[str, str, list[str]]]) -> list[str]:
+    return [f"{r} on {m}: {'; '.join(reasons)}" for r, m, reasons in pairs]
 
 
 def plan_tasks(f: Factory, task_ids: list[str] | None = None, tags: list[str] | None = None,
