@@ -47,15 +47,22 @@ providers:
     litellm_prefix: openrouter
     auth_env: OPENROUTER_API_KEY
     data_terms: "depends on upstream; set provider data policy in account (verify)"
-    # Limits (openrouter.ai/docs/api/reference/limits, checked 2026-11-09): paid model variants have no
-    # platform-level request cap; upstream providers can still answer 429. The 20 rpm here is the factory's own
-    # pacing for paid models, not a platform limit. Free variants (`:free`) allow 20 rpm and 50 requests a day, or
-    # 1,000 a day once the account has bought at least $10 of credits (it has); each free model below says so itself.
-    limits: {rpm: 20, scope: account}
+    # Limits (openrouter.ai/docs/api_reference/limits, checked 2026-11-11): paid model variants have no
+    # platform-level request cap, so paid models get no pacing here (upstream providers can still answer 429, which
+    # the gateway retries). Free variants (`:free`) allow 20 rpm and 50 requests a day, or 1,000 a day once the
+    # account has bought at least $10 of credits (it has): each free model below carries those limits itself, in
+    # its own bucket. Until 2026-11-11 a 20 rpm account-wide limit paced paid models too (81% of the 9-10 Nov audit
+    # campaigns' run time was spent waiting for it).
+    limits: {}
     models:
-      - {canonical: llama-3.3-70b, provider_model_id: meta-llama/llama-3.3-70b-instruct, price_in: 0.13, price_out: 0.40}
-      - {canonical: gpt-oss-120b,  provider_model_id: openai/gpt-oss-120b,               price_in: 0.10, price_out: 0.50}
-      - {canonical: qwen3-32b,     provider_model_id: qwen/qwen3-32b,                    price_in: 0.10, price_out: 0.30}
+      # Context lengths from each model's openrouter.ai page, checked 2026-11-11 (all three list 131K; Qwen3 32B
+      # reaches it with YaRN scaling, 32K natively). Without caps they defaulted to 32,768.
+      - {canonical: llama-3.3-70b, provider_model_id: meta-llama/llama-3.3-70b-instruct, price_in: 0.13, price_out: 0.40,
+         caps: {context_len: 131072}}
+      - {canonical: gpt-oss-120b,  provider_model_id: openai/gpt-oss-120b,               price_in: 0.10, price_out: 0.50,
+         caps: {context_len: 131072}}
+      - {canonical: qwen3-32b,     provider_model_id: qwen/qwen3-32b,                    price_in: 0.10, price_out: 0.30,
+         caps: {context_len: 131072}}
       # Shortlist of small, cheap tool-calling models. Ids, prices ($/M) and context checked on each model's
       # openrouter.ai page on 2026-11-09. Use free models on synthetic data only: free endpoints may log prompts.
       - {canonical: deepseek-v4.1-flash, provider_model_id: deepseek/deepseek-v4.1-flash, price_in: 0.006, price_out: 0.50,
@@ -70,4 +77,4 @@ providers:
       # OpenRouter counts free requests per account, so one free model here keeps this bucket honest; a second
       # free model needs a shared limit instead (both would otherwise get 1,000 a day each).
       - {canonical: "nemotron-3-ultra:free", provider_model_id: "nvidia/nemotron-3-ultra-550b-a55b:free", price_in: 0.0,
-         price_out: 0.0, free: true, caps: {context_len: 1000000}, limits: {rpm: 20, rpd: 1000}}
+         price_out: 0.0, free: true, caps: {context_len: 1000000}, limits: {rpm: 20, rpd: 1000, scope: model}}
