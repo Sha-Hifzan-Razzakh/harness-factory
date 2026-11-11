@@ -33,7 +33,9 @@ class ExperimentTracker:
         self._mlflow = mlflow
         self.enabled = True
 
-    def log(self, rec: EffectivenessRecord, recipe: HarnessRecipe) -> None:
+    def log(self, rec: EffectivenessRecord, recipe: HarnessRecipe, otel_trace_id: str | None = None) -> None:
+        """otel_trace_id: the run's exported trace (tag `otel_trace_id`). With the collector's MLflow exporter on,
+        it is the same trace MLflow shows under Traces, so the run page leads to it (and Phoenix and Langfuse)."""
         if not self.enabled:
             return
         mlflow = self._mlflow
@@ -46,7 +48,8 @@ class ExperimentTracker:
                                 "composite": rec.composite, "tokens_in": rec.cost.tokens_in,
                                 "tokens_out": rec.cost.tokens_out, "tool_calls": rec.cost.tool_calls,
                                 "usd": rec.cost.usd, "wall_s": rec.cost.wall_s})
-            mlflow.set_tags({"status": rec.status.value, "run_key": rec.run_key.as_str()})
+            mlflow.set_tags({"status": rec.status.value, "run_key": rec.run_key.as_str(),
+                             **({"otel_trace_id": otel_trace_id} if otel_trace_id else {})})
             if rec.trace_path:
                 mlflow.log_artifact(rec.trace_path, artifact_path="trace")
             if rec.transcript_path:

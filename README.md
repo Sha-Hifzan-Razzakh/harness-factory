@@ -706,6 +706,37 @@ run:<run-key-short>
 Spans carry OpenInference attributes (Phoenix) and `gen_ai.*` attributes (Langfuse). With no OTLP endpoint set,
 traces are still written to `var/traces/<trace_id>.jsonl`.
 
+**What Phoenix shows.** The root span is named `<recipe> · <task>` (`hf.run_key` stays) and carries the task
+prompt (`input.value`), the final reply or `(no final message: ended by <stop>)` (`output.value`), and `metadata`:
+task, recipe and recipe hash, model, provider, seed, status, outcome, how the run ended, model-call and tool-call
+counts, the system prompt. A campaign's runs share a `session.id`. Model calls render as a chat
+(`llm.input_messages` / `llm.output_messages` with the tool calls asked for, `llm.tools`, `llm.invocation_parameters`)
+and tool calls show their arguments and result as JSON panes (`input.value` / `output.value`). The MCP SDK's
+`MCP send ...` spans are dropped from the export unless asked for. All of it is observability only: it goes to
+OpenTelemetry alone, never into the JSONL trace, the results store, grading or any hash.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HF_TRACE_MESSAGES` | `delta` | `delta`: a conversation's messages go with its first call, later calls send only the messages added since (`hf.input_messages_offset` says how many came before); `full`: every message on every call; `off`: token counts only |
+| `HF_TRACE_MAX_CHARS` | `8000` | Longest message content, tool argument or tool result copied to a span |
+| `HF_TRACE_MCP_SPANS` | unset | `1` keeps the MCP SDK's own spans under each tool call |
+| `HF_MLFLOW_EXPERIMENT_ID` | `1` | The MLflow experiment the collector sends traces to (below) |
+
+**Traces in MLflow.** The collector also forwards every trace to MLflow (`otlphttp/mlflow`: MLflow 3.6 or later
+takes OTLP over HTTP at `/v1/traces`, into the experiment the `x-mlflow-experiment-id` header names; compose's
+SQLite store is the SQL store it needs). MLflow's Overview and Traces tabs then show one trace per run, with the
+same span types, inputs and outputs, models and token counts. The header's id is the number in MLflow's
+`/#/experiments/<id>` URL for `harness-factory`: `1` on a fresh MLflow, where it is the first experiment created;
+set `HF_MLFLOW_EXPERIMENT_ID` if yours differs. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector (`:4318`), not
+straight at Phoenix, or MLflow sees nothing. Each MLflow run carries the trace's id as the `otel_trace_id` tag;
+MLflow names that trace `tr-<otel_trace_id>`. A campaign's `session.id` becomes MLflow's trace session.
+
+**Loading stored runs.** `hfx traces replay [files or directories]` (default `var/traces`) sends stored JSONL runs to
+`OTEL_EXPORTER_OTLP_ENDPOINT` as new traces with their original start and end times, so runs made before a backend
+was connected appear in Phoenix, Langfuse and MLflow without running anything again. Replayed spans say
+`hf.replayed: true`, and the root carries the JSONL trace id (`hf.trace_id`). What the JSONL never held can't come
+back: model calls show their tokens and previews, not the chat.
+
 ## Changing the results schema
 
 The results store schema is versioned with Alembic. The revisions are in

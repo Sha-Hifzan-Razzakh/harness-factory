@@ -1,4 +1,5 @@
 # OpenTelemetry Collector: the factory exports OTLP once; the collector fans out to Phoenix and Langfuse.
+# MLflow gets the same traces too (otlphttp/mlflow).
 receivers:
   otlp:
     protocols:
@@ -23,6 +24,13 @@ exporters:
     auth: {authenticator: basicauth/langfuse}
     headers:
       x-langfuse-ingestion-version: "4"      # spans show up at once (v4 data model), not after a delay
+  # MLflow >= 3.6 ingests OTLP/HTTP at /v1/traces (no gRPC) into the experiment the header names, and maps the
+  # OpenInference attributes (span kinds, input/output values, model, token counts, session.id). Its backend store
+  # must be SQL (compose: SQLite). The id is the number in MLflow's /#/experiments/<id> URL for "harness-factory".
+  otlphttp/mlflow:
+    endpoint: http://mlflow:5000
+    headers:
+      x-mlflow-experiment-id: ${env:MLFLOW_EXPERIMENT_ID}
   debug:
     verbosity: basic
 
@@ -32,4 +40,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/phoenix, otlphttp/langfuse]
+      exporters: [otlphttp/phoenix, otlphttp/langfuse, otlphttp/mlflow]

@@ -357,6 +357,11 @@ class ModelGateway:
                     span.attributes["quota_wait_s"] = round(waited, 3)
                 if response_format:
                     span.attributes["response_format"] = response_format.get("type") if extra else "prompt_only"
+                # OpenTelemetry only (Span.otel, never persisted): what the model is sent, for Phoenix's chat view.
+                self.tracer.llm_request(span, messages, tools, {
+                    "temperature": slot.temperature, "max_tokens": slot.max_output_tokens,
+                    **({"seed": slot.seed} if slot.seed is not None else {}),
+                    **({"response_format": response_format} if response_format else {})}, self.provider.id)
                 t_call = time.monotonic()
                 try:
                     if self.timeout_s:
@@ -397,6 +402,7 @@ class ModelGateway:
                         span.attributes["finish_reason"] = comp.finish_reason
                     if comp.message.get("content"):
                         span.attributes["content_preview"] = str(comp.message["content"])[:500]
+                    self.tracer.llm_response(span, messages, comp.message, comp.tokens_in, comp.tokens_out)
                     self.ledger.record_tokens(bucket, comp.tokens_in + comp.tokens_out, reserve)
                     self.successful_calls += 1
                     cut = cut_off_tool_calls(comp)

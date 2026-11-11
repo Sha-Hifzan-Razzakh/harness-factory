@@ -40,6 +40,10 @@ class Span(BaseModel):
     status: str = "ok"            # ok | error
     error: str | None = None      # ErrorKind value
     attributes: dict[str, Any] = Field(default_factory=dict)
+    # OpenTelemetry only (observability/openinference.py): never persisted (JSONL, ledger, results, grading, hashes
+    # read `attributes`), so message lists and tool results can go here without touching any measurement.
+    otel: dict[str, Any] = Field(default_factory=dict, exclude=True, repr=False)
+    otel_name: str | None = Field(None, exclude=True, repr=False)
 
     def duration_ms(self) -> float:
         return max(0, self.end_ns - self.start_ns) / 1e6

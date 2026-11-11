@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -35,7 +36,8 @@ from harness_factory.grading.base import (
 from harness_factory.grading.judge import RubricJudge, apply_judge_failure, judge_usage
 from harness_factory.mcp.pool import MCPSessionPool
 from harness_factory.mlops.tracker import ExperimentTracker
-from harness_factory.observability.span import SpanKind
+from harness_factory.observability import openinference
+from harness_factory.observability.span import Span, SpanKind
 from harness_factory.observability.tracer import Tracer
 from harness_factory.providers.catalog import ProviderCatalog, load_provider_catalog
 from harness_factory.providers.quota import QuotaLedger
@@ -204,10 +206,35 @@ def run_scores(result: RunResult, grades: list[Grade]) -> tuple[FamilyScores, li
     return scores, violations, critical
 
 
+def _annotate_root(root: Span, inst, task: Task, recipe: HarnessRecipe, result: RunResult, grades: list[Grade],
+                   ended_by: str, campaign_id: str | None) -> None:
+    """The root span as Phoenix shows it: the prompt, the final reply, the run's metadata (Span.otel, never persisted).
+    Everything comes from what the run already computed."""
+    if not inst.tracer.exporting():
+        return
+    k = inst.run_key
+    first = {m.get("role"): m.get("content") for m in reversed(inst.messages)}     # the first of each role
+    stop = ended_by + (f" ({result.error})" if result.error else "")
+    final = result.output if isinstance(result.output, str) and result.output.strip() else \
+        f"(no final message: ended by {stop})"
+    counts = {kind: sum(s.kind == kind for s in inst.tracer.spans) for kind in (SpanKind.model_call, SpanKind.tool_call)}
+    limit = settings.trace_max_chars()
+    metadata = {"task": k.task_version, "recipe": recipe.id, "recipe_hash": k.recipe_hash, "model": k.canonical_model,
+                "provider": k.provider, "seed": k.seed, "status": result.status.value,
+                "outcome": combine_families(grades).outcome, "ended_by": stop,
+                "model_calls": counts[SpanKind.model_call], "tool_calls": counts[SpanKind.tool_call],
+                "system_prompt": openinference.cap(str(first.get("system") or ""), limit)}
+    root.otel_name = f"{recipe.id} · {task.id}"
+    root.otel.update(openinference.run_root(prompt=str(first.get("user") or task.instruction), output=final,
+                                            metadata=metadata, agent=recipe.id, session=campaign_id, limit=limit))
+
+
 async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model: str, provider_id: str,
                   seed: int = 0, backend: Backend | None = None, flush: bool = True,
-                  fault: str | None = None, pause: PauseRule | None = None) -> EffectivenessRecord:
+                  fault: str | None = None, pause: PauseRule | None = None,
+                  campaign_id: str | None = None) -> EffectivenessRecord:
     """flush: push buffered OTLP spans after the run. Campaigns pass False and flush once at the end.
+    campaign_id: groups a campaign's runs in Phoenix (`session.id` on the root span); observability only.
     fault: a fault profile id (catalog/faults) to inject tool failures; None = a clean run.
     pause: with checkpointing on (f.checkpoint), pause the run between two nodes when this says so; it is resumed
     from the checkpoint and must end exactly like an uninterrupted run (shapes/checkpoint.py)."""
@@ -264,8 +291,10 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
                 # campaign share this event loop.
                 grades = await asyncio.to_thread(f.graders.run, ctx)
             pre_judge = apply_judge_failure(result, ctx.judgements)
+            ended_by = result.status.value
             result.status = _finalize_status(result, grades, task.oracle.pass_threshold)
             root.attributes["status"] = result.status.value
+            _annotate_root(root, inst, task, recipe, result, grades, ended_by, campaign_id)
         result.trajectory = list(inst.tracer.spans)
         result.cost = _cost(inst.tracer.spans, f.providers, provider_id, time.monotonic() - t0 - judge_s)
         trace_path = inst.tracer.write_jsonl()
@@ -294,20 +323,23 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         )
     if f.store:
         f.store.add(rec)
-    await _mirror(f, rec, recipe)
+    await _mirror(f, rec, recipe, inst.tracer.otel_trace_id)
     if flush:
         await asyncio.to_thread(Tracer.flush)
     return rec
 
 
-async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe) -> None:
+async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe,
+                  otel_trace_id: str | None = None) -> None:
     """Mirror a stored run to MLflow. The results store is the source of truth, so a mirror failure is a warning,
     never a run or campaign error. The MLflow client is synchronous network I/O: it runs in a thread so a slow
     server can't stall the event loop (and the wall time of every other run on it)."""
     if not f.tracker.enabled:
         return
     try:
-        await asyncio.to_thread(f.tracker.log, rec, recipe)
+        # The exported trace's id goes on the MLflow run, when spans were exported (OpenTelemetry on).
+        extra = {"otel_trace_id": otel_trace_id} if otel_trace_id else {}
+        await asyncio.to_thread(f.tracker.log, rec, recipe, **extra)
     except Exception as e:  # noqa: BLE001  any client or server failure: the run itself is already stored
         f.tracker.failures = getattr(f.tracker, "failures", 0) + 1
         log.warning("MLflow mirror failed for %s: %s: %s", rec.run_key.short(), type(e).__name__, str(e)[:300])
@@ -361,6 +393,7 @@ async def run_reference(f: Factory, task: Task) -> Grade:
                     if res.is_error:
                         span.status = "error"
                         raise RuntimeError(f"{task.key()} reference step {step['tool']} failed: {res.text}")
+                    tracer.tool_io(span, step["args"], res.text)
                     outputs.append((step["tool"], len(res.text)))
         perturb.check_reference_outputs(task, outputs)        # an oversized_output variant's call is past the cap
         after = insp.capture()
@@ -526,12 +559,14 @@ async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,
     gate = asyncio.Semaphore(concurrency)
     t0 = time.monotonic()
     waits_before = dict(f.ledger.waits)
+    campaign_id = f"campaign-{uuid.uuid4().hex[:12]}"   # groups the runs in Phoenix (session.id); observability only
 
     async def one(spec: RunSpec) -> EffectivenessRecord | CampaignError:
         async with gate:
             try:
                 return await run_one(f, f.tasks.get(spec.task_id), f.recipes[spec.recipe_id], spec.canonical_model,
-                                     spec.provider, seed=spec.seed, flush=False, fault=spec.fault)
+                                     spec.provider, seed=spec.seed, flush=False, fault=spec.fault,
+                                     campaign_id=campaign_id)
             except Exception as e:  # noqa: BLE001  (reported per run with its spec; the campaign carries on)
                 return CampaignError(spec=spec, error=f"{type(e).__name__}: {str(e)[:500]}")
 

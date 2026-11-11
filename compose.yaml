@@ -100,6 +100,7 @@ services:
       LANGFUSE_OTLP_ENDPOINT: ${LANGFUSE_OTLP_ENDPOINT:-http://langfuse-web:3000/api/public/otel}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}    # Basic auth to Langfuse (basicauth/langfuse extension)
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      MLFLOW_EXPERIMENT_ID: ${HF_MLFLOW_EXPERIMENT_ID:-1}   # MLflow experiment for traces (otlphttp/mlflow)
     ports: ["${HF_OTLP_GRPC_PORT:-4317}:4317", "${HF_OTLP_HTTP_PORT:-4318}:4318"]
     depends_on: [phoenix]
 
