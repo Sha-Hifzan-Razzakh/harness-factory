@@ -320,6 +320,8 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
             judge_usage=judge_usage(ctx.judgements, wall_s=judge_s),
             tools_hash=f.declared.env_hash(recipe.tools.mcp_servers, "*"),
             served_id=f.providers.served(provider_id, canonical_model).provider_model_id,
+            served_by=",".join(sorted({s.attributes["served_by"] for s in inst.tracer.spans
+                                       if s.kind == SpanKind.model_call and s.attributes.get("served_by")})) or None,
         )
     if f.store:
         f.store.add(rec)
