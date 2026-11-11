@@ -37,6 +37,38 @@ class Completion(BaseModel):
     tokens_in: int = 0
     tokens_out: int = 0
     usd: float = 0.0
+    finish_reason: str | None = None   # why the reply ended, as the provider says ("stop", "tool_calls", "length")
+
+
+# finish_reason values meaning the reply hit the output limit (OpenAI-style "length"; Anthropic-style "max_tokens").
+CUT_OFF_REASONS = frozenset({"length", "max_tokens"})
+
+
+def cut_off_tool_calls(comp: Completion) -> list[str]:
+    """Tool calls of a reply that stopped at the output limit whose arguments are not a whole JSON object: the
+    model was cut off mid call. Empty when the reply ended normally, or every call's arguments parse."""
+    if comp.finish_reason not in CUT_OFF_REASONS:
+        return []
+    cut = []
+    for call in comp.message.get("tool_calls") or []:
+        fn = call.get("function") or {}
+        try:
+            whole = isinstance(json.loads(fn.get("arguments") or "{}"), dict)
+        except ValueError:
+            whole = False
+        if not whole:
+            cut.append(str(fn.get("name")))
+    return cut
+
+
+class CutOffReply(HarnessError):
+    """A reply cut off at the output limit in the middle of a tool call (MODEL_PARSE: malformed output). Unlike a
+    reply the provider refuses, this one was a real call whose tokens were spent: `completion` carries them, so the
+    budget counts the step, and the reply itself is never replayed (its arguments are not valid JSON)."""
+
+    def __init__(self, message: str, completion: Completion) -> None:
+        super().__init__(ErrorKind.MODEL_PARSE, message)
+        self.completion = completion
 
 
 class Backend(Protocol):
@@ -135,13 +167,17 @@ class ScriptedBackend:
         if "fail" in turn:
             raise HarnessError(ErrorKind(turn["fail"]), f"scripted {turn['fail']}")
         if "tool_calls" in turn:
+            # `raw_arguments` sends the arguments string as is (e.g. JSON cut off mid string), instead of `arguments`.
             calls = [{"id": f"call_{self.i}_{k}", "type": "function",
-                      "function": {"name": c["name"], "arguments": json.dumps(c["arguments"])}}
+                      "function": {"name": c["name"],
+                                   "arguments": c["raw_arguments"] if "raw_arguments" in c else json.dumps(c["arguments"])}}
                      for k, c in enumerate(turn["tool_calls"])]
             msg = {"role": "assistant", "content": None, "tool_calls": calls}
         else:
             msg = {"role": "assistant", "content": turn["content"]}
-        return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg))
+        reason = turn.get("finish_reason") or ("tool_calls" if "tool_calls" in turn else "stop")
+        return Completion(message=msg, tokens_in=approx_tokens(messages), tokens_out=approx_tokens(msg),
+                          finish_reason=reason)
 
 
 # The Router's in-flight cap per deployment defaults to its rpm, and a call over it is refused locally as a 429 that
@@ -254,6 +290,7 @@ class LiteLLMBackend:
         # Provider exceptions propagate raw: ModelGateway classifies them, because only it knows whether the run
         # already had a successful call (which decides whether a 400 is setup or the model's doing).
         resp = await router.acompletion(**kwargs)
+        finish_reason = getattr(resp.choices[0], "finish_reason", None)
         choice = resp.choices[0].message
         msg: dict[str, Any] = {"role": "assistant", "content": choice.content}
         if getattr(choice, "tool_calls", None):
@@ -263,7 +300,8 @@ class LiteLLMBackend:
         usage = getattr(resp, "usage", None)
         tin = getattr(usage, "prompt_tokens", 0) or 0
         tout = getattr(usage, "completion_tokens", 0) or 0
-        return Completion(message=msg, tokens_in=tin, tokens_out=tout, usd=served.cost(tin, tout))
+        return Completion(message=msg, tokens_in=tin, tokens_out=tout, usd=served.cost(tin, tout),
+                          finish_reason=str(finish_reason) if finish_reason else None)
 
 
 MAX_BACKOFF_S = 60.0
@@ -355,11 +393,24 @@ class ModelGateway:
                     span.tokens_in, span.tokens_out = comp.tokens_in, comp.tokens_out
                     span.attributes["usd"] = comp.usd
                     span.attributes["tool_calls"] = len(comp.message.get("tool_calls") or [])
+                    if comp.finish_reason:
+                        span.attributes["finish_reason"] = comp.finish_reason
                     if comp.message.get("content"):
                         span.attributes["content_preview"] = str(comp.message["content"])[:500]
                     self.ledger.record_tokens(bucket, comp.tokens_in + comp.tokens_out, reserve)
                     self.successful_calls += 1
-                    return comp
+                    cut = cut_off_tool_calls(comp)
+                    if not cut:
+                        return comp
+                    # A real call, so the span stays ok (budget, cost and the ledger count it), marked rejected
+                    # as V4 marks an invalid plan: the trajectory grader counts it as an invalid call.
+                    span.error = ErrorKind.MODEL_PARSE.value
+                    why = (f"reply cut off at the output limit (max_output_tokens {slot.max_output_tokens}, "
+                           f"finish_reason {comp.finish_reason}) inside a call to {', '.join(cut)}: its arguments "
+                           f"are incomplete JSON")
+                    span.attributes["rejected"] = f"cut_off: {why}"[:300]
+                    break                     # raised outside the span, which would otherwise be marked failed
             attempt += 1
             self.infra_wait_s += wait
             await self._sleep(wait)
+        raise CutOffReply(why, comp)

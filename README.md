@@ -877,6 +877,14 @@ plan because each worker starts from a short conversation, where V4's executor c
 Offline, the scripted model never loses track, so planning can only cost; whether it pays with real models on longer
 tasks is a Phase 2 question.
 
+**Replies cut off at the output limit.** Every `model_call` span records the provider's `finish_reason`. A reply
+that stops at the output limit (`length`, or `max_tokens`) inside a tool call, so its arguments are not whole
+JSON, is never run and never sent back to the provider: it is a malformed reply, like one the provider refuses.
+It costs a step and its tokens, counts as an invalid call in Q, and ends the run as `malformed_output` (graded on
+the environment, PARTIAL at most), or, with `config.recover_malformed`, the model is told it was cut off and asked
+again. Before this, the broken arguments were replayed, the provider refused the next request as a setup error,
+and the run was ERROR and left out of the cell's mean.
+
 **Structured plans, concurrent workers, parallel tool calls.** `planning.structured: true` makes V4 and V5 ask for
 a JSON plan (steps with `id`, `instruction`, tool hints, `depends_on`, `done_when`), validated before anything runs.
 A plan that doesn't validate is re-asked with the reason (`planning.plan_retries`, default 1; each re-ask is an
