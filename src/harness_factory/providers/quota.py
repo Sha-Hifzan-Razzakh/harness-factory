@@ -33,6 +33,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from harness_factory import atomicfile
 from harness_factory.providers.catalog import ProviderCatalog
 from harness_factory.substrate.errors import ErrorKind, HarnessError
 
@@ -105,8 +106,12 @@ class QuotaLedger:
     state_path: Path | None = None                                                  # persist usage across restarts
 
     def __post_init__(self) -> None:
+        # The first read takes the lock too: on Windows a process that is only reading the file still blocks
+        # another process's rename over it (lab D1: runs crashed with WinError 5 while a second campaign started).
         if self.state_path is not None and Path(self.state_path).is_file():
-            self._load()
+            path = Path(self.state_path)
+            with file_lock(path.with_name(path.name + ".lock")):
+                self._load()
 
     def _roll(self, store: dict[str, _Window], provider: str, length: float) -> _Window:
         now = self.clock()
@@ -163,7 +168,7 @@ class QuotaLedger:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(data, indent=1))
-        os.replace(tmp, path)                                         # atomic: a crash never leaves half a file
+        atomicfile.replace(tmp, path)          # atomic: a crash never leaves half a file; retried on Windows readers
 
     def remaining(self, provider: str) -> dict[str, int | None]:
         lim = self.catalog.limits(provider)

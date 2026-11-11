@@ -32,7 +32,7 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from harness_factory import settings
+from harness_factory import atomicfile, settings
 from harness_factory.env.mcp.impl import webindex
 from harness_factory.hashing import canonical_json, content_hash
 
@@ -239,7 +239,7 @@ def compiled(corpus: Corpus) -> Path:
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(canonical_json(corpus.compile()))
-        os.replace(tmp, dest)
+        atomicfile.replace(tmp, dest)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise

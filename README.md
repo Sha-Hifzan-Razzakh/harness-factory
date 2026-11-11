@@ -176,8 +176,13 @@ Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quo
   requests, tokens, list-price dollars, how many runs today's quota covers, the days the plan needs, and the
   minutes of pacing the per-minute limits impose.
   - **Estimates come from history,** most specific first: same model, recipe and task; then same model and
-    recipe; then the same recipe on any model of the same provider kind; then a default per shape. Scripted
-    runs never stand in for real models. The "estimated from" column says which level was used.
+    recipe; then the same task on the same model with any recipe of the same shape (how heavy the task is there);
+    then the recipe on other models, its tokens scaled by this model's typical run size over theirs (unscaled
+    when this model has no history); then the recipe's own caps (`max_steps`, `max_tokens`), shown as
+    `ceiling (recipe caps)`: an upper bound, so a budget or deadline is checked against the worst case rather
+    than a guess. The default per shape is used only with no history at all of that provider kind. Cross-model
+    estimates are priced at the planned model's own rates. Scripted runs never stand in for real models. The
+    "estimated from" column says which level was used.
   - **A plan longer than today is normal** on free tiers: runs past today's quota end INCOMPLETE, and `--resume`
     finishes them after the reset (00:00 UTC).
   - **It refuses only what can't work:** a bucket already spent today, a plan needing more than
@@ -274,6 +279,12 @@ Two servers let a task involve running code and version control:
 - **Campaigns plan only what a recipe can reach.** A recipe that can't call every tool a task allows is not
   planned on that task, the same rule the selector prunes by. So `v2-base` skips `code-02` and `code-03`, and
   `v2-code` (below) runs them.
+- **Substitutes and reduced tool sets.** A tool granted by one task tool alone, with the same side effect, stands
+  in for it (a server that re-describes another's tools, such as an add-on's guided variant): a recipe that calls
+  the substitute reaches the task. `hfx smoke` and `hfx bench` print every pair they leave out and the tools its
+  recipe misses; the bench report lists them under *Reach*. To compare a reduced tool set on purpose (a no-engine
+  baseline, an engine-only variant), name the recipe in the bench file's `plan_unreachable`; the selector still
+  prunes it.
 ## Business systems
 
 The `biz` server is a local, offline mock of a company's back office, served over stdio from the sandbox like
@@ -1709,6 +1720,10 @@ Oracle checks, with weights summing to 1:
   (`service/config/*.ini`), or `arg=value` for other tools (an unset filter argument counts: the call wasn't
   narrowed away from the data). It reads the call, not the result: naming a table doesn't prove its rows were used
   (`grading/touches.py` lists the limits). Every answer-only task in the catalog sets it.
+- Any check can name others it depends on with `requires: [<check id>, ...]`: it passes only if it passes itself
+  and every check it requires passes, so `grounded` with `requires: [schema]` earns nothing when the deliverable
+  is missing (no free credit for a read). The ids must be checks of the same oracle, with no cycle and never a
+  rubric check (no outcome may depend on a judge). Tasks that don't use it keep their hashes.
 - `tests_pass` (ADR 0012): pytest on the end state passes (exit code 0). `path` is what to run (default `.`).
   `text` is a hidden test module, run from outside the workspace, which the agent never sees. `pattern` is a `-k`
   expression. It runs inside the sandbox with the grader's own empty config and `--noconftest`.

@@ -75,9 +75,18 @@ def _skill_issues(recipe: HarnessRecipe, declared: ToolCatalogFile) -> list[Vali
     unknown = sorted(set(sk.skill_ids) - set(load_skills()))
     if unknown:
         out.append(ValidationIssue(rule="skill_exists", detail=f"no SKILL.md for {', '.join(unknown)}"))
-    if sk.loading == "on_demand" and "skills.load" not in reachable_tools(recipe, declared):
+    reachable = reachable_tools(recipe, declared)
+    if sk.loading == "on_demand" and "skills.load" not in reachable:
         out.append(ValidationIssue(rule="skills_tool_reachable",
                                    detail="loading on_demand needs the skills server and skills.load in the slice"))
+    # Skill files are installed for the skills server only when loading is on_demand (provisioner.install_skills).
+    # Any other loading leaves the server empty: every call answers "no skill named ...; available: none".
+    served = sorted(ref for ref in reachable if ref.split(".", 1)[0] == "skills")
+    if sk.loading != "on_demand" and served:
+        out.append(ValidationIssue(rule="skills_server_unserved",
+                                   detail=f"loading {sk.loading} installs no skills for the skills server, so "
+                                          f"{', '.join(served)} can only answer 'available: none'; use loading "
+                                          f"on_demand, or drop the skills server from the recipe"))
     return out
 
 

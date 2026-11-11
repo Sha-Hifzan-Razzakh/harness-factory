@@ -76,9 +76,29 @@ def allowed_tools(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) 
 
 def missing_task_tools(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> list[str]:
     """Tools the task allows directly that the recipe can't call (granted extras such as search are optional).
-    The selector prunes such a recipe for the task (`reaches_task_tools`), and campaigns don't plan the pair."""
+    The selector prunes such a recipe for the task (`reaches_task_tools`), and campaigns don't plan the pair.
+
+    A tool counts as callable when the recipe can call a declared substitute for it (`substitutes`): a tool
+    granted by that tool alone, with the same side effect, such as a server that re-describes another's tools."""
     direct = {r for r in declared.all_refs() if any(fnmatch(r, p) for p in task.allowed_tools)}
-    return sorted(direct - allowed_tools(recipe, task, declared))
+    callable_ = allowed_tools(recipe, task, declared)
+    stand_ins = substitutes(callable_, declared)
+    return sorted(r for r in direct - callable_ if r not in stand_ins)
+
+
+def substitutes(refs: set[str], declared: ToolCatalogFile) -> dict[str, list[str]]:
+    """tool -> the tools among `refs` that stand in for it. A tool stands in for X when its `granted_by` is exactly
+    [X] and its side effect is X's: it does what X does and no more (`grantable`), and the grant came from X. A tool
+    granted by several (search.grep by list_dir and read_file) does less than each of them, so it stands in for
+    none."""
+    out: dict[str, list[str]] = {}
+    for r in sorted(refs):
+        spec = declared.spec(r)
+        if spec.granted_by and len(spec.granted_by) == 1:
+            (x,) = spec.granted_by
+            if x in declared.all_refs() and declared.spec(x).side_effect == spec.side_effect:
+                out.setdefault(x, []).append(r)
+    return out
 
 
 CODE_SERVER = "code"
@@ -92,7 +112,8 @@ def runs_task_code(recipe: HarnessRecipe, task: Task) -> bool:
 def reaches(recipe: HarnessRecipe, task: Task, declared: ToolCatalogFile) -> bool:
     """Whether the recipe can attempt the task at all: it can call every tool the task allows directly (servers
     such as biz, code or git included). A recipe that doesn't open a task's server isn't a weaker harness for it,
-    it is no harness for it, so campaigns leave that pair out and the selector prunes it."""
+    it is no harness for it, so campaigns leave that pair out and the selector prunes it. A campaign can still plan
+    such a pair on purpose (a reduced tool set: `plan(..., unreachable_ok=...)`, bench `plan_unreachable`)."""
     return not missing_task_tools(recipe, task, declared)
 
 

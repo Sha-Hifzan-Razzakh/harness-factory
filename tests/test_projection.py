@@ -23,7 +23,57 @@ async def test_estimates_come_from_the_most_specific_history(factory, p0_tasks):
     assert est.estimate("scripted/noisy", "scripted", v2, "sql-02@1").source == "recipe (any model)"
     real = est.estimate("gpt-oss-120b", "groq", v2, "fs-01@1")                  # scripted never stands in
     assert real.source == "default" and (real.calls, real.tokens) == SHAPE_DEFAULTS[v2.variant]
-    assert est.estimate("scripted/replay", "scripted", v3, "fs-01@1").tokens == SHAPE_DEFAULTS[v3.variant][1]
+    # Scripted history exists but nothing matches v3: the recipe's caps, an upper bound, not the shape default.
+    ceiling = est.estimate("scripted/replay", "scripted", v3, "fs-01@1")
+    assert ceiling.source == "ceiling (recipe caps)" and ceiling.upper_bound
+    assert (ceiling.calls, ceiling.tokens) == (v3.config.max_steps, v3.config.max_tokens)
+
+
+def _row(model, recipe, task, calls, tokens, usd=0.0, provider="groq", status="SUCCESS"):
+    return {"canonical_model": model, "recipe_id": recipe, "task_version": task, "model_calls": calls,
+            "tokens_in": tokens, "tokens_out": 0, "usd": usd, "provider": provider, "status": status,
+            "run_key": "t|h|r|m|p|0"}
+
+
+def test_fallback_levels_without_history_for_the_pair(factory):
+    """#113, lab E2: a new recipe on audit tasks projected 252K tokens for 42 runs from the shape default; real
+    runs used 56K-200K each. Each level below the pair's own history, most specific first."""
+    v2, v3 = factory.recipes["v2-base"], factory.recipes["v3-staged"]
+    rows = [_row("big", "v2-search", "da-01@1", 20, 120_000),        # this task is heavy on `big` (another V2)
+            _row("big", "v2-search", "da-02@1", 20, 80_000),
+            _row("small", "v2-base", "da-01@1", 8, 10_000),         # v2-base ran only on `small`
+            _row("small", "v2-search", "da-01@1", 8, 20_000),
+            _row("big", "v2-base", "da-09@1", 10, 50_000, status="ERROR")]   # unscored: never history
+    est = Estimator(rows, {"scripted"}, factory.recipes)
+    same_shape = est.estimate("big", "groq", v2, "da-01@1")
+    assert (same_shape.source, same_shape.tokens) == ("task (same shape)", 120_000)
+    assert est.estimate("big", "groq", v3, "da-01@1").source != "task (same shape)"   # V3 is another shape
+    # v2-base on `big` for a task `big` never ran: v2-base's runs on `small`, scaled by big's typical run over
+    # small's (median 100K vs 15K).
+    scaled = est.estimate("big", "groq", v2, "da-05@1")
+    assert scaled.source == "recipe (scaled)" and scaled.tokens == pytest.approx(10_000 * 100_000 / 15_000)
+    assert scaled.usd is None                                       # priced at big's rates, never small's dollars
+    unscaled = est.estimate("new-model", "groq", v2, "da-05@1")     # nothing known about new-model to scale by
+    assert (unscaled.source, unscaled.tokens) == ("recipe (any model)", 10_000) and unscaled.usd is None
+    ceiling = est.estimate("big", "groq", v3, "da-05@1")
+    assert ceiling.source == "ceiling (recipe caps)" and ceiling.tokens == v3.config.max_tokens
+    # The default only with no history at all of this provider kind.
+    assert Estimator([], {"scripted"}, factory.recipes).estimate("big", "groq", v3, "da-05@1").source == "default"
+    assert est.estimate("scripted/replay", "scripted", v2, "da-05@1").source == "default"   # real never stands in
+
+
+def test_without_recipes_the_shape_level_is_skipped(factory):
+    rows = [_row("big", "v2-search", "da-01@1", 20, 120_000)]
+    est = Estimator(rows, {"scripted"})
+    assert est.estimate("big", "groq", factory.recipes["v2-base"], "da-01@1").source == "ceiling (recipe caps)"
+
+
+def test_a_ceiling_estimate_can_make_preflight_refuse_a_budget(factory):
+    """Projections are what preflight reads: an upper bound may now refuse a budget that a default passed."""
+    rows = [_row("gpt-oss-120b", "v2-search", "fs-09@1", 5, 5_000)]
+    est = Estimator(rows, {"scripted"}, factory.recipes)
+    e = est.estimate("gpt-oss-120b", "groq", factory.recipes["v3-staged"], "fs-01@1")
+    assert e.upper_bound and e.tokens > SHAPE_DEFAULTS[factory.recipes["v3-staged"].variant][1] * 10
 
 
 def test_days_and_runs_today_follow_the_bucket_limits(factory):

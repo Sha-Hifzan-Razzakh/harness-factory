@@ -23,6 +23,8 @@ recipes:                       # [today] ids from catalog/recipes
   - v3-staged                  # inspect → act → verify, each stage with its own tools
   - v4-planner                 # plan first, then one step at a time
   # - v5-orchestrator          # plan, then one worker per step
+# plan_unreachable: [v2-base]  # [today] a recipe that can't call every tool a task allows is left out of that
+                               #   task (and listed); name it here to plan it anyway, on its reduced tool set
 
 # 3. ON WHICH MODELS ───────────────────────────────────────────────────────────
 models:                        # [today] canonical model + the provider that serves it

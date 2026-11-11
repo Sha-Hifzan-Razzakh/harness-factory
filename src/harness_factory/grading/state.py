@@ -470,8 +470,19 @@ class StateDiffGrader:
 
     def grade(self, ctx: GradeContext) -> Grade:
         checks, violations = [], []
-        for c in ctx.task.oracle.checks:
-            ok, detail = self._check(c, ctx)
+        oracle = ctx.task.oracle
+        passed: dict[str, bool] = {}
+        results: dict[str, tuple[bool, str]] = {}
+        if any(c.requires for c in oracle.checks):           # requirements first; results keep the oracle's order
+            for c in oracle.requirement_order():
+                ok, detail = self._check(c, ctx)
+                unmet = [r for r in c.requires or [] if not passed[r]]
+                if ok and unmet:
+                    ok, detail = False, f"{detail}; but requires {', '.join(unmet)}, which did not pass"
+                passed[c.id] = ok
+                results[c.id] = (ok, detail)
+        for c in oracle.checks:
+            ok, detail = results[c.id] if results else self._check(c, ctx)
             checks.append(CheckResult(id=c.id, passed=ok, weight=c.weight, critical=c.critical, detail=detail))
             if c.critical and not ok:
                 violations.append(Violation(kind="critical_check_failed", critical=True, detail=c.id))
