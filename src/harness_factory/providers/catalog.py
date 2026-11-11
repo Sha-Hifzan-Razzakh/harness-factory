@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RateLimits(BaseModel):
@@ -19,10 +19,60 @@ class RateLimits(BaseModel):
     scope: Literal["account", "key", "model"] = "account"
 
 
+Effort = Literal["minimal", "low", "medium", "high"]
+
+
+class ReasoningCaps(BaseModel):
+    """How a model reasons: never, when asked (optional) or always; and the effort levels it accepts."""
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["none", "optional", "always"]
+    efforts: list[Effort] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _efforts(self) -> ReasoningCaps:
+        if self.mode == "none" and self.efforts:
+            raise ValueError("reasoning mode 'none' takes no efforts")
+        if len(set(self.efforts)) != len(self.efforts):
+            raise ValueError(f"reasoning efforts listed twice: {self.efforts}")
+        return self
+
+
+class EndpointPrefs(BaseModel):
+    """Which upstream endpoint serves a model on a router (OpenRouter's provider preferences). Recorded here;
+    sent with each call by #124 (A5)."""
+    model_config = ConfigDict(extra="forbid")
+    order: list[str] = Field(default_factory=list)            # upstream provider slugs, most preferred first
+    quantizations: list[str] = Field(default_factory=list)    # allowed, e.g. ["fp8", "bf16"]; empty = any
+    require_parameters: bool = False                          # only endpoints that support every request parameter
+    allow_fallbacks: bool = True                              # others when the ordered ones are down
+
+    @field_validator("order", "quantizations")
+    @classmethod
+    def _unique(cls, v: list[str]) -> list[str]:
+        if len(set(v)) != len(v) or any(not x.strip() for x in v):
+            raise ValueError(f"{v}: entries must be non-empty and listed once")
+        return v
+
+
 class ModelCaps(BaseModel):
+    """What a model can do. The optional fields are unknown when absent (today's behaviour: nothing is checked
+    against them); A3's recipe x model check (#122) uses them when they are set."""
+    model_config = ConfigDict(extra="forbid")
     tool_calling: Literal["native", "emulated", "none"] = "native"
     structured_output: bool = True
-    context_len: int = 32_768
+    context_len: int = Field(32_768, gt=0)
+    max_output_tokens: int | None = Field(None, gt=0)         # the most the model returns in one reply
+    reasoning: ReasoningCaps | None = None
+    supported_params: list[str] | None = None                 # request parameters, as the provider lists them
+    input_modalities: list[Literal["text", "image", "audio", "video", "file"]] | None = None
+
+    @model_validator(mode="after")
+    def _fits(self) -> ModelCaps:
+        if self.max_output_tokens is not None and self.max_output_tokens > self.context_len:
+            raise ValueError(f"max_output_tokens {self.max_output_tokens} exceeds context_len {self.context_len}")
+        if self.input_modalities is not None and "text" not in self.input_modalities:
+            raise ValueError("input_modalities must include text")
+        return self
 
 
 class ServedModel(BaseModel):
@@ -33,6 +83,7 @@ class ServedModel(BaseModel):
     free: bool = False
     caps: ModelCaps = Field(default_factory=ModelCaps)
     limits: RateLimits | None = None   # this model's own limits, when they differ from the provider's
+    endpoint: EndpointPrefs | None = None   # router endpoint preferences (OpenRouter); not in env_hash until #124
 
     def cost(self, tokens_in: int, tokens_out: int) -> float:
         return (tokens_in * self.price_in + tokens_out * self.price_out) / 1e6
