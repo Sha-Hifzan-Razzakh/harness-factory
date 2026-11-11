@@ -124,6 +124,7 @@ class Tracer:
         self.trace_id = uuid.uuid4().hex
         self.spans: list[Span] = []
         self.messages = openinference.MessageLog()     # per run: what HF_TRACE_MESSAGES=delta already sent
+        self.otel_trace_id: str | None = None          # the exported trace's id (Phoenix, Langfuse, MLflow), if any
 
     # OpenTelemetry-only detail (Span.otel, never persisted). Each helper is a no-op when nothing exports spans.
 
@@ -166,6 +167,8 @@ class Tracer:
         # "MCP send tools/call" spans) share one trace tree per run in Phoenix and Langfuse.
         cm = otel_tracer.start_as_current_span(f"{kind.value}:{name}") if otel_tracer else nullcontext()
         with cm as otel:
+            if otel is not None and self.otel_trace_id is None:
+                self.otel_trace_id = format(otel.get_span_context().trace_id, "032x")
             try:
                 yield s
             except Exception as e:  # recorded, then re-raised

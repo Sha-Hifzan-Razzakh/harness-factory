@@ -323,20 +323,23 @@ async def run_one(f: Factory, task: Task, recipe: HarnessRecipe, canonical_model
         )
     if f.store:
         f.store.add(rec)
-    await _mirror(f, rec, recipe)
+    await _mirror(f, rec, recipe, inst.tracer.otel_trace_id)
     if flush:
         await asyncio.to_thread(Tracer.flush)
     return rec
 
 
-async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe) -> None:
+async def _mirror(f: Factory, rec: EffectivenessRecord, recipe: HarnessRecipe,
+                  otel_trace_id: str | None = None) -> None:
     """Mirror a stored run to MLflow. The results store is the source of truth, so a mirror failure is a warning,
     never a run or campaign error. The MLflow client is synchronous network I/O: it runs in a thread so a slow
     server can't stall the event loop (and the wall time of every other run on it)."""
     if not f.tracker.enabled:
         return
     try:
-        await asyncio.to_thread(f.tracker.log, rec, recipe)
+        # The exported trace's id goes on the MLflow run, when spans were exported (OpenTelemetry on).
+        extra = {"otel_trace_id": otel_trace_id} if otel_trace_id else {}
+        await asyncio.to_thread(f.tracker.log, rec, recipe, **extra)
     except Exception as e:  # noqa: BLE001  any client or server failure: the run itself is already stored
         f.tracker.failures = getattr(f.tracker, "failures", 0) + 1
         log.warning("MLflow mirror failed for %s: %s: %s", rec.run_key.short(), type(e).__name__, str(e)[:300])

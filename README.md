@@ -709,6 +709,22 @@ OpenTelemetry alone, never into the JSONL trace, the results store, grading or a
 | `HF_TRACE_MESSAGES` | `delta` | `delta`: a conversation's messages go with its first call, later calls send only the messages added since (`hf.input_messages_offset` says how many came before); `full`: every message on every call; `off`: token counts only |
 | `HF_TRACE_MAX_CHARS` | `8000` | Longest message content, tool argument or tool result copied to a span |
 | `HF_TRACE_MCP_SPANS` | unset | `1` keeps the MCP SDK's own spans under each tool call |
+| `HF_MLFLOW_EXPERIMENT_ID` | `1` | The MLflow experiment the collector sends traces to (below) |
+
+**Traces in MLflow.** The collector also forwards every trace to MLflow (`otlphttp/mlflow`: MLflow 3.6 or later
+takes OTLP over HTTP at `/v1/traces`, into the experiment the `x-mlflow-experiment-id` header names; compose's
+SQLite store is the SQL store it needs). MLflow's Overview and Traces tabs then show one trace per run, with the
+same span types, inputs and outputs, models and token counts. The header's id is the number in MLflow's
+`/#/experiments/<id>` URL for `harness-factory`: `1` on a fresh MLflow, where it is the first experiment created;
+set `HF_MLFLOW_EXPERIMENT_ID` if yours differs. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector (`:4318`), not
+straight at Phoenix, or MLflow sees nothing. Each MLflow run carries the trace's id as the `otel_trace_id` tag;
+MLflow names that trace `tr-<otel_trace_id>`. A campaign's `session.id` becomes MLflow's trace session.
+
+**Loading stored runs.** `hfx traces replay [files or directories]` (default `var/traces`) sends stored JSONL runs to
+`OTEL_EXPORTER_OTLP_ENDPOINT` as new traces with their original start and end times, so runs made before a backend
+was connected appear in Phoenix, Langfuse and MLflow without running anything again. Replayed spans say
+`hf.replayed: true`, and the root carries the JSONL trace id (`hf.trace_id`). What the JSONL never held can't come
+back: model calls show their tokens and previews, not the chat.
 
 ## Changing the results schema
 

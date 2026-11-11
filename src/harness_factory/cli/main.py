@@ -702,6 +702,9 @@ _register_cards(app)
 from harness_factory.cli.web import web as _web  # hfx web (the React workspace)
 
 app.command("web")(_web)
+from harness_factory.cli.traces import register as _register_traces  # hfx traces replay (JSONL over OTLP)
+
+_register_traces(app)
 
 # Last, so `python -m harness_factory.cli.main` sees every command registered above.
 if __name__ == "__main__":
