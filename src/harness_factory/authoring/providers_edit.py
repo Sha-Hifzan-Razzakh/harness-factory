@@ -93,12 +93,18 @@ def compact(model: dict) -> dict:
             out[k] = model[k]
     if model.get("free"):
         out["free"] = True
-    caps = {k: v for k, v in (model.get("caps") or {}).items()
-            if v != {"tool_calling": "native", "structured_output": True, "context_len": 32_768}[k]}
+    defaults = {"tool_calling": "native", "structured_output": True, "context_len": 32_768}
+    caps = {k: v for k, v in (model.get("caps") or {}).items() if v is not None and v != defaults.get(k)}
+    if caps.get("reasoning") is not None:
+        caps["reasoning"] = {k: v for k, v in caps["reasoning"].items() if v or k == "mode"}
     if caps:
         out["caps"] = caps
     if model.get("limits"):
         out["limits"] = {k: v for k, v in model["limits"].items() if v is not None}
+    if model.get("endpoint"):
+        ep_defaults = {"order": [], "quantizations": [], "require_parameters": False, "allow_fallbacks": True}
+        ep = {k: v for k, v in model["endpoint"].items() if v != ep_defaults.get(k)}
+        out["endpoint"] = ep
     return out
 
 

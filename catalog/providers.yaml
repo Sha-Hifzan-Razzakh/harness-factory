@@ -59,7 +59,8 @@ providers:
       # Shortlist of small, cheap tool-calling models. Ids, prices ($/M) and context checked on each model's
       # openrouter.ai page on 2026-11-09. Use free models on synthetic data only: free endpoints may log prompts.
       - {canonical: deepseek-v4.1-flash, provider_model_id: deepseek/deepseek-v4.1-flash, price_in: 0.006, price_out: 0.50,
-         caps: {context_len: 1000000}}      # its page doesn't state tool calling; confirm on the first real run
+         caps: {context_len: 1000000, input_modalities: [text, image]}}      # its page doesn't state tool calling;
+                                            # confirm on the first real run. Image input: its page, 2026-11-11
       - {canonical: glm-5.3-flash,       provider_model_id: z-ai/glm-5.3-flash,           price_in: 0.0335, price_out: 0.083,
          caps: {context_len: 1000000}}
       - {canonical: qwen3.6-35b-a3b,     provider_model_id: qwen/qwen3.6-35b-a3b,         price_in: 0.01, price_out: 0.092,

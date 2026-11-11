@@ -488,7 +488,8 @@ class HistoryMixin:
             return {"provider": provider, "canonical": entry["canonical"],
                     "provider_model_id": entry["provider_model_id"], "price_in": entry.get("price_in", 0.0),
                     "price_out": entry.get("price_out", 0.0), "free": entry.get("free", False), "caps": caps,
-                    **({"limits": entry["limits"]} if entry.get("limits") else {})}
+                    **({"limits": entry["limits"]} if entry.get("limits") else {}),
+                    **({"endpoint": entry["endpoint"]} if entry.get("endpoint") is not None else {})}
         raise AuthoringError(f"no payload for {kind}")
 
     # ---- models (catalog/providers.yaml) -------------------------------------------------------------------

@@ -1465,6 +1465,16 @@ plus 4 per message. That over-counts prose and JSON, so it errs towards acting e
 - **Validation.** `hfx validate` checks every slot's `max_output_tokens` against the `context_len` of every served
   model, and at provisioning against the run's model.
 
+**Model capabilities** (`catalog/providers.yaml`, under a model's `caps`). Besides `tool_calling`,
+`structured_output` and `context_len`, a model can record `max_output_tokens` (the most it returns in one reply),
+`reasoning` (`mode: none | optional | always`, and the `efforts` it accepts: minimal, low, medium, high),
+`supported_params` (the request parameters, as the provider lists them) and `input_modalities` (text, image, audio,
+video, file; text always). A served model can also record `endpoint`, its router endpoint preferences (OpenRouter:
+`order`, `quantizations`, `require_parameters`, `allow_fallbacks`). Every one is optional: absent means unknown and
+nothing is checked against it; a key the catalog doesn't know is refused. None of them is in `env_hash` (the
+provider model id is). Authoring (`hfx new model`, the API, the workspace) writes and versions them, keeping
+`providers.yaml`'s comments.
+
 ## Pausing and resuming a run (checkpoints)
 
 V2–V5 shapes are LangGraph graphs. With checkpointing on, each graph is compiled with one of LangGraph's own
