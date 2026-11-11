@@ -179,4 +179,4 @@ def test_mlflow_is_pinned_to_a_version_that_ingests_otlp():
     m = re.fullmatch(r"ghcr\.io/mlflow/mlflow:\$\{MLFLOW_TAG:-v(\d+)\.(\d+)\.(\d+)\}", image)
     assert m and (int(m[1]), int(m[2])) >= (3, 6), image
     env = (ROOT / ".env.example").read_text()
-    assert re.search(r"^MLFLOW_TAG=v" + re.escape(".".join(m.groups())) + r"\b", env, re.M)   # the same pin
+    assert re.search(r"^MLFLOW_TAG=v" + re.escape(".".join(m.groups())) + r"\b", env, re.MULTILINE)  # the same pin
