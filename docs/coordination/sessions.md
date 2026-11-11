@@ -102,17 +102,17 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #105 | `feat/addon-skills` | `…LKg8F6MXLBFVeupkLx` | Add-on skills: `catalog/skills` in a catalog add-on (ADR 0021 addendum) | ready for review |  no (unset: nothing changes; recipes without add-on skills keep their hashes) |
 | #106 | `fix/scripted-plan-lines` | `…LKg8F6MXLBFVeupkLx` | Scripted planner: cut long string arguments in plan lines (V4/V5 offline runs on long-write tasks no longer overflow the 32K scripted context) | ready for review | no (scripted backend text isn't hashed) |
 | #107 | `feat/my-refinements` | `…JtRe49bgfAAmdaB6W` | Catalog history and versions, models as an authoring kind, spec cards, saved experiments + dashboard, React workspace (`hfx web`), guided UI pages, dev container (ADR 0022); from Hifzan's refinements | ready for review (CI green) | no (history and experiments live under `var/`; no hashed input changes) |
-| #118 | `fix/health-test-timeout` | `…JtRe49bgfAAmdaB6W` | Health-probe test: the healthy servers keep a deadline they meet on a loaded CI worker (flaky on #110, #116) | ready for review | no (test only) |
-| #108 | `fix/replay-cut-tool-args` | `…KhAFMPUEPRU3mK2t2` | Don't replay tool calls cut off at the output limit; record `finish_reason` (lab D2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no hash; run status logic (output-limit cut-offs no longer ERROR) |
-| #109 | `feat/check-requires` | `…LLwunk5SUBezW33oS5` | Checks that depend on other checks: optional `requires` (lab C1) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (new optional check field; existing task hashes stay) |
-| #110 | `fix/campaign-reach` | `…JZLSKyEhjaA4sxi9R` | Campaign reach: `granted_by` substitutes count, skipped pairs reported, opt-in for reduced tool sets (lab B4) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (plans change; RunKeys don't) |
-| #111 | `fix/quota-ledger-windows` | `…KhAFMPUEPRU3mK2t2` | Quota ledger: first load under the lock, rename retried on Windows (lab D1) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
-| #112 | `fix/validate-upfront-skills` | `…JZLSKyEhjaA4sxi9R` | `hfx validate` refuses up-front skills with the skills server (lab D3) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
-| #113 | `feat/projection-fallbacks` | `…JZLSKyEhjaA4sxi9R` | Projection: realistic estimates without history (lab E2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
-| #114 | `feat/bench-progress-signals` | `…JZLSKyEhjaA4sxi9R` | Bench report: progress signals next to E, optional (lab C2) | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no |
+| #108 | `fix/replay-cut-tool-args` | `…JtRe49bgfAAmdaB6W` | Don't replay tool calls cut off at the output limit; record `finish_reason` (lab D2) | merged | no hash; run status logic (output-limit cut-offs no longer ERROR) |
+| #109 | `feat/check-requires` | `…JtRe49bgfAAmdaB6W` | Checks that depend on other checks: optional `requires` (lab C1) | merged | no (new optional check field; existing task hashes stay) |
+| #110 | `fix/campaign-reach` | `…JtRe49bgfAAmdaB6W` | Campaign reach: `granted_by` substitutes count, skipped pairs reported, opt-in for reduced tool sets (lab B4) | merged | no (plans change; RunKeys don't) |
+| #111 | `fix/quota-ledger-windows` | `…JtRe49bgfAAmdaB6W` | Quota ledger: first load under the lock, rename retried on Windows (lab D1) | merged | no |
+| #112 | `fix/validate-upfront-skills` | `…JtRe49bgfAAmdaB6W` | `hfx validate` refuses up-front skills with the skills server (lab D3) | merged | no |
+| #113 | `feat/projection-fallbacks` | `…JtRe49bgfAAmdaB6W` | Projection: realistic estimates without history (lab E2) | merged | no |
+| #114 | `feat/bench-progress-signals` | `…JtRe49bgfAAmdaB6W` | Bench report: progress signals next to E, optional (lab C2) | ready for review (CI green) | no |
 | #115 | `chore/ledger-lab-fixes` | `…M73ireRFcS43br5Ny` | These ledger rows | open | no |
-| #116 | `feat/phoenix-readable-traces` | `…JZLSKyEhjaA4sxi9R` | Phoenix-readable traces: OpenInference input/output, chat messages and metadata on run, model and tool spans; `HF_TRACE_MESSAGES`, optional `HF_TRACE_MCP_SPANS` | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (observability only) |
-| #117 | `feat/trace-turn-spans` | `…JZLSKyEhjaA4sxi9R` | Turn spans (CHAIN) grouping each model response with its tool calls; stacked on #116 | draft, reserved by `…M73ireRFcS43br5Ny` at Hifzan's request | no (new span kind; readers audited, numbers unchanged) |
+| #116 | `feat/phoenix-readable-traces` | `…JtRe49bgfAAmdaB6W` | Phoenix-readable traces: OpenInference input/output, chat messages and metadata on run, model and tool spans; `HF_TRACE_MESSAGES`, optional `HF_TRACE_MCP_SPANS`; MLflow: collector exporter, `otel_trace_id` on the MLflow run, `hfx traces replay` | ready for review (CI green) | no (observability only) |
+| #117 | `feat/trace-turn-spans` | `…JtRe49bgfAAmdaB6W` | Turn spans (CHAIN) grouping each model response with its tool calls; stacked on #116 | ready for review (stacked on #116; CI green) | no (new span kind; readers audited, numbers unchanged) |
+| #118 | `fix/health-test-timeout` | `…JtRe49bgfAAmdaB6W` | Health-probe test: the healthy servers keep a deadline they meet on a loaded CI worker (flaky on #110, #116) | ready for review | no (test only) |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
