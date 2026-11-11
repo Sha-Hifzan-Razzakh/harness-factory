@@ -695,6 +695,21 @@ run:<run-key-short>
 Spans carry OpenInference attributes (Phoenix) and `gen_ai.*` attributes (Langfuse). With no OTLP endpoint set,
 traces are still written to `var/traces/<trace_id>.jsonl`.
 
+**What Phoenix shows.** The root span is named `<recipe> · <task>` (`hf.run_key` stays) and carries the task
+prompt (`input.value`), the final reply or `(no final message: ended by <stop>)` (`output.value`), and `metadata`:
+task, recipe and recipe hash, model, provider, seed, status, outcome, how the run ended, model-call and tool-call
+counts, the system prompt. A campaign's runs share a `session.id`. Model calls render as a chat
+(`llm.input_messages` / `llm.output_messages` with the tool calls asked for, `llm.tools`, `llm.invocation_parameters`)
+and tool calls show their arguments and result as JSON panes (`input.value` / `output.value`). The MCP SDK's
+`MCP send ...` spans are dropped from the export unless asked for. All of it is observability only: it goes to
+OpenTelemetry alone, never into the JSONL trace, the results store, grading or any hash.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HF_TRACE_MESSAGES` | `delta` | `delta`: a conversation's messages go with its first call, later calls send only the messages added since (`hf.input_messages_offset` says how many came before); `full`: every message on every call; `off`: token counts only |
+| `HF_TRACE_MAX_CHARS` | `8000` | Longest message content, tool argument or tool result copied to a span |
+| `HF_TRACE_MCP_SPANS` | unset | `1` keeps the MCP SDK's own spans under each tool call |
+
 ## Changing the results schema
 
 The results store schema is versioned with Alembic. The revisions are in

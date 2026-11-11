@@ -114,6 +114,7 @@ class ToolExecutor:
                 span.error = span.error or ErrorKind.TOOL_ERROR.value
             span.attributes["result_chars"] = len(result.text)
             span.attributes["result_preview"] = result.text[:PREVIEW_CHARS]
+            self.tracer.tool_io(span, raw_args, result.text)       # OpenTelemetry only (Span.otel), larger cap
         self.budget.charge(span)
         return result
 

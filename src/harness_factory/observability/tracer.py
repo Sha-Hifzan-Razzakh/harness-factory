@@ -13,8 +13,10 @@ from pathlib import Path
 
 from openinference.semconv.trace import OpenInferenceSpanKindValues as OIKind
 from openinference.semconv.trace import SpanAttributes as OI
+from opentelemetry.sdk.trace import SpanProcessor
 
 from harness_factory import settings
+from harness_factory.observability import openinference
 from harness_factory.observability.span import Span, SpanKind
 
 _otel_tracer = None
@@ -32,11 +34,46 @@ def _get_otel_tracer():
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     provider = TracerProvider(resource=Resource.create({"service.name": "harness-factory"}))
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{settings.OTLP_ENDPOINT}/v1/traces")))
+    provider.add_span_processor(WithoutMcpSpans(
+        BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{settings.OTLP_ENDPOINT}/v1/traces"))))
     trace.set_tracer_provider(provider)
     _otel_provider = provider
     _otel_tracer = trace.get_tracer("harness_factory")
     return _otel_tracer
+
+
+MCP_SDK_SCOPE = "mcp-python-sdk"         # the instrumentation scope of the MCP SDK's own "MCP send ..." spans
+
+
+class WithoutMcpSpans(SpanProcessor):
+    """A SpanProcessor that passes every span on to `inner` except the MCP SDK's (unless HF_TRACE_MCP_SPANS=1): our
+    tool_call span already carries the call, its arguments and its result. Only that SDK's spans are dropped,
+    never ours; they are leaves under our tool span, so nothing is left without its parent."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+
+    @staticmethod
+    def dropped(span) -> bool:
+        scope = getattr(span, "instrumentation_scope", None)
+        return getattr(scope, "name", None) == MCP_SDK_SCOPE and not settings.trace_mcp_spans()
+
+    def on_start(self, span, parent_context=None) -> None:
+        self.inner.on_start(span, parent_context=parent_context)
+
+    def _on_ending(self, span) -> None:
+        if not self.dropped(span) and hasattr(self.inner, "_on_ending"):
+            self.inner._on_ending(span)
+
+    def on_end(self, span) -> None:
+        if not self.dropped(span):
+            self.inner.on_end(span)
+
+    def shutdown(self) -> None:
+        self.inner.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return self.inner.force_flush(timeout_millis)
 
 
 # The open spans of the current asyncio task, innermost last, as (trace_id, span_id). A context variable, not a
@@ -72,6 +109,11 @@ def _annotate(otel, s: Span) -> None:
     for k, v in s.attributes.items():
         if isinstance(v, (str, int, float, bool)):
             otel.set_attribute(f"hf.{k}", v)
+    for k, v in s.otel.items():                        # OpenInference input/output, messages, metadata
+        if isinstance(v, (str, int, float, bool)):
+            otel.set_attribute(k, v)
+    if s.otel_name:
+        otel.update_name(s.otel_name)
     if s.status == "error":
         otel.set_status(Status(StatusCode.ERROR, s.error or "error"))
 
@@ -81,6 +123,35 @@ class Tracer:
         self.run_key = run_key
         self.trace_id = uuid.uuid4().hex
         self.spans: list[Span] = []
+        self.messages = openinference.MessageLog()     # per run: what HF_TRACE_MESSAGES=delta already sent
+
+    # OpenTelemetry-only detail (Span.otel, never persisted). Each helper is a no-op when nothing exports spans.
+
+    @staticmethod
+    def exporting() -> bool:
+        return _get_otel_tracer() is not None
+
+    def llm_request(self, span: Span, messages: list[dict], tools: list[dict], params: dict, provider: str) -> None:
+        """The messages a model call sends (all, or what its conversation hasn't sent yet), its tools and parameters.
+        Set before the call, so a failed attempt carries its input too."""
+        mode = settings.trace_messages()
+        if mode == "off" or not self.exporting():
+            return
+        offset, sent = self.messages.pending(messages, mode)
+        span.otel.update(openinference.llm_input(sent, tools, params, provider=provider, offset=offset,
+                                                 limit=settings.trace_max_chars()))
+
+    def llm_response(self, span: Span, messages: list[dict], message: dict, tokens_in: int, tokens_out: int) -> None:
+        """The reply, and (delta) record that this conversation's messages went out with a successful call."""
+        mode = settings.trace_messages()
+        if mode == "off" or not self.exporting():
+            return
+        self.messages.commit(messages)
+        span.otel.update(openinference.llm_output(message, tokens_in, tokens_out, settings.trace_max_chars()))
+
+    def tool_io(self, span: Span, args, result: str | None) -> None:
+        if self.exporting():
+            span.otel.update(openinference.tool_io(args, result, settings.trace_max_chars()))
 
     def _parent(self) -> str | None:
         return next((sid for tid, sid in reversed(_OPEN.get()) if tid == self.trace_id), None)

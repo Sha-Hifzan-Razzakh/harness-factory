@@ -117,3 +117,25 @@ def checkpoint_url(backend: str) -> str:
     if url or backend != "sqlite":
         return url
     return str(VAR / "checkpoints.db")
+
+
+def trace_messages() -> str:
+    """What model-call spans send to OpenTelemetry (Phoenix, Langfuse): HF_TRACE_MESSAGES = full | delta (default) |
+    off. full: every message of every call; delta: a conversation's messages once, then only those added since its
+    previous call; off: token counts only. Observability only: the JSONL trace, scores and hashes never change."""
+    value = os.environ.get("HF_TRACE_MESSAGES", "delta").strip().lower() or "delta"
+    if value not in ("full", "delta", "off"):
+        raise ValueError(f"HF_TRACE_MESSAGES must be full, delta or off, not {value!r}")
+    return value
+
+
+def trace_max_chars() -> int:
+    """HF_TRACE_MAX_CHARS: the longest message content or tool argument/result copied to an OpenTelemetry span
+    (default 8000; the JSONL trace keeps its own shorter previews)."""
+    return max(100, int(os.environ.get("HF_TRACE_MAX_CHARS", "8000")))
+
+
+def trace_mcp_spans() -> bool:
+    """HF_TRACE_MCP_SPANS=1 keeps the MCP SDK's own `MCP send ...` spans under every tool call; by default they are
+    dropped from the OpenTelemetry export (our tool span already carries the call and its result)."""
+    return os.environ.get("HF_TRACE_MCP_SPANS") == "1"
