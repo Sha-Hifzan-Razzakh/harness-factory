@@ -1989,6 +1989,14 @@ hfx bench docs/design/benchmark.example.yaml --resume    # after an interruption
 interval excludes 0. This is how shapes are compared with each other; section 3 (each matrix recipe against the
 recipe it extends) is unchanged.
 
+**Progress signals.** When every run scores E = 0, every pair ties and every verdict is "no clear difference",
+although the traces can still tell recipes apart. A bench report always adds section 2b (`hfx report --signals`
+adds it to any report): per recipe and model, the scored runs that wrote a file the oracle grades, that called a
+domain server ("engine": anything but fs, fsx, search, sql and harness tools), that read, that wrote, and that
+passed every `json_schema` check, plus the median position of the first write and the median number of tool calls.
+They are read from the stored rows and traces (`results/signals.py`): next to E, never in it, and nothing is graded
+again.
+
 ## Analysis
 
 `hfx analyze` answers ANL-01's two shape questions from the results store: which shape wins per model and task

@@ -3,6 +3,9 @@
 Sections:
   1. Scope            what the numbers cover: runs, models, recipes, tasks, cost baseline
   2. Recipes x models status counts, mean E0 and E (with the cell's R once faults were injected), tokens/run
+  2b. Progress        only when asked for (`hfx report --signals`; bench reports always): per cell, what runs did
+                      on the way (output written, engine / read / write calls, first write, tool calls, schema
+                      valid), read from the traces; next to E, never in it (results/signals.py)
   3. Matrix vs base   each matrix recipe against the recipe it extends, paired by task and model: mean delta E,
                       wins / losses / ties, a bootstrap 95% interval. Pairing removes the task-to-task spread
                       that would otherwise swamp a dimension's effect.
@@ -114,8 +117,9 @@ def by_perturbation(tasks, scored: list[dict]) -> list[dict]:
 
 def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "Campaign report",
                  models: list[str] | None = None, with_selector: bool = True,
-                 compare: list[tuple[str, str]] | None = None) -> str:
-    """compare: (base, variant) recipe pairs for section 3b; ΔE is variant minus base."""
+                 compare: list[tuple[str, str]] | None = None, signals: bool = False) -> str:
+    """compare: (base, variant) recipe pairs for section 3b; ΔE is variant minus base.
+    signals: add section 2b, progress signals per cell (they separate recipes when E ties, e.g. all at 0)."""
     clean = [r for r in rows if is_clean(r) and (not models or r["canonical_model"] in models)]
     scored = [r for r in clean if r["status"] not in UNSCORED]
     # The same E as `hfx results --cells` and the selector: E0 with the cell's R once it has faulted runs, then
@@ -157,6 +161,18 @@ def build_report(f, rows: list[dict], baseline: CostBaseline, *, title: str = "C
                      "-" if mean_e0 is None else f"{mean_e0:.3f}", "-" if e is None else f"{e:.3f}",
                      "-" if tok is None else f"{tok:,.0f}"])
     lines += ["## 2. Recipes × models", "", _table(["recipe", "model", *STATUSES, "E0", "E", "tokens/run"], body), ""]
+
+    # 2b. progress signals (only when asked for): next to E, never in it
+    if signals:
+        from harness_factory.results import signals as sig
+        body = sig.cell_rows(f, scored)
+        lines += ["## 2b. Progress signals (scored runs; not part of E)", "",
+                  ("Runs showing each signal out of the runs it applies to, read from the traces. They tell recipes "
+                   "apart when E ties: wrote output = a successful write to a file the oracle grades; engine = a "
+                   "call to a domain server (not fs, fsx, search, sql or harness tools); read / write = a call "
+                   "with that side effect; first write = its position among the run's tool calls; schema valid "
+                   "= every `json_schema` check passed."), "",
+                  _table(sig.HEADER, body) if body else "No scored runs.", ""]
 
     # 3. matrix vs base, paired by (task, model, provider, seed)
     by_key = {(r["recipe_id"], r["task_version"], r["canonical_model"], r["provider"], r["seed"]): r for r in scored}
