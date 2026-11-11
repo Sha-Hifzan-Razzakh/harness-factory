@@ -138,3 +138,10 @@ def run_root(*, prompt: str, output: str, metadata: dict[str, Any], agent: str, 
     if session:
         out[OI.SESSION_ID] = session
     return out
+
+
+def turn_io(request: dict[str, Any], summary: str, limit: int) -> dict[str, Any]:
+    """A turn span (#117): what the turn was (its number, how many calls), and what came of it (the model's text,
+    the tools it asked for, or the stop)."""
+    return {OI.INPUT_VALUE: json.dumps(request), OI.INPUT_MIME_TYPE: JSON,
+            OI.OUTPUT_VALUE: cap(summary, limit), OI.OUTPUT_MIME_TYPE: TEXT}

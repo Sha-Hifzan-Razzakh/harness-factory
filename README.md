@@ -726,6 +726,23 @@ was connected appear in Phoenix, Langfuse and MLflow without running anything ag
 `hf.replayed: true`, and the root carries the JSONL trace id (`hf.trace_id`). What the JSONL never held can't come
 back: model calls show their tokens and previews, not the chat.
 
+**Turns.** Each model turn is a `turn <n>` span (CHAIN) holding its model calls (a recovered reply and a compaction
+summary included), and the tool batch it asked for is `turn <n> · tools`, holding those tool calls (concurrent
+ones too). Shapes run the two in separate graph nodes and a span never stays open across a node boundary (a
+checkpointed run may pause there), so they are two siblings with the same number. A V4 plan is a turn of its own,
+and a V5 worker or a delegate numbers its own turns from 1 under its delegate span. Turn spans are in the JSONL
+trace too (`kind: turn`); no count, budget, cost or score reads them.
+
+```
+v2-base · fs-02            (AGENT)
+  turn 1                   (CHAIN)
+    model_call:<model>     (LLM)
+  turn 1 · tools           (CHAIN)
+    tool_call:fs.read_file (TOOL)
+  turn 2                   (CHAIN) ...
+  grade:pipeline           (EVALUATOR)
+```
+
 ## Changing the results schema
 
 The results store schema is versioned with Alembic. The revisions are in
