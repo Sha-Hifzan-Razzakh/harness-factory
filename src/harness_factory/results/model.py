@@ -83,6 +83,7 @@ class EffectivenessRecord(BaseModel):
     # and the provider model id that served the run. RunKey.env_hash mixes the two.
     tools_hash: str | None = None
     served_id: str | None = None
+    served_by: str | None = None    # upstream endpoint(s) a router said answered the calls, comma-joined (#124)
     messages: list[dict] = Field(default_factory=list, repr=False)  # full transcript; not written to the store
 
 

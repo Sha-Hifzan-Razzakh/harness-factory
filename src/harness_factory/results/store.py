@@ -73,6 +73,7 @@ runs = Table(
     Column("judge_usage", JSON),                             # the rubric judge's calls (ADR 0014); never in usd
     Column("tools_hash", String),                            # env without the provider model id (pooling, P2)
     Column("served_id", String),                             # provider model id that served the run
+    Column("served_by", String),                             # upstream endpoint(s) that answered (#124), if known
 )
 
 equivalences = Table(
@@ -156,7 +157,7 @@ def record_row(rec: EffectivenessRecord) -> dict:
         created_at=datetime.now(UTC), output=rec.output, transcript_path=rec.transcript_path, fault=rec.fault,
         grader_versions=grader_versions(rec.grades), endstate_path=rec.endstate_path,
         judge_usage=rec.judge_usage,
-        tools_hash=rec.tools_hash, served_id=rec.served_id,
+        tools_hash=rec.tools_hash, served_id=rec.served_id, served_by=rec.served_by,
     )
 
 

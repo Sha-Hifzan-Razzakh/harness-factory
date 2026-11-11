@@ -83,10 +83,28 @@ class ServedModel(BaseModel):
     free: bool = False
     caps: ModelCaps = Field(default_factory=ModelCaps)
     limits: RateLimits | None = None   # this model's own limits, when they differ from the provider's
-    endpoint: EndpointPrefs | None = None   # router endpoint preferences (OpenRouter); not in env_hash until #124
+    endpoint: EndpointPrefs | None = None   # router endpoint preferences (OpenRouter); in env_hash when set (#124)
 
     def cost(self, tokens_in: int, tokens_out: int) -> float:
         return (tokens_in * self.price_in + tokens_out * self.price_out) / 1e6
+
+    def env_model_id(self) -> str:
+        """The model as a run's env_hash sees it: the provider model id, plus the pinned endpoint when one is set
+        (#124: a pinned endpoint changes what serves the model, so its runs start new cells). Unpinned models keep
+        their plain id, so every existing env hash stays."""
+        if self.endpoint is None:
+            return self.provider_model_id
+        from harness_factory.hashing import content_hash
+        return f"{self.provider_model_id}+endpoint:{content_hash(self.endpoint.model_dump(mode='json'), 12)}"
+
+    def endpoint_request(self) -> dict | None:
+        """OpenRouter's `provider` preferences for this model's calls, or None when nothing is pinned."""
+        if self.endpoint is None:
+            return None
+        ep = self.endpoint
+        return {**({"order": ep.order} if ep.order else {}),
+                **({"quantizations": ep.quantizations} if ep.quantizations else {}),
+                "require_parameters": ep.require_parameters, "allow_fallbacks": ep.allow_fallbacks}
 
 
 class ProviderEntry(BaseModel):

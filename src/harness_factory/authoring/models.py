@@ -150,7 +150,8 @@ class Impact(BaseModel):
     recipes_removed: list[str] = Field(default_factory=list)
     env_changed: dict[str, list[str]] = Field(default_factory=dict)  # server -> existing recipes that open it
     stale_results: int | None = None     # stored runs of the changed recipes at their current identity
-    models_changed: list[str] = Field(default_factory=list)   # "<provider>/<model>" whose provider model id changed
+    models_changed: list[str] = Field(default_factory=list)   # "<provider>/<model>" whose provider model id (or
+                                                              # pinned endpoint, #124) changed
                                                               # or that were removed: their runs' env_hash moves
 
     @property

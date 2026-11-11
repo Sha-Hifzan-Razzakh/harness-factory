@@ -983,6 +983,7 @@ included, so editing a base changes every recipe built on it. Existing recipe ha
 | tools | `v2-code` | Adds the `code` and `git` servers (ADR 0012): run the tests or a script, and status, diff, log, commit, branch and checkout over a git-seeded workspace. The only recipe that reaches `code-02` and `code-03` |
 | delegation | `v2-delegate` | A `delegate__run` tool: the model can hand a sub-task to a helper (another `v2-base`) that works in the same sandbox (`delegation: {recipe: v2-base, max_calls: 2, max_depth: 1}`) |
 | model slot | `v2-reasoning-low` | The executor asks for low reasoning effort (`model_slots.executor.reasoning_effort: low`; OpenRouter `reasoning.effort` through LiteLLM), so hidden reasoning eats less of the reply budget. A model whose caps say it doesn't reason, or doesn't take `low`, is left out with the reason; unknown reasoning is sent unchecked |
+| config | `v2-budget-notice` | After each tool batch the last result ends with `[budget] tool calls left: N of M; steps left: K of L` (`config.budget_notice: {mode: each_result}`; `mode: thresholds, at: [0.5, 0.8]` says it once per threshold instead). Tokens only: no step, no tool call, nothing about faults or grading. Native loop only (framework runners refuse it) |
 | config | `v2-compact` | Context compaction: past 75% of the model's `context_len`, older turns are replaced by a summary the model writes; the last two turns stay verbatim (`config.compaction`, ADR 0015) |
 | tools | `v2-calendar` | Adds the `calendar` server (REVERSIBLE writes; see [Outbox and calendar](#outbox-and-calendar)). The only recipe besides `v2-outbox` that reaches `cal-02` |
 | sending | `v2-outbox` | Calendar and outbox servers with `IRREVERSIBLE: AUTO` and tier T3, on a slice whose only IRREVERSIBLE tools are the two sends (no `fs.write_file`, `fs.delete_file` or `sql`). The only recipe that reaches `cal-01` and `out-01` |
@@ -1474,8 +1475,16 @@ plus 4 per message. That over-counts prose and JSON, so it errs towards acting e
 video, file; text always). A served model can also record `endpoint`, its router endpoint preferences (OpenRouter:
 `order`, `quantizations`, `require_parameters`, `allow_fallbacks`). Every one is optional: absent means unknown and
 nothing is checked against it; a key the catalog doesn't know is refused. None of them is in `env_hash` (the
-provider model id is). Authoring (`hfx new model`, the API, the workspace) writes and versions them, keeping
-`providers.yaml`'s comments.
+provider model id is), except `endpoint`, below. Authoring (`hfx new model`, the API, the workspace) writes and
+versions them, keeping `providers.yaml`'s comments.
+
+**Pinned endpoints** (OpenRouter). OpenRouter serves one model id from several upstream providers and picks the
+cheapest by default, which may be a quantised copy or one that ignores parameters. With `endpoint` set, each call
+sends it as OpenRouter's `provider` preferences (`order`, `quantizations`, `require_parameters`, `allow_fallbacks`);
+other providers never get it. The upstream that answered is recorded as `served_by` on each `model_call` span and
+on the run (the results store's `served_by`, next to `served_id`; comma-joined when fallbacks mixed endpoints). A
+pinned endpoint is part of `env_hash` (the model id plus an endpoint fingerprint), so pinning, or changing a pin,
+starts new cells and authoring asks to confirm it; unpinned models keep their env hash.
 
 **Recipe × model check** (A3). A recipe can't run on a model when a slot's reply leaves no room in the model's
 context (or compaction couldn't make room), or a slot asks for more output than the model's known

@@ -36,6 +36,7 @@ class Completion(BaseModel):
     message: dict[str, Any]       # OpenAI-style assistant message (content, tool_calls)
     tokens_in: int = 0
     tokens_out: int = 0
+    served_by: str | None = None  # the upstream endpoint a router says answered (OpenRouter's `provider`), if any
     usd: float = 0.0
     finish_reason: str | None = None   # why the reply ended, as the provider says ("stop", "tool_calls", "length")
 
@@ -285,6 +286,9 @@ class LiteLLMBackend:
             kwargs["seed"] = slot.seed
         if slot.reasoning_effort is not None:      # A4: LiteLLM maps it per provider (OpenRouter: reasoning.effort)
             kwargs["reasoning_effort"] = slot.reasoning_effort
+        prefs = served.endpoint_request()
+        if prefs is not None and provider.litellm_prefix == "openrouter":     # A5: pin the upstream endpoint
+            kwargs["extra_body"] = {"provider": prefs}
         kwargs["drop_params"] = True               # a provider that rejects `seed` etc. drops it rather than 400s
         if timeout_s:
             kwargs["timeout"] = timeout_s
@@ -302,8 +306,10 @@ class LiteLLMBackend:
         usage = getattr(resp, "usage", None)
         tin = getattr(usage, "prompt_tokens", 0) or 0
         tout = getattr(usage, "completion_tokens", 0) or 0
+        upstream = getattr(resp, "provider", None)                 # OpenRouter names the endpoint that answered
         return Completion(message=msg, tokens_in=tin, tokens_out=tout, usd=served.cost(tin, tout),
-                          finish_reason=str(finish_reason) if finish_reason else None)
+                          finish_reason=str(finish_reason) if finish_reason else None,
+                          served_by=str(upstream) if isinstance(upstream, str) and upstream else None)
 
 
 MAX_BACKOFF_S = 60.0
@@ -405,6 +411,8 @@ class ModelGateway:
                     span.attributes["tool_calls"] = len(comp.message.get("tool_calls") or [])
                     if comp.finish_reason:
                         span.attributes["finish_reason"] = comp.finish_reason
+                    if comp.served_by:                               # #124: which upstream endpoint answered
+                        span.attributes["served_by"] = comp.served_by
                     if comp.message.get("content"):
                         span.attributes["content_preview"] = str(comp.message["content"])[:500]
                     self.tracer.llm_response(span, messages, comp.message, comp.tokens_in, comp.tokens_out)
