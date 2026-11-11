@@ -98,3 +98,28 @@ def test_skill_recipes_are_validated(factory):
     assert rules(with_skills(skill_ids=["sql-analysis"])) == ["skills_loading"]           # loading: none
     assert rules(with_skills(loading="upfront")) == ["skills_loading"]                     # nothing to load
     assert rules(with_skills(skill_ids=["sql-analysis"], loading="on_demand")) == ["skills_tool_reachable"]
+
+    # The skills server is empty unless loading is on_demand (lab D3: v2-audit-sk-upfront inherited the server).
+    tools = base.tools.model_copy(update={"tool_ids": [*base.tools.tool_ids, "skills.*"],
+                                          "mcp_servers": [*base.tools.mcp_servers, "skills"]})
+    with_server = base.model_copy(update={"tools": tools})
+
+    def server_and(**kw):
+        return with_server.model_copy(update={"skills": base.skills.model_copy(update=kw)})
+
+    assert rules(server_and(skill_ids=["sql-analysis"], loading="on_demand")) == []
+    assert rules(server_and(skill_ids=["sql-analysis"], loading="upfront")) == ["skills_server_unserved"]
+    assert rules(server_and()) == ["skills_server_unserved"]                               # loading: none
+    issue = validate_recipe(server_and(skill_ids=["sql-analysis"], loading="upfront"), factory.declared)[0]
+    assert "skills.load" in issue.detail and "on_demand" in issue.detail
+    # A policy that denies READ hides the server's tools, so nothing unserved is offered.
+    deny = server_and(skill_ids=["sql-analysis"], loading="upfront")
+    deny = deny.model_copy(update={"policies": deny.policies.model_copy(
+        update={"permission_mode": {**deny.policies.permission_mode, "READ": "DENY"}})})
+    assert "skills_server_unserved" not in rules(deny)
+
+
+def test_built_in_recipes_never_offer_an_empty_skills_server(factory):
+    """Every built-in recipe still validates under the new rule (no built-in pairs upfront skills with the server)."""
+    for rid, recipe in factory.recipes.items():
+        assert "skills_server_unserved" not in [i.rule for i in validate_recipe(recipe, factory.declared)], rid

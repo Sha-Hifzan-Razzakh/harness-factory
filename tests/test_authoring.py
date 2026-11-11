@@ -202,3 +202,14 @@ def test_cli_exit_codes(repo):
     assert out.returncode == 1                               # a base recipe needs its whole definition
     out = _hfx(repo, "catalog", "check")
     assert out.returncode == 0 and "catalog ok" in out.stdout
+
+
+def test_authoring_refuses_an_empty_skills_server(svc, repo):
+    """Authoring rejects what `hfx validate` rejects: upfront skills next to the skills server (#112)."""
+    fields = {"skills": {"skill_ids": ["sql-analysis"], "loading": "upfront"},
+              "tools": {"tool_ids": ["fs.*", "sql.*", "skills.*"], "mcp_servers": ["fs", "sql", "skills"]}}
+    r = svc.create("recipe", {"id": "v2-sk-upfront-server", "fields": fields})
+    assert r.status == "rejected" and any("skills_server_unserved" in i.detail for i in r.issues)
+    assert not (repo / "catalog/recipes/matrix/v2_sk_upfront_server.yaml").exists()
+    fields["skills"]["loading"] = "on_demand"
+    assert svc.create("recipe", {"id": "v2-sk-upfront-server", "fields": fields}, dry_run=True).status == "dry_run"
