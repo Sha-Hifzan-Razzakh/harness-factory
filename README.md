@@ -274,6 +274,12 @@ Two servers let a task involve running code and version control:
 - **Campaigns plan only what a recipe can reach.** A recipe that can't call every tool a task allows is not
   planned on that task, the same rule the selector prunes by. So `v2-base` skips `code-02` and `code-03`, and
   `v2-code` (below) runs them.
+- **Substitutes and reduced tool sets.** A tool granted by one task tool alone, with the same side effect, stands
+  in for it (a server that re-describes another's tools, such as an add-on's guided variant): a recipe that calls
+  the substitute reaches the task. `hfx smoke` and `hfx bench` print every pair they leave out and the tools its
+  recipe misses; the bench report lists them under *Reach*. To compare a reduced tool set on purpose (a no-engine
+  baseline, an engine-only variant), name the recipe in the bench file's `plan_unreachable`; the selector still
+  prunes it.
 ## Business systems
 
 The `biz` server is a local, offline mock of a company's back office, served over stdio from the sandbox like
