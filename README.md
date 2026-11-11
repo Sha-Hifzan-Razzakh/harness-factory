@@ -1701,6 +1701,10 @@ Oracle checks, with weights summing to 1:
   (`service/config/*.ini`), or `arg=value` for other tools (an unset filter argument counts: the call wasn't
   narrowed away from the data). It reads the call, not the result: naming a table doesn't prove its rows were used
   (`grading/touches.py` lists the limits). Every answer-only task in the catalog sets it.
+- Any check can name others it depends on with `requires: [<check id>, ...]`: it passes only if it passes itself
+  and every check it requires passes, so `grounded` with `requires: [schema]` earns nothing when the deliverable
+  is missing (no free credit for a read). The ids must be checks of the same oracle, with no cycle and never a
+  rubric check (no outcome may depend on a judge). Tasks that don't use it keep their hashes.
 - `tests_pass` (ADR 0012): pytest on the end state passes (exit code 0). `path` is what to run (default `.`).
   `text` is a hidden test module, run from outside the workspace, which the agent never sees. `pattern` is a `-k`
   expression. It runs inside the sandbox with the grader's own empty config and `--noconftest`.
