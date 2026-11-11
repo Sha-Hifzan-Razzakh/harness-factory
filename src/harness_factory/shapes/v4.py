@@ -204,7 +204,7 @@ class PlannerShape:
                 inst.tools.violations.append(Violation(kind="step_cap",
                                                        detail=f"step {state['step_no']}: {pl.step_max_steps} calls"))
                 return {"reply": ""}
-            turn = await model_turn(inst, executor, state["messages"], tools)
+            turn = await model_turn(inst, executor, state["messages"], tools, final=len(state["steps"]) == 1)
             if turn.stop:
                 return {"messages": turn.apply(state["messages"]), "stop": turn.stop, "error": turn.error}
             msg = turn.message

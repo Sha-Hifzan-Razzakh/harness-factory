@@ -63,7 +63,7 @@ class WorkflowGraphShape:
                 inst.tools.violations.append(Violation(kind="stage_cap", detail=f"{st.id}: {st.max_steps} calls"))
                 return {"reply": ""}
             tools = offered_tools(inst, restrict=st.allows) if st.tools else []
-            turn = await model_turn(inst, slot, state["messages"], tools)
+            turn = await model_turn(inst, slot, state["messages"], tools, final=state["stage"] == last)
             if turn.stop:
                 return {"messages": turn.apply(state["messages"]), "stop": turn.stop, "error": turn.error}
             msg = turn.message

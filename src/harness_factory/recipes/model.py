@@ -90,6 +90,16 @@ class CompactionSpec(BaseModel):
     prompt: str = "compaction/summary"
 
 
+FINISH_CHECK_NOTE = ("Before you finish: check that every file the task asks for exists and holds what it should. "
+                     "Create or fix what is missing, then reply.")
+
+
+class FinishCheck(BaseModel):
+    """C2 (#126): when the agent is about to end on a reply without tool calls, it gets one generic reminder and
+    one more model turn. At most once per run; the extra call costs a step like any other. The note is generic and
+    never names the task's files, checks or grading."""
+    model_config = ConfigDict(extra="forbid")
+    note: str = Field(FINISH_CHECK_NOTE, min_length=1)
 class BudgetNotice(BaseModel):
     """C1 (#125): tell the model what budget it has left, in one short line after its tool results. each_result:
     after every tool batch; thresholds: once each time the used share of tool calls or steps first reaches a value
@@ -120,6 +130,7 @@ class RuntimeConfig(BaseModel):
     # with the error and the real tool list, at most this many times per run. None/0 = the run ends there.
     recover_malformed: int | None = Field(None, ge=0)
     compaction: CompactionSpec | None = None          # summarise old turns near the context limit (ADR 0015)
+    finish_check: FinishCheck | None = None           # one reminder before ending without tool calls (C2, #126)
     budget_notice: BudgetNotice | None = None         # tell the model the budget left (C1, #125)
 
     @field_validator("recover_malformed")
@@ -241,6 +252,7 @@ _HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_p
 _HASH_OMIT_WHEN_NONE += ("config.compaction",)                                                  # ADR 0015
 _HASH_OMIT_WHEN_NONE += ("planning.structured", "planning.max_parallel", "planning.plan_retries")
 _HASH_OMIT_WHEN_NONE += ("runtime",)                                                       # ADR 0016
+_HASH_OMIT_WHEN_NONE += ("config.finish_check",)                                           # C2, #126
 _HASH_OMIT_WHEN_NONE += ("config.budget_notice",)                                          # C1, #125
 
 # Planning fields only V4 reads (V5's steps are delegate calls bounded by the worker's own config), so they are not
