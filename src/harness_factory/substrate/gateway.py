@@ -283,6 +283,8 @@ class LiteLLMBackend:
         self.api_key(provider)                      # checked every call, as before the Router: unset is PROVISION
         if slot.seed is not None:
             kwargs["seed"] = slot.seed
+        if slot.reasoning_effort is not None:      # A4: LiteLLM maps it per provider (OpenRouter: reasoning.effort)
+            kwargs["reasoning_effort"] = slot.reasoning_effort
         kwargs["drop_params"] = True               # a provider that rejects `seed` etc. drops it rather than 400s
         if timeout_s:
             kwargs["timeout"] = timeout_s
@@ -357,10 +359,13 @@ class ModelGateway:
                     span.attributes["quota_wait_s"] = round(waited, 3)
                 if response_format:
                     span.attributes["response_format"] = response_format.get("type") if extra else "prompt_only"
+                if slot.reasoning_effort is not None:
+                    span.attributes["reasoning_effort"] = slot.reasoning_effort
                 # OpenTelemetry only (Span.otel, never persisted): what the model is sent, for Phoenix's chat view.
                 self.tracer.llm_request(span, messages, tools, {
                     "temperature": slot.temperature, "max_tokens": slot.max_output_tokens,
                     **({"seed": slot.seed} if slot.seed is not None else {}),
+                    **({"reasoning_effort": slot.reasoning_effort} if slot.reasoning_effort is not None else {}),
                     **({"response_format": response_format} if response_format else {})}, self.provider.id)
                 t_call = time.monotonic()
                 try:

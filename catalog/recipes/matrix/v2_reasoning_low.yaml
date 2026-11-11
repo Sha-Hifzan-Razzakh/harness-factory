@@ -1,0 +1,8 @@
+# Matrix (model slot): v2-base with one change. The executor asks the model to reason at low effort
+# (OpenRouter `reasoning.effort`), so hidden reasoning tokens eat less of the 2,048-token reply budget. Models whose
+# caps say they don't reason, or don't take `low`, are left out of a campaign with the reason (A3).
+id: v2-reasoning-low
+version: 1
+base: v2-base
+model_slots:
+  executor: {reasoning_effort: low}
