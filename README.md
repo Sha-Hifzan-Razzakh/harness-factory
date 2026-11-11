@@ -1473,8 +1473,16 @@ plus 4 per message. That over-counts prose and JSON, so it errs towards acting e
 video, file; text always). A served model can also record `endpoint`, its router endpoint preferences (OpenRouter:
 `order`, `quantizations`, `require_parameters`, `allow_fallbacks`). Every one is optional: absent means unknown and
 nothing is checked against it; a key the catalog doesn't know is refused. None of them is in `env_hash` (the
-provider model id is). Authoring (`hfx new model`, the API, the workspace) writes and versions them, keeping
-`providers.yaml`'s comments.
+provider model id is), except `endpoint`, below. Authoring (`hfx new model`, the API, the workspace) writes and
+versions them, keeping `providers.yaml`'s comments.
+
+**Pinned endpoints** (OpenRouter). OpenRouter serves one model id from several upstream providers and picks the
+cheapest by default, which may be a quantised copy or one that ignores parameters. With `endpoint` set, each call
+sends it as OpenRouter's `provider` preferences (`order`, `quantizations`, `require_parameters`, `allow_fallbacks`);
+other providers never get it. The upstream that answered is recorded as `served_by` on each `model_call` span and
+on the run (the results store's `served_by`, next to `served_id`; comma-joined when fallbacks mixed endpoints). A
+pinned endpoint is part of `env_hash` (the model id plus an endpoint fingerprint), so pinning, or changing a pin,
+starts new cells and authoring asks to confirm it; unpinned models keep their env hash.
 
 ## Pausing and resuming a run (checkpoints)
 

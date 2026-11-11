@@ -135,7 +135,7 @@ def run_key_for(task: Task, recipe: HarnessRecipe, canonical_model: str, provide
     campaign can tell which planned runs already have results (resume) and the two can never disagree."""
     recipe = recipe.with_model(canonical_model)
     served = providers.served(provider_id, canonical_model)
-    model_id = served.provider_model_id
+    model_id = served.env_model_id()            # + the pinned endpoint, when one is set (#124)
     if emulation.is_emulated(served):          # what the model sees includes the emulation; native ids unchanged
         model_id = f"{model_id}+emulated:{emulation.fingerprint()}"
     env_hash = declared.env_hash(recipe.tools.mcp_servers, model_id)

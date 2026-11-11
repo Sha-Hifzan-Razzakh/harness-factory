@@ -346,8 +346,9 @@ class AuthoringService(HistoryMixin):
             if sid not in ns or ns[sid]["env"] != v["env"]:
                 imp.env_changed[sid] = sorted(r for r, rv in cr.items() if sid in rv["servers"])
         cm, nm = cur.get("models", {}), new.get("models", {})
-        imp.models_changed = sorted(m for m, v in cm.items()
-                                    if m not in nm or nm[m]["provider_model_id"] != v["provider_model_id"])
+        imp.models_changed = sorted(m for m, v in cm.items()     # provider model id or pinned endpoint (#124)
+                                    if m not in nm or nm[m].get("env_model", nm[m]["provider_model_id"])
+                                    != v.get("env_model", v["provider_model_id"]))
         affected = set(imp.recipes_changed) | set(imp.recipes_removed) | {r for rs in imp.env_changed.values()
                                                                           for r in rs}
         imp.stale_results = self._stale(cr, affected) if affected else 0

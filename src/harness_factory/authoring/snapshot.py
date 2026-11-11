@@ -140,6 +140,7 @@ def take() -> dict[str, Any]:
         for m in p.models:
             out["models"][f"{p.id}/{m.canonical}"] = {
                 "provider": p.id, "canonical": m.canonical, "provider_model_id": m.provider_model_id,
+                "env_model": m.env_model_id(),          # what env_hash sees: the id, plus a pinned endpoint (#124)
                 "kind": p.kind, "hash": content_hash(_model_identity(m), 12),
                 "summary": f"{m.provider_model_id} · ctx {m.caps.context_len:,} · ${m.price_in:g}/${m.price_out:g}"
                            f" per M{' · free' if m.free else ''}"}
