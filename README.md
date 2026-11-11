@@ -724,7 +724,8 @@ OpenTelemetry alone, never into the JSONL trace, the results store, grading or a
 
 **Traces in MLflow.** The collector also forwards every trace to MLflow (`otlphttp/mlflow`: MLflow 3.6 or later
 takes OTLP over HTTP at `/v1/traces`, into the experiment the `x-mlflow-experiment-id` header names; compose's
-SQLite store is the SQL store it needs). MLflow's Overview and Traces tabs then show one trace per run, with the
+SQLite store is the SQL store it needs; compose pins `MLFLOW_TAG` to `v3.18.0`, the version this was checked
+against). MLflow's Overview and Traces tabs then show one trace per run, with the
 same span types, inputs and outputs, models and token counts. The header's id is the number in MLflow's
 `/#/experiments/<id>` URL for `harness-factory`: `1` on a fresh MLflow, where it is the first experiment created;
 set `HF_MLFLOW_EXPERIMENT_ID` if yours differs. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector (`:4318`), not

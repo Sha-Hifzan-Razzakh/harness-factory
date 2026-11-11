@@ -169,3 +169,14 @@ def test_replay_needs_somewhere_to_send(monkeypatch, tmp_path):
     from harness_factory.cli import main as cli
     out = CliRunner().invoke(cli.app, ["traces", "replay", str(tmp_path)])
     assert out.exit_code == 2 and "OTEL_EXPORTER_OTLP_ENDPOINT" in out.output
+
+
+def test_mlflow_is_pinned_to_a_version_that_ingests_otlp():
+    """MLflow takes OTLP traces from 3.6 on; `latest` (or a copied .env.example) could move below or past it."""
+    import re
+    compose = yaml.safe_load((ROOT / "compose.yaml").read_text())
+    image = compose["services"]["mlflow"]["image"]
+    m = re.fullmatch(r"ghcr\.io/mlflow/mlflow:\$\{MLFLOW_TAG:-v(\d+)\.(\d+)\.(\d+)\}", image)
+    assert m and (int(m[1]), int(m[2])) >= (3, 6), image
+    env = (ROOT / ".env.example").read_text()
+    assert re.search(r"^MLFLOW_TAG=v" + re.escape(".".join(m.groups())) + r"\b", env, re.M)   # the same pin
