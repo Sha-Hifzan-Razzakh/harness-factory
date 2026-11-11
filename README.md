@@ -1475,6 +1475,15 @@ nothing is checked against it; a key the catalog doesn't know is refused. None o
 provider model id is). Authoring (`hfx new model`, the API, the workspace) writes and versions them, keeping
 `providers.yaml`'s comments.
 
+**Recipe × model check** (A3). A recipe can't run on a model when a slot's reply leaves no room in the model's
+context (or compaction couldn't make room), or a slot asks for more output than the model's known
+`max_output_tokens`. Campaign planning (`hfx smoke`, `hfx bench`, the API) leaves such a pair out and prints why
+(the bench report's *Reach* section and manifest list it); provisioning refuses it before anything starts; the
+recipe is never shrunk to fit. Recipes carry no model, so `hfx validate --models gpt-oss-120b,qwen3-32b` runs the
+check for named models on every provider that serves them, and notes what the catalog doesn't know (an unknown
+maximum output passes, unchecked; a model that always reasons spends reply tokens on reasoning). Plain `hfx validate`
+and the authoring snapshot are unchanged.
+
 ## Pausing and resuming a run (checkpoints)
 
 V2–V5 shapes are LangGraph graphs. With checkpointing on, each graph is compiled with one of LangGraph's own
