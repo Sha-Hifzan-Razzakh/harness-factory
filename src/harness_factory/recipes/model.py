@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from harness_factory import settings
 from harness_factory.hashing import content_hash
@@ -86,6 +86,18 @@ class CompactionSpec(BaseModel):
     prompt: str = "compaction/summary"
 
 
+FINISH_CHECK_NOTE = ("Before you finish: check that every file the task asks for exists and holds what it should. "
+                     "Create or fix what is missing, then reply.")
+
+
+class FinishCheck(BaseModel):
+    """C2 (#126): when the agent is about to end on a reply without tool calls, it gets one generic reminder and
+    one more model turn. At most once per run; the extra call costs a step like any other. The note is generic and
+    never names the task's files, checks or grading."""
+    model_config = ConfigDict(extra="forbid")
+    note: str = Field(FINISH_CHECK_NOTE, min_length=1)
+
+
 class RuntimeConfig(BaseModel):
     max_steps: int = Field(30, gt=0)
     max_tool_calls: int = Field(50, gt=0)
@@ -100,6 +112,7 @@ class RuntimeConfig(BaseModel):
     # with the error and the real tool list, at most this many times per run. None/0 = the run ends there.
     recover_malformed: int | None = Field(None, ge=0)
     compaction: CompactionSpec | None = None          # summarise old turns near the context limit (ADR 0015)
+    finish_check: FinishCheck | None = None           # one reminder before ending without tool calls (C2, #126)
 
     @field_validator("recover_malformed")
     @classmethod
@@ -220,6 +233,7 @@ _HASH_OMIT_WHEN_NONE = ("workflow", "delegation", "planning", "planning.worker_p
 _HASH_OMIT_WHEN_NONE += ("config.compaction",)                                                  # ADR 0015
 _HASH_OMIT_WHEN_NONE += ("planning.structured", "planning.max_parallel", "planning.plan_retries")
 _HASH_OMIT_WHEN_NONE += ("runtime",)                                                       # ADR 0016
+_HASH_OMIT_WHEN_NONE += ("config.finish_check",)                                           # C2, #126
 
 # Planning fields only V4 reads (V5's steps are delegate calls bounded by the worker's own config), so they are not
 # part of a V5 recipe's identity.

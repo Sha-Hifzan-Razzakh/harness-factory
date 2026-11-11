@@ -51,15 +51,18 @@ class Turn:
 
 
 async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict[str, Any]],
-                     tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None) -> Turn:
+                     tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None,
+                     final: bool = True) -> Turn:
     """One model turn, in a `turn <n>` span (CHAIN in Phoenix) that holds its model calls: the reply, any recovered
     replies and a compaction summary. The tool batch the reply asks for gets `turn <n> · tools` (run_tool_calls):
     shapes run the two in separate graph nodes, and no span stays open across a node boundary (a checkpointed run
-    may pause there). Trace only: no count, budget or score reads turn spans."""
+    may pause there). Trace only: no count, budget or score reads turn spans.
+    final: a reply without tool calls here ends the run (V2, V1, V3's last stage, V4's last step), so the finish
+    check (`config.finish_check`, #126) may fire on it; elsewhere such a reply only ends a stage or step."""
     inst.turns += 1
     n = inst.turns
     with inst.tracer.span(SpanKind.turn, f"turn {n}", turn=n) as span:
-        turn = await _model_turn(inst, slot, messages, tools, response_format)
+        turn = await _model_turn(inst, slot, messages, tools, response_format, final)
         msg = turn.message
         names = [c["function"]["name"] for c in (msg or {}).get("tool_calls") or []]
         if turn.stop:
@@ -72,7 +75,8 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
 
 
 async def _model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict[str, Any]],
-                      tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None) -> Turn:
+                      tools: list[dict[str, Any]], response_format: dict[str, Any] | None = None,
+                      final: bool = True) -> Turn:
     """One model call under the budget.
 
     With `config.recover_malformed`, a reply the provider rejects as malformed (MODEL_PARSE, e.g. a call to a tool
@@ -131,7 +135,19 @@ async def _model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dic
         inst.budget.used_tokens += comp.tokens_in + comp.tokens_out
         turn.calls += 1
         turn.added.append(comp.message)
+        if finish_check_due(inst, comp.message, tools, final):
+            inst.snapshot["finish_check"] = "fired"      # once per run; the instance survives a checkpoint resume
+            turn.added.append({"role": "user", "content": inst.recipe.config.finish_check.note})
+            continue                                   # one more model call: a step like any other
         return turn
+
+
+def finish_check_due(inst: HarnessInstance, reply: dict[str, Any], tools: list[dict[str, Any]], final: bool) -> bool:
+    """C2 (#126): the run is about to end on a reply without tool calls, the turn offered tools to act with, the
+    check hasn't fired in this run, and the budget allows one more model call (a step-capped run ends as it would
+    have, rather than on a budget stop the check caused)."""
+    return (inst.recipe.config.finish_check is not None and final and bool(tools) and not reply.get("tool_calls")
+            and "finish_check" not in inst.snapshot and inst.budget.exceeded_by() is None)
 
 
 def with_spill(inst: HarnessInstance, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

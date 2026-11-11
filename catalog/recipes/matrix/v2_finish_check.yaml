@@ -1,0 +1,6 @@
+# Matrix (config): v2-base with one change. When the model is about to end on a reply without tool calls, it gets
+# one generic reminder to check the files the task asks for, and one more turn (C2). At most once per run.
+id: v2-finish-check
+version: 1
+base: v2-base
+config: {finish_check: {}}

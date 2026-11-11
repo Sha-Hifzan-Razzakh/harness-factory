@@ -214,6 +214,10 @@ def _runtime_issues(recipe: HarnessRecipe, provisioning: bool = False) -> list[V
         out.append(ValidationIssue(rule="runtime_harness_tools",
                                    detail=f"runtime {recipe.runner}: config.recover_malformed re-asks the model in "
                                           f"the native loop; a framework runner keeps its own error handling"))
+    if recipe.config.finish_check is not None:
+        out.append(ValidationIssue(rule="runtime_harness_tools",
+                                   detail=f"runtime {recipe.runner}: config.finish_check adds a turn in the native "
+                                          f"loop; a framework runner decides itself when it is done"))
     missing = missing_packages(recipe.runner) if provisioning else []
     if missing:                 # the environment's problem, not the recipe's: checked when a run is provisioned
         out.append(ValidationIssue(rule="runner_installed",
