@@ -427,7 +427,7 @@ def spec_card(f, task_id: str, recipe_id: str, model: str, provider: str, seed: 
             issues.append(f"prompts don't render: {e}")
 
     rows_all = _rows(f)
-    est = Estimator(rows_all, {x.id for x in f.providers.providers if x.kind == "scripted"}).estimate(
+    est = Estimator(rows_all, {x.id for x in f.providers.providers if x.kind == "scripted"}, f.recipes).estimate(
         model, provider, recipe, task.key())
     usd = est.usd if est.usd is not None else (est.tokens * 0.7 * served.price_in + est.tokens * 0.3 * served.price_out) / 1e6
     sections.append(Section(title="Cost estimate", fields=[

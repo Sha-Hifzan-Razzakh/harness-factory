@@ -257,12 +257,13 @@ def smoke(recipe: str = typer.Option("v2-base", "--recipe", help="recipe id, or 
                  tags=tag.split(",") if tag else None, exclude_tags=exclude_tag.split(",") if exclude_tag else None)
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
-    from harness_factory.runner.runner import skipped_pairs
-    left_out = skipped_pairs(f, recipe.split(","), f.tasks.all())
+    from harness_factory.runner.runner import describe_pairs, plan_tasks, skipped_pairs
+    left_out = skipped_pairs(f, recipe.split(","), plan_tasks(f, None, tag.split(",") if tag else None,
+                                                             exclude_tag.split(",") if exclude_tag else None))
     if left_out:
         console.print(f"left out {len(left_out)} task x recipe pair(s) whose recipe can't call every tool the "
-                      f"task allows: {', '.join(f'{t} x {r}' for t, r in left_out[:6])}"
-                      f"{' ...' if len(left_out) > 6 else ''}")
+                      f"task allows:\n" + "\n".join(f"  {line}" for line in describe_pairs(left_out)),
+                      highlight=False)
     if dry_run or resume:
         console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
                       f"{len(status.retry)}   new {len(status.new)}"

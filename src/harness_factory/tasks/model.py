@@ -44,7 +44,7 @@ Normalization = Literal["whitespace", "case"]
 # kept every existing task hash (like _HASH_OMIT_WHEN_NONE for recipes).
 _CHECK_HASH_OMIT_WHEN_NONE = ("ref", "sheet", "cell", "expected", "tolerance", "style",
                               "value", "abs_tol", "rel_tol", "json_schema", "normalize", "rubric", "touches",
-                              "lines", "select")
+                              "lines", "select", "requires")
 
 _SCALAR = (str, int, float, bool, type(None))
 
@@ -158,6 +158,10 @@ class WeightedCheck(BaseModel):
     lines: LinesSpec | None = None   # json_lines: the expected findings and the thresholds (path is the report)
     select: str | None = None        # number_close on a JSON file: where the number is, as /key segments, list
                                      # indexes and [field=value] list filters, e.g. /requirements[id=TOTAL]/deficit
+    requires: list[str] | None = Field(default=None, min_length=1)   # ids of checks in the same oracle that must
+                                     # pass too: this check passes only if it passes itself and every check it
+                                     # requires passes (e.g. credit for reading the right source only when the
+                                     # deliverable exists). Never a rubric check: no outcome may hang on a judge.
 
     @model_validator(mode="after")
     def _guard_is_critical(self) -> WeightedCheck:
@@ -296,6 +300,7 @@ class Oracle(BaseModel):
         total = sum(c.weight for c in self.checks)
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"oracle weights must sum to 1.0, got {total:.4f}")
+        self._requires_resolve()
         if self.rubric_checks() and not any(c.weight > 0 for c in self.checks if c.kind != "rubric"):
             raise ValueError("an oracle with rubric checks needs a deterministic check with weight > 0: an "
                              "uncalibrated judge carries weight 0, and the outcome must still be measurable")
@@ -303,6 +308,52 @@ class Oracle(BaseModel):
 
     def rubric_checks(self) -> list[WeightedCheck]:
         return [c for c in self.checks if c.kind == "rubric"]
+
+    def _requires_resolve(self) -> None:
+        """`requires` names other checks of this oracle, never itself, never a rubric check, and has no cycle."""
+        by_id = {c.id: c for c in self.checks}
+        if len(by_id) != len(self.checks) and any(c.requires for c in self.checks):
+            raise ValueError("check ids must be unique when a check uses `requires`")
+        for c in self.checks:
+            for r in c.requires or []:
+                if r == c.id:
+                    raise ValueError(f"check {c.id}: requires itself")
+                if r not in by_id:
+                    raise ValueError(f"check {c.id}: requires unknown check {r!r}")
+                if by_id[r].kind == "rubric":
+                    raise ValueError(f"check {c.id}: requires rubric check {r!r}; a judge's verdict may be "
+                                     f"uncalibrated, and no outcome may depend on it")
+        state: dict[str, int] = {}                       # 1 = on the current path, 2 = done
+
+        def visit(cid: str, path: list[str]) -> None:
+            if state.get(cid) == 2:
+                return
+            if state.get(cid) == 1:
+                cycle = path[path.index(cid):] + [cid]
+                raise ValueError(f"checks require each other in a cycle: {' -> '.join(cycle)}")
+            state[cid] = 1
+            for r in by_id[cid].requires or []:
+                visit(r, [*path, cid])
+            state[cid] = 2
+
+        for c in self.checks:
+            visit(c.id, [])
+
+    def requirement_order(self) -> list[WeightedCheck]:
+        """Checks ordered so every check comes after the checks it requires (the validator ruled out cycles)."""
+        by_id, done, out = {c.id: c for c in self.checks}, set(), []
+
+        def add(c: WeightedCheck) -> None:
+            if c.id in done:
+                return
+            done.add(c.id)
+            for r in c.requires or []:
+                add(by_id[r])
+            out.append(c)
+
+        for c in self.checks:
+            add(c)
+        return out
 
 
 class EnvSeed(BaseModel):

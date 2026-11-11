@@ -49,6 +49,15 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
     console.print(f"bench {spec.name} (sha256 {b.file_hash(raw)[:12]}): {len(tasks)} tasks x {len(spec.recipes)} "
                   f"recipes x {len(spec.models)} models x {spec.seeds} seeds x {len(spec.faults)} fault profiles "
                   f"= {len(specs)} runs" + (f"\n[dim]{spec.note}[/]" if spec.note else ""))
+    from harness_factory.runner.runner import describe_pairs
+    left_out, reduced = b.reach(f, spec)
+    if left_out:
+        console.print(f"[yellow]left out {len(left_out)} task x recipe pair(s) whose recipe can't call every tool the "
+                      f"task allows (list the recipe in plan_unreachable to run them anyway):\n"
+                      + "\n".join(f"  {line}" for line in describe_pairs(left_out)), highlight=False)
+    if reduced:
+        console.print(f"planned {len(reduced)} pair(s) on a reduced tool set (plan_unreachable):\n"
+                      + "\n".join(f"  {line}" for line in describe_pairs(reduced)), highlight=False)
     status = plan_status(f, specs)
     todo = status.retry + status.new if resume else specs
     console.print(f"plan: {len(specs)} runs   done {len(status.done)}   retry (INCOMPLETE/ERROR) "
@@ -119,6 +128,8 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
         mine = [r for r in rows if r["run_key"] in keys]
         text = build_report(f, mine, baseline, title=f"Benchmark {spec.name}",
                             compare=spec.judge.compare.pairs() if spec.judge.compare else None, signals=True)
+        if section := b.reach_section(left_out, reduced):
+            text = f"{text}\n\n{section}"
         report_path = out_dir / "report.md"
         report_path.write_text(text + "\n")
         console.print(f"wrote {report_path}")

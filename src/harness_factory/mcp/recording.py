@@ -26,6 +26,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from harness_factory import atomicfile
 from harness_factory.env.mcp.servers import MCPServerSpec
 from harness_factory.hashing import content_hash
 
@@ -73,4 +74,4 @@ def _write(path: Path, data: Any) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     with os.fdopen(fd, "w") as fh:
         json.dump(data, fh, indent=1, default=str)
-    os.replace(tmp, path)
+    atomicfile.replace(tmp, path)
