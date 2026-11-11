@@ -235,7 +235,7 @@ def allocate(f, recipe_ids: list[str] | str, models: list[str], seeds: int = 1, 
     records = equivalences if equivalences is not None else (f.store.equivalences() if f.store else [])
     pooled = pools(records, f.providers)
     scripted = {p.id for p in f.providers.providers if p.kind == "scripted"}
-    est = Estimator(f.store.rows() if f.store else [], scripted)
+    est = Estimator(f.store.rows() if f.store else [], scripted, f.recipes)
     buckets: dict[str, _Bucket] = {}
     assigned: dict[int, str] = {}                            # index in demand -> provider
     decisions, refusals = [], []

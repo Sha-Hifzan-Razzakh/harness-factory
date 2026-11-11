@@ -176,8 +176,13 @@ Runs go in parallel (`-j/--concurrency`, default 4). Every worker shares one quo
   requests, tokens, list-price dollars, how many runs today's quota covers, the days the plan needs, and the
   minutes of pacing the per-minute limits impose.
   - **Estimates come from history,** most specific first: same model, recipe and task; then same model and
-    recipe; then the same recipe on any model of the same provider kind; then a default per shape. Scripted
-    runs never stand in for real models. The "estimated from" column says which level was used.
+    recipe; then the same task on the same model with any recipe of the same shape (how heavy the task is there);
+    then the recipe on other models, its tokens scaled by this model's typical run size over theirs (unscaled
+    when this model has no history); then the recipe's own caps (`max_steps`, `max_tokens`), shown as
+    `ceiling (recipe caps)`: an upper bound, so a budget or deadline is checked against the worst case rather
+    than a guess. The default per shape is used only with no history at all of that provider kind. Cross-model
+    estimates are priced at the planned model's own rates. Scripted runs never stand in for real models. The
+    "estimated from" column says which level was used.
   - **A plan longer than today is normal** on free tiers: runs past today's quota end INCOMPLETE, and `--resume`
     finishes them after the reset (00:00 UTC).
   - **It refuses only what can't work:** a bucket already spent today, a plan needing more than
