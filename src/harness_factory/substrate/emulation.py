@@ -234,7 +234,8 @@ class ToolEmulation:
             msg["tool_calls"] = [{"id": f"call_emu_{self.replies}_{k}", "type": "function",
                                   "function": {"name": c.name, "arguments": json.dumps(c.arguments)}}
                                  for k, c in enumerate(reply.tool_calls)]
-        return Completion(message=msg, tokens_in=comp.tokens_in, tokens_out=comp.tokens_out, usd=comp.usd)
+        return Completion(message=msg, tokens_in=comp.tokens_in, tokens_out=comp.tokens_out, usd=comp.usd,
+                          finish_reason=comp.finish_reason)
 
 
 class TextReplies:

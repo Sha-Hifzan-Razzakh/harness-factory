@@ -88,6 +88,9 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
                 "est_tokens_in": est, **({"context_len": window.context_len} if window else {})},
                 **({"response_format": response_format} if response_format else {}))
         except HarnessError as e:
+            spent = getattr(e, "completion", None)        # a reply cut off mid tool call: a real call, never replayed
+            if spent is not None:
+                inst.budget.used_tokens += spent.tokens_in + spent.tokens_out
             if e.kind == ErrorKind.MODEL_PARSE and inst.recoveries < (inst.recipe.config.recover_malformed or 0):
                 inst.recoveries += 1
                 inst.budget.used_steps += 1
@@ -95,6 +98,9 @@ async def model_turn(inst: HarnessInstance, slot: ModelSlot, messages: list[dict
                 names = ", ".join(t["function"]["name"] for t in tools) or "none"
                 turn.added.append({"role": "user", "content": RECOVERY_NOTE.format(error=e.message[:300], tools=names)})
                 continue
+            if spent is not None:
+                inst.budget.used_steps += 1
+                turn.calls += 1
             turn.stop, turn.error = f"error:{e.kind.value}", e.message
             return turn
         inst.budget.used_steps += 1
