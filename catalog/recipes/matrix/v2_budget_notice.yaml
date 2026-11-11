@@ -1,0 +1,6 @@
+# Matrix (config): v2-base with one change. After each tool batch the model is told the budget it has left
+# ("tool calls left: N of M; steps left: K of L"), so it can stop exploring and deliver before the limit (C1).
+id: v2-budget-notice
+version: 1
+base: v2-base
+config: {budget_notice: {mode: each_result}}
