@@ -430,22 +430,18 @@ def plan_status(f: Factory, specs: list[RunSpec]) -> PlanStatus:
 def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list[str] | None = None,
          seeds: int = 1, task_ids: list[str] | None = None,
          faults: list[str | None] | None = None, tags: list[str] | None = None,
-         exclude_tags: list[str] | None = None) -> list[RunSpec]:
+         exclude_tags: list[str] | None = None, unreachable_ok: list[str] | None = None) -> list[RunSpec]:
     """Every task x recipe x model x fault profile x seed, in a fixed order (results come back in this order).
     faults: fault profile ids to add next to the clean runs, e.g. [None, "transient"] (R needs both).
     tags: only tasks carrying at least one of these (e.g. ["batch-4"]); exclude_tags: leave out tasks carrying any
     (the CI shape gate leaves out `long` tasks, whose references exceed V3's stage caps and V4/V5's plan length).
     A recipe that can't call every tool a task allows is not planned on it (`provisioner.reaches`, the rule the
-    selector prunes by; `skipped_pairs` lists them): v2-base never runs a task that needs the git, biz or docs server."""
+    selector prunes by; `skipped_pairs` lists them): v2-base never runs a task that needs the git, biz or docs server.
+    unreachable_ok: recipes planned on every selected task all the same, because their reduced tool set is the point
+    of the comparison (a no-engine baseline, an engine-only variant). The selector's pruning is unchanged."""
     recipe_ids = [recipe_ids] if isinstance(recipe_ids, str) else recipe_ids
     models = models or [m.canonical for m in f.providers.get(provider_id).models]
-    tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
-    if tags:
-        tasks = [t for t in tasks if set(tags) & set(t.tags)]
-    if exclude_tags:
-        tasks = [t for t in tasks if not set(exclude_tags) & set(t.tags)]
-    if (tags or exclude_tags) and not tasks:
-        raise ValueError(f"no runnable task left after tags={tags} exclude_tags={exclude_tags}")
+    tasks = plan_tasks(f, task_ids, tags, exclude_tags)
     faults = faults or [None]
     for fid in faults:
         f.fault(fid)                                         # unknown profile: fail before anything runs
@@ -453,7 +449,7 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
 
     for t in tasks:
         f.graders.check(t)                                   # unknown grader: likewise
-    skip = set(skipped_pairs(f, recipe_ids, tasks))
+    skip = {(t, r) for t, r, _ in skipped_pairs(f, recipe_ids, tasks, unreachable_ok)}
     # A variant that binds its own faults (tool_failure, slow_tool; TSK-04) is run clean only: a campaign fault
     # profile on it is refused (provision), so the plan leaves those runs out instead of failing them.
     return [RunSpec(task_id=t.id, recipe_id=r, canonical_model=m, provider=provider_id, seed=s,
@@ -463,10 +459,51 @@ def plan(f: Factory, recipe_ids: list[str] | str, provider_id: str, models: list
             for s in range(seeds)]
 
 
-def skipped_pairs(f: Factory, recipe_ids: list[str], tasks: list[Task]) -> list[tuple[str, str]]:
-    """(task id, recipe id) pairs a plan leaves out: the recipe can't call every tool the task allows."""
-    from harness_factory.provision.provisioner import reaches
-    return [(t.id, r) for t in tasks for r in recipe_ids if r in f.recipes and not reaches(f.recipes[r], t, f.declared)]
+def plan_tasks(f: Factory, task_ids: list[str] | None = None, tags: list[str] | None = None,
+               exclude_tags: list[str] | None = None) -> list[Task]:
+    """The tasks a plan covers: `task_ids` (or every runnable task), narrowed by tags."""
+    tasks = [f.tasks.get(t) for t in task_ids] if task_ids else f.tasks.all()
+    if tags:
+        tasks = [t for t in tasks if set(tags) & set(t.tags)]
+    if exclude_tags:
+        tasks = [t for t in tasks if not set(exclude_tags) & set(t.tags)]
+    if (tags or exclude_tags) and not tasks:
+        raise ValueError(f"no runnable task left after tags={tags} exclude_tags={exclude_tags}")
+    return tasks
+
+
+def skipped_pairs(f: Factory, recipe_ids: list[str], tasks: list[Task],
+                  unreachable_ok: list[str] | None = None) -> list[tuple[str, str, list[str]]]:
+    """(task id, recipe id, missing tools) for each pair a plan leaves out: the recipe can't call every tool the task
+    allows, and it isn't in `unreachable_ok`."""
+    from harness_factory.provision.provisioner import missing_task_tools
+    ok = set(unreachable_ok or [])
+    out = []
+    for t in tasks:
+        for r in recipe_ids:
+            if r in f.recipes and r not in ok and (missing := missing_task_tools(f.recipes[r], t, f.declared)):
+                out.append((t.id, r, missing))
+    return out
+
+
+def reduced_pairs(f: Factory, recipe_ids: list[str], tasks: list[Task],
+                  unreachable_ok: list[str]) -> list[tuple[str, str, list[str]]]:
+    """(task id, recipe id, missing tools) for each pair planned only because its recipe is in `unreachable_ok`."""
+    return skipped_pairs(f, [r for r in recipe_ids if r in set(unreachable_ok)], tasks)
+
+
+def describe_pairs(pairs: list[tuple[str, str, list[str]]], limit: int = 6) -> list[str]:
+    """One line per recipe: on which tasks, and which tools it can't call (grouped: the same few tools repeat)."""
+    by_recipe: dict[str, list[tuple[str, list[str]]]] = {}
+    for t, r, missing in pairs:
+        by_recipe.setdefault(r, []).append((t, missing))
+    lines = []
+    for r, items in by_recipe.items():
+        tasks = [t for t, _ in items]
+        tools = sorted({m for _, ms in items for m in ms})
+        lines.append(f"{r} on {len(tasks)} task(s) ({', '.join(tasks[:limit])}{', ...' if len(tasks) > limit else ''})"
+                     f": can't call {', '.join(tools[:limit])}{', ...' if len(tools) > limit else ''}")
+    return lines
 
 
 async def run_campaign(f: Factory, specs: list[RunSpec], concurrency: int = 4,

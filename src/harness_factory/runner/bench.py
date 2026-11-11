@@ -121,8 +121,11 @@ class BenchmarkFile(_Strict):
     limits: Limits = Limits()
     judge: Judge = Judge()
     calibration: Calibration = Calibration()
+    # Recipes planned on every selected task even where they can't call every tool the task allows: a reduced tool
+    # set on purpose (a no-engine baseline, an engine-only variant). Without it such pairs are left out and listed.
+    plan_unreachable: list[str] = []
 
-    @field_validator("recipes", "faults")
+    @field_validator("recipes", "faults", "plan_unreachable")
     @classmethod
     def _unique(cls, v: list[str]) -> list[str]:
         dup = sorted({x for x in v if v.count(x) > 1})
@@ -147,6 +150,9 @@ class BenchmarkFile(_Strict):
         dup = sorted({f"{m} on {p}" for m, p in pairs if pairs.count((m, p)) > 1})
         if dup:
             raise ValueError(f"models listed more than once: {', '.join(dup)}")
+        extra = [r for r in self.plan_unreachable if r not in self.recipes]
+        if extra:
+            raise ValueError(f"plan_unreachable names recipe(s) not in `recipes`: {', '.join(extra)}")
         c = self.judge.compare
         if c:
             missing = [r for r in [c.base, *c.against] if r not in self.recipes]
@@ -237,8 +243,33 @@ def build_plan(f, bench: BenchmarkFile) -> list:
     specs = []
     for provider in bench.providers():
         specs += plan(f, bench.recipes, provider, bench.models_for(provider), bench.seeds, task_ids=task_ids,
-                      faults=bench.fault_ids())
+                      faults=bench.fault_ids(), unreachable_ok=bench.plan_unreachable)
     return specs
+
+
+def reach(f, bench: BenchmarkFile) -> tuple[list, list]:
+    """(left out, planned with a reduced tool set): (task id, recipe id, missing tools) per pair whose recipe can't
+    call every tool the task allows. Left out unless the recipe is in `plan_unreachable`."""
+    from harness_factory.runner.runner import reduced_pairs, skipped_pairs
+    tasks = [f.tasks.get(t) for t in select_tasks(f, bench.tasks)]
+    return (skipped_pairs(f, bench.recipes, tasks, bench.plan_unreachable),
+            reduced_pairs(f, bench.recipes, tasks, bench.plan_unreachable))
+
+
+def reach_section(left_out: list, reduced: list) -> str:
+    """The report's account of pairs left out or planned on a reduced tool set. Empty when there are none."""
+    from harness_factory.runner.runner import describe_pairs
+    if not left_out and not reduced:
+        return ""
+    parts = ["## Reach", ""]
+    if left_out:
+        parts += [(f"Left out {len(left_out)} task x recipe pair(s): the recipe can't call every tool the task "
+                   "allows (add the recipe to `plan_unreachable` to run them anyway)."), ""]
+        parts += [f"- {line}" for line in describe_pairs(left_out, limit=50)] + [""]
+    if reduced:
+        parts += [f"Planned {len(reduced)} pair(s) on a reduced tool set (`plan_unreachable`):", ""]
+        parts += [f"- {line}" for line in describe_pairs(reduced, limit=50)] + [""]
+    return "\n".join(parts).rstrip()
 
 
 def preflight_problems(f, projection, deadline_days: int | None, budget_usd: float | None) -> list[str]:
@@ -282,6 +313,10 @@ def store_file(f, bench: BenchmarkFile, raw: bytes, source: Path, specs: list, *
                         "source": str(source.resolve())})
     manifest.update({"name": bench.name, "file_sha256": file_hash(raw), "runs": len(specs), "run_keys": keys,
                      "invocations": invocations})
+    left_out, reduced = reach(f, bench)
+    if left_out or reduced:              # only then, so manifests of benches that reach everywhere don't change
+        manifest["left_out"] = [{"task": t, "recipe": r, "missing": m} for t, r, m in left_out]
+        manifest["reduced"] = [{"task": t, "recipe": r, "missing": m} for t, r, m in reduced]
     manifest_path.write_text(json.dumps(manifest, indent=1))
     return d
 
