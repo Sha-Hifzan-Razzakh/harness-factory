@@ -46,30 +46,86 @@ CUT_OFF_REASONS = frozenset({"length", "max_tokens"})
 
 
 def cut_off_tool_calls(comp: Completion) -> list[str]:
-    """Tool calls of a reply that stopped at the output limit whose arguments are not a whole JSON object: the
-    model was cut off mid call. Empty when the reply ended normally, or every call's arguments parse."""
+    """Tool calls of a reply that stopped at the output limit: every one of them (HF-1). A reply cut off there never
+    finished its calls, even when the provider closed the JSON (Anthropic sends `{"path": ...}` without `content`),
+    so none of them may run. Empty when the reply ended normally or asked for no tool."""
     if comp.finish_reason not in CUT_OFF_REASONS:
         return []
-    cut = []
-    for call in comp.message.get("tool_calls") or []:
-        fn = call.get("function") or {}
-        try:
-            whole = isinstance(json.loads(fn.get("arguments") or "{}"), dict)
-        except ValueError:
-            whole = False
-        if not whole:
-            cut.append(str(fn.get("name")))
-    return cut
+    return [str((call.get("function") or {}).get("name")) for call in comp.message.get("tool_calls") or []]
 
 
-class CutOffReply(HarnessError):
-    """A reply cut off at the output limit in the middle of a tool call (MODEL_PARSE: malformed output). Unlike a
-    reply the provider refuses, this one was a real call whose tokens were spent: `completion` carries them, so the
-    budget counts the step, and the reply itself is never replayed (its arguments are not valid JSON)."""
+def _has_text(comp: Completion) -> bool:
+    return bool(str(comp.message.get("content") or "").strip())
+
+
+# Tool-call syntax a model sometimes writes into its text instead of making a tool call (HF-1, RW-15). Matched as
+# plain substrings of a reply that has no tool calls; each is specific enough that ordinary prose (an answer that
+# mentions "functions") never holds it.
+LEAKED_TOOL_TOKENS = (
+    "<|call|>",              # gpt-oss (OpenAI harmony format): end of a tool call
+    "<|start|>assistant",    # gpt-oss (harmony): start of an assistant message
+    "<|channel|>",           # gpt-oss (harmony): the commentary/analysis channel header
+    "to=functions.",         # gpt-oss (harmony): the recipient of a tool call, `to=functions.<name>`
+)
+
+
+def leaked_tool_tokens(comp: Completion) -> list[str]:
+    """The `LEAKED_TOOL_TOKENS` a reply without tool calls holds in its text: the model wrote a tool call as text."""
+    if comp.message.get("tool_calls"):
+        return []
+    text = str(comp.message.get("content") or "")
+    return [t for t in LEAKED_TOOL_TOKENS if t in text]
+
+
+def rejected_reply(comp: Completion, slot: Any, offered_tools: bool) -> tuple[str, str] | None:
+    """(kind, message) when a reply that came back is malformed and must not be used (HF-1), else None.
+
+    - cut_off: it stopped at the output limit (`CUT_OFF_REASONS`) inside a tool call, or, on a call that offered
+      tools, before it held any text or tool call (reasoning used every token).
+    - leaked_tool_call: on a call that offered tools, its text holds tool-call syntax (`LEAKED_TOOL_TOKENS`).
+    Calls without tools (compaction, the judge) keep their own handling of an empty or odd reply.
+    The message is what the model is shown on a re-ask (`RECOVERY_NOTE`): generic, it never names the task."""
+    limit = getattr(slot, "max_output_tokens", None)
+    at = f" ({limit} tokens)" if limit else ""
+    if comp.finish_reason in CUT_OFF_REASONS:
+        cut = cut_off_tool_calls(comp)
+        if cut:
+            names = ", ".join(cut[:3]) + (f" and {len(cut) - 3} more" if len(cut) > 3 else "")
+            where = f"inside a call to {names}"
+        elif offered_tools and not _has_text(comp):
+            where = "before it held any text or tool call"
+        else:
+            where = None
+        if where:
+            return "cut_off", (f"reply cut off at the output limit{at} {where}, so none of it was run. A shorter "
+                               f"reply fits, or split the work over several calls.")
+    if offered_tools:
+        leaked = leaked_tool_tokens(comp)
+        if leaked:
+            return "leaked_tool_call", ("the reply held tool-call tokens as text, not a tool call, so nothing was "
+                                        "run. Call tools through the tool interface, or answer in plain text.")
+    return None
+
+
+class MalformedReply(HarnessError):
+    """A reply that came back but is malformed (MODEL_PARSE: malformed output; HF-1). Unlike a reply the provider
+    refuses, this one was a real call whose tokens were spent: `completion` carries them, so the budget counts the
+    step, and the reply itself is never replayed or run."""
 
     def __init__(self, message: str, completion: Completion) -> None:
         super().__init__(ErrorKind.MODEL_PARSE, message)
         self.completion = completion
+
+
+class CutOffReply(MalformedReply):
+    """A reply cut off at the output limit (#108): in the middle of a tool call, or before it held anything."""
+
+
+class LeakedToolCallReply(MalformedReply):
+    """A reply whose text holds tool-call syntax instead of a tool call (`LEAKED_TOOL_TOKENS`)."""
+
+
+_REJECTIONS: dict[str, type[MalformedReply]] = {"cut_off": CutOffReply, "leaked_tool_call": LeakedToolCallReply}
 
 
 class Backend(Protocol):
@@ -418,18 +474,16 @@ class ModelGateway:
                     self.tracer.llm_response(span, messages, comp.message, comp.tokens_in, comp.tokens_out)
                     self.ledger.record_tokens(bucket, comp.tokens_in + comp.tokens_out, reserve)
                     self.successful_calls += 1
-                    cut = cut_off_tool_calls(comp)
-                    if not cut:
+                    rejected = rejected_reply(comp, slot, bool(tools))
+                    if rejected is None:
                         return comp
                     # A real call, so the span stays ok (budget, cost and the ledger count it), marked rejected
                     # as V4 marks an invalid plan: the trajectory grader counts it as an invalid call.
+                    kind, why = rejected
                     span.error = ErrorKind.MODEL_PARSE.value
-                    why = (f"reply cut off at the output limit (max_output_tokens {slot.max_output_tokens}, "
-                           f"finish_reason {comp.finish_reason}) inside a call to {', '.join(cut)}: its arguments "
-                           f"are incomplete JSON")
-                    span.attributes["rejected"] = f"cut_off: {why}"[:300]
+                    span.attributes["rejected"] = f"{kind}: {why}"[:300]
                     break                     # raised outside the span, which would otherwise be marked failed
             attempt += 1
             self.infra_wait_s += wait
             await self._sleep(wait)
-        raise CutOffReply(why, comp)
+        raise _REJECTIONS[kind](why, comp)
