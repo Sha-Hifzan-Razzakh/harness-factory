@@ -22,6 +22,9 @@ hfx results --cells       # per-cell E0, C, cost-adjusted E, bootstrap CI, pass 
 pytest -q -n auto         # ~215 tests in parallel (Docker tests skip without a daemon)
 ```
 
+**Windows.** `PYTHONUTF8=1` is no longer needed. `hfx` prints UTF-8 on any console, the graders read agent files
+as UTF-8, and `hfx bench` and `hfx report --out` write their reports and manifests as UTF-8 (#129).
+
 ## Adding things: `hfx new` and `hfx catalog`
 
 Prompts, skills, recipes, tool servers and fault profiles can be added without editing files by hand. Every change
@@ -1941,6 +1944,10 @@ A grader is registered with `@register_grader` (`grading/base.py`) and declares:
 
 `default_pipeline()` holds every registered grader, so a new one needs no core edit. `state_diff` (outcome) and
 `trajectory` (trajectory) are the built-ins. A task with only these two scores exactly as before.
+
+`state_diff` version 2 (#129) reads agent files as UTF-8 on every platform. Version 1 used the locale encoding,
+so on Windows (cp1252) a file holding "—", "§" or "’" could fail `file_contains`, `file_regex`, `json_lines` or
+`json_schema`. On Linux and macOS both versions give the same grades.
 
 **End states.** After grading, each run keeps what it left behind next to its trace, in
 `<trace>.endstate.zip`: the workspace files, the task database, the before-state, the spans the graders saw and

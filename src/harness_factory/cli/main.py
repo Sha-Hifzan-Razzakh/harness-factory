@@ -10,6 +10,20 @@ from rich.table import Table
 
 from harness_factory import settings
 
+
+def _utf8_console() -> None:
+    """Print UTF-8 on every console (RW-17): a cp1252 Windows console raised on "ΔE" or "🏃" before. PYTHONUTF8 is
+    no longer needed. Streams without `reconfigure` (some IDE consoles, wrapped streams) or that refuse it are left alone."""
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
+_utf8_console()
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Harness Factory")
 console = Console()
 
@@ -693,7 +707,7 @@ def report(out: str | None = typer.Option(None, "--out", help="write markdown he
                         signals=signals)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
-        Path(out).write_text(text + "\n")
+        Path(out).write_text(text + "\n", encoding="utf-8")
         console.print(f"wrote {out}")
     else:
         print(text)

@@ -203,7 +203,7 @@ async def test_verdicts_carry_their_identity(factory):
     task = factory.tasks.get("docs-03")
     assert j["judge_hash"] == factory.judge.hash
     assert j["rubric_hash"] == rubric_hash(task.oracle.rubric_checks()[0].rubric)
-    assert rec.grades[0]["version"] == "1"
+    assert rec.grades[0]["version"] == "2"                             # state_diff 2 (#129: UTF-8 reads)
 
 
 # ---- gateway, quota and cost separation -----------------------------------------------------------------------
