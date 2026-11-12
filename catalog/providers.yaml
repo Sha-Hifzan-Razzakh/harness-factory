@@ -5,15 +5,18 @@ providers:
   - id: scripted
     kind: scripted
     data_terms: local
+    # The scripted models stand in for the real ones (131K-1M contexts), so they get a real-sized context: with the
+    # 32,768 default, recipes asking for long replies (the DegreeAudit lab's 32,768-token v2-audit) failed
+    # `hfx validate` against these test models only (#130). Tests that need a small context set it themselves.
     models:
-      - {canonical: scripted/replay, provider_model_id: replay}   # follows the reference plan
-      - {canonical: scripted/noisy,  provider_model_id: noisy}    # one bad call first, then recovers
-      - {canonical: scripted/lazy,   provider_model_id: lazy}     # stops one step early
-      - {canonical: scripted/retry,  provider_model_id: retry}    # retries a step after a tool error
-      - {canonical: scripted/invent, provider_model_id: invent}   # first call names a tool that doesn't exist
-      - {canonical: scripted/delegate, provider_model_id: delegate}   # hands the task to a helper when it can
+      - {canonical: scripted/replay, provider_model_id: replay, caps: {context_len: 131072}}   # follows the reference plan
+      - {canonical: scripted/noisy,  provider_model_id: noisy, caps: {context_len: 131072}}    # one bad call first, then recovers
+      - {canonical: scripted/lazy,   provider_model_id: lazy, caps: {context_len: 131072}}     # stops one step early
+      - {canonical: scripted/retry,  provider_model_id: retry, caps: {context_len: 131072}}    # retries a step after a tool error
+      - {canonical: scripted/invent, provider_model_id: invent, caps: {context_len: 131072}}   # first call names a tool that doesn't exist
+      - {canonical: scripted/delegate, provider_model_id: delegate, caps: {context_len: 131072}}   # hands the task to a helper when it can
       # No native tool calling: writes its calls as JSON text, which tool-call emulation (instructor) parses (SUB-02)
-      - {canonical: scripted/emulated, provider_model_id: emulated, caps: {tool_calling: emulated}}
+      - {canonical: scripted/emulated, provider_model_id: emulated, caps: {tool_calling: emulated, context_len: 131072}}
 
   # The offline rubric judge (grading/judge.ScriptedJudgeBackend, ADR 0014): deterministic, never calibrated.
   # Its own provider, so a smoke over the scripted provider's models never runs it as an agent.
@@ -21,7 +24,7 @@ providers:
     kind: scripted
     data_terms: local
     models:
-      - {canonical: scripted/judge, provider_model_id: judge}
+      - {canonical: scripted/judge, provider_model_id: judge, caps: {context_len: 131072}}
 
   - id: groq
     kind: litellm
