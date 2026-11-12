@@ -132,3 +132,12 @@ def test_adding_the_fields_left_every_existing_model_hash_alone():
     assert set(_model_identity(m)["caps"]) == {"tool_calling", "structured_output", "context_len"}
     full = ServedModel(**FULL)
     assert _model_identity(full)["endpoint"]["order"] == ["deepinfra", "together"]
+
+
+def test_scripted_models_have_a_real_sized_context():
+    """#130: the scripted models stand in for real ones, so a recipe asking for a long reply validates against them
+    (the 32,768 default refused the DegreeAudit lab's v2-audit). Tests needing a small context set their own."""
+    cat = load_provider_catalog(settings.PROVIDERS_FILE)
+    scripted = [(p.id, m) for p in cat.providers if p.kind == "scripted" for m in p.models]
+    assert len(scripted) >= 8
+    assert {m.canonical: m.caps.context_len for _, m in scripted} == {m.canonical: 131072 for _, m in scripted}
