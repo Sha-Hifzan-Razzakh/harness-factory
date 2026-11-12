@@ -29,6 +29,7 @@ branch and ADR number, so they don't collide. Read it before opening a PR or wri
 | `session_01BgTbLLwunk5SUBezW33oS5` | `session:addons` | Catalog add-ons: private catalogs that plug into the factory from outside the repo |
 | `session_01BgTbLKg8F6MXLBFVeupkLx` | `session:addon-skills` | Add-on skills: skills in a catalog add-on |
 | `session_01BgTbLM73ireRFcS43br5Ny` | `session:triage` | Review of the DegreeAudit lab runs (9–10 Nov); reserves the fixes it found for the sessions that own that code (#108–#114, #116–#117), and the model-routing plan's MR0–MR1 work (#119–#126) |
+| `session_01BgTbLMbAAFAwjiM5Yh9tCc` | `session:lab-review` | Review of the DegreeAudit lab rounds Q01–Q03 (11–12 Nov); reserves the harness fixes they found for the sessions that own that code (#128–#130) |
 
 Session URLs: `https://claude.ai/code/<session id>`.
 
@@ -121,6 +122,10 @@ Session URLs: `https://claude.ai/code/<session id>`.
 | #125 | `feat/budget-notice` | `…JtRe49bgfAAmdaB6W` | Recipe dimension: budget notice (calls and steps left) (plan C1, MR1) | ready for review (CI green) | no until a recipe sets it |
 | #126 | `feat/finish-check` | `…JtRe49bgfAAmdaB6W` | Recipe dimension: finish check before the run ends (plan C2, MR1) | ready for review (CI green) | no until a recipe sets it |
 | #127 | `chore/ledger-mr-plan` | `…JtRe49bgfAAmdaB6W` | These ledger rows: #119–#127, statuses of #115–#118, two conflict-marker lines removed | open | no |
+| #128 | `fix/cut-off-replies` | `…LMbAAFAwjiM5Yh9tCc` → `session:authoring` | Gateway: a reply cut off at the output limit with no content or with closed-but-incomplete tool calls, and a reply of leaked tool-call tokens, are MODEL_PARSE, so `recover_malformed` re-asks (lab RW-14, RW-15) | draft, reserved | no hash; run status logic (these runs end `malformed_output`, not `done`) |
+| #129 | `fix/utf8-grader-bench` | `…LMbAAFAwjiM5Yh9tCc` → `session:addons` | UTF-8 in the grader's file reads, the bench report and the console (lab RW-10, RW-16, RW-17) | draft, reserved | no hash; `state_diff` version bump (scoring on Windows only) |
+| #130 | `chore/scripted-context` | `…LMbAAFAwjiM5Yh9tCc` → `session:authoring` | Scripted models: `context_len` 131,072, so recipes with long replies (DegreeAudit v2-audit, 32K) validate | draft, reserved | no (caps aren't hashed) |
+| #131 | `chore/ledger-lab-review` | `…LMbAAFAwjiM5Yh9tCc` | These ledger rows and the §4 packages for #128–#130 in `handoff.md` | open | no |
 
 
 Shared files the #29–#32 stack touches (append-only): `README.md` (new sections before *Real models*, three
