@@ -374,7 +374,7 @@ def toy():
 async def test_registered_grader_feeds_trajectory(factory, toy):
     from harness_factory.substrate.gateway import ScriptedBackend
     factory.graders = default_pipeline()                     # the registry, now holding the toy grader
-    assert factory.graders.versions() == {"state_diff": "1", "trajectory": "1", "toy": "7"}
+    assert factory.graders.versions() == {"state_diff": "2", "trajectory": "1", "toy": "7"}
     task = factory.tasks.get("fs-01")
     plain = await run_one(factory, task, factory.recipes["v2-base"], "scripted/replay", "scripted")
     task.grader_ids = [*task.grader_ids, "toy"]
@@ -450,9 +450,9 @@ def test_pipeline_safety_and_declarations(tmp_path, factory):
 async def test_grader_versions_stored(factory):
     rec = await run_one(factory, factory.tasks.get("fs-01"), factory.recipes["v2-base"], "scripted/replay",
                         "scripted")
-    assert {g["grader_id"]: g["version"] for g in rec.grades} == {"state_diff": "1", "trajectory": "1"}
+    assert {g["grader_id"]: g["version"] for g in rec.grades} == {"state_diff": "2", "trajectory": "1"}
     row = factory.store.rows()[-1]
-    assert row["grader_versions"] == {"state_diff": "1", "trajectory": "1"}
+    assert row["grader_versions"] == {"state_diff": "2", "trajectory": "1"}
     assert row["endstate_path"] and Path(row["endstate_path"]).is_file()
 
 
@@ -495,7 +495,7 @@ async def test_regrade_end_to_end(factory):
     assert (kept["status"], kept["outcome"], kept["composite"]) == (row["status"], row["outcome"], row["composite"])
     stored = factory.store.regrade_rows(row["id"])
     assert [r["changed"] for r in stored] == [0, 1]
-    assert stored[1]["grader_versions"] == {"state_diff": "1", "trajectory": "1"}
+    assert stored[1]["grader_versions"] == {"state_diff": "2", "trajectory": "1"}
     assert stored[1]["outcome"] == changed.after.outcome and stored[1]["task_hash"] == task.content_hash()
     assert len(factory.store.rows()) == 1                      # aggregation still reads only the run
 

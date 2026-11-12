@@ -175,7 +175,7 @@ def _number_close(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
             p = (ctx.workspace / c.path).resolve()
             if not p.is_file():
                 return False, f"missing file {c.path}"
-            text, where = p.read_text(errors="replace"), c.path
+            text, where = p.read_text(encoding="utf-8", errors="replace"), c.path
         else:
             text, where = _output(ctx), "answer"
         if c.select is not None:
@@ -210,7 +210,7 @@ def _json_schema(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
     if not p.is_file():
         return False, f"missing file {c.path}"
     try:
-        doc = json.loads(p.read_text(errors="replace"))
+        doc = json.loads(p.read_text(encoding="utf-8", errors="replace"))
     except ValueError as e:
         return False, f"invalid JSON: {e}"
     validator = validators.validator_for(c.json_schema)(c.json_schema)
@@ -255,7 +255,7 @@ def _json_lines(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
     if not p.is_file():
         return False, f"missing file {c.path}"
     try:
-        lines = _pointer(json.loads(p.read_text(errors="replace")), spec.pointer)
+        lines = _pointer(json.loads(p.read_text(encoding="utf-8", errors="replace")), spec.pointer)
     except ValueError as e:
         return False, f"invalid JSON: {e}"
     if lines is _MISSING:
@@ -327,7 +327,7 @@ def _rubric(ctx: GradeContext, c: WeightedCheck) -> tuple[bool, str]:
 
 class StateDiffGrader:
     id = "state_diff"
-    version = "1"
+    version = "2"  # 2: agent files are read as UTF-8 on every platform (was the locale encoding, cp1252 on Windows)
     family = "outcome"
     combine = "product"
 
@@ -350,7 +350,7 @@ class StateDiffGrader:
                 return (not p.exists(), "absent" if not p.exists() else "file exists")
             if not p.is_file():
                 return False, f"missing file {c.path}"
-            body = p.read_text(errors="replace")
+            body = p.read_text(encoding="utf-8", errors="replace")
             if c.kind == "json_valid":
                 try:
                     json.loads(body)

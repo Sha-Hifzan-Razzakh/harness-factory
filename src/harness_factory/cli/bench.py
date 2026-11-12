@@ -136,7 +136,7 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
         if section := b.reach_section(left_out, reduced, no_model):
             text = f"{text}\n\n{section}"
         report_path = out_dir / "report.md"
-        report_path.write_text(text + "\n")
+        report_path.write_text(text + "\n", encoding="utf-8")
         console.print(f"wrote {report_path}")
     b.record_outcome(out_dir, runs=len(recs), success=ok, errors=len(errors), unfinished=unfinished,
                      baseline=baseline.id, baseline_frozen=baseline_id is not None,
@@ -147,4 +147,4 @@ def bench(path: str = typer.Argument(..., help="benchmark file, shaped like docs
 
 def _manifest_keys(out_dir: Path) -> list[str]:
     import json
-    return json.loads((out_dir / "manifest.json").read_text())["run_keys"]
+    return json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))["run_keys"]

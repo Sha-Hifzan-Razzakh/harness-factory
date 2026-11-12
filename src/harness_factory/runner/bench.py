@@ -314,7 +314,7 @@ def store_file(f, bench: BenchmarkFile, raw: bytes, source: Path, specs: list, *
     d.mkdir(parents=True, exist_ok=True)
     (d / "benchmark.yaml").write_bytes(raw)
     manifest_path = d / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
     keys = [run_key_for(f.tasks.get(s.task_id), f.recipes[s.recipe_id], s.canonical_model, s.provider, s.seed,
                         declared=f.declared, providers=f.providers, fault=f.fault(s.fault)).as_str() for s in specs]
     invocations = manifest.get("invocations", [])
@@ -329,16 +329,16 @@ def store_file(f, bench: BenchmarkFile, raw: bytes, source: Path, specs: list, *
     no_model = model_reach(f, bench)
     if no_model:
         manifest["models_left_out"] = [{"recipe": r, "model": m, "reasons": why} for r, m, why in no_model]
-    manifest_path.write_text(json.dumps(manifest, indent=1))
+    manifest_path.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     return d
 
 
 def record_outcome(d: Path, **fields) -> None:
     """Add what the last invocation produced (baseline id, report path, counts) to the manifest."""
     path = d / "manifest.json"
-    manifest = json.loads(path.read_text())
+    manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["invocations"][-1].update(fields)
-    path.write_text(json.dumps(manifest, indent=1))
+    path.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
 
 
 _PAIR = re.compile(r"^\s*([^:,\s]+)\s*:\s*([^:,\s]+)\s*$")
