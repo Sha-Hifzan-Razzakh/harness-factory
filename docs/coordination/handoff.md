@@ -325,6 +325,56 @@ The general gates in §3 step 5 apply to every package as well.
 > package sections below keep their original numbers. Commits must keep the committer the session's signing
 > identity: set the author with `--author`, not `-c user.name/-c user.email`, or the signature shows as unverified.
 
+### #128 Gateway: cut-off and leaked replies are malformed (`fix/cut-off-replies`)
+
+- **Goal:** a reply cut off at the output limit, or a reply of leaked tool-call tokens, gets the one re-ask
+  `recover_malformed` allows and, after that, ends as `malformed_output` instead of a final answer.
+- **Scope:** in `substrate/gateway.py`, a `finish_reason` in `CUT_OFF_REASONS` with tool calls (even ones whose JSON
+  parses) or with no content raises `CutOffReply`; content holding `<|call|>`, `<|start|>assistant`, `<|channel|>` or
+  `to=functions.` with no tool calls is MODEL_PARSE. The message tells the model the reply hit the limit and that a
+  shorter reply or several smaller calls fit. Full brief: the PR body.
+- **Evidence:** DegreeAudit lab Q02 (deepseek-v4.1-flash: 18 of 21 runs empty at 12,288 tokens), Q03
+  (claude-haiku-5.5: path-only `fs.write_file` calls on 4 of 7 tasks), Q02 (gpt-oss-120b: 6 runs ended on raw
+  tool-call tokens).
+- **Files:** `src/harness_factory/substrate/gateway.py`; gateway tests.
+- **Impact:** run status logic (call it out in the PR); no hash.
+- **ADR:** none.
+- **Depends on:** nothing.
+- **Done when:**
+  - [ ] the three reply shapes are re-asked with `recover_malformed: 1` and end `malformed_output` without it;
+  - [ ] normal `stop` replies and whole tool calls are unchanged (offline scripted tests).
+
+### #129 UTF-8 in the grader, the bench report and the console (`fix/utf8-grader-bench`)
+
+- **Goal:** results don't depend on the machine's default encoding.
+- **Scope:** `encoding="utf-8"` on the file reads in `grading/state.py` (bump `state_diff`'s version) and on
+  `report.md` in `cli/bench.py`; the `hfx` entry point reconfigures stdout and stderr to UTF-8 with
+  `errors="replace"`. Full brief: the PR body.
+- **Evidence:** DegreeAudit lab Q01–Q03 on Windows: a garbled `—` in a schema error, the bench crash on "ΔE", 91
+  MLflow runs stuck at RUNNING on an emoji.
+- **Files:** `grading/state.py`, `cli/bench.py`; shared `cli/main.py` (one line); tests.
+- **Impact:** scoring on Windows only (grader version); no hash.
+- **ADR:** none.
+- **Depends on:** nothing.
+- **Done when:**
+  - [ ] a non-ASCII file grades the same under a cp1252 default as under UTF-8;
+  - [ ] `hfx bench` writes a report with "ΔE" under a cp1252 console.
+
+### #130 Scripted models: a real-sized context (`chore/scripted-context`)
+
+- **Goal:** recipes that ask for long replies validate against the scripted models that stand in for real ones.
+- **Scope:** `caps: {context_len: 131072}` on the eight scripted models in `catalog/providers.yaml`. Full brief and
+  diff: the PR body.
+- **Evidence:** with the DegreeAudit add-on's 32K-reply v2-audit, `hfx validate` fails 40 recipes against the scripted
+  models only; with this change, 0. `test_context`, `test_scripted_plan_lines`, `test_model_caps` pass.
+- **Files:** `catalog/providers.yaml`.
+- **Impact:** none on hashes (caps aren't hashed).
+- **ADR:** none.
+- **Depends on:** nothing. DegreeAudit request #65 depends on it for `hfx validate`.
+- **Done when:**
+  - [ ] the full suite and `hfx smoke --models scripted/replay --strict` pass;
+  - [ ] `hfx validate` with the DegreeAudit add-on reports 0 failures.
+
 ## 5. Ready for review, not open for handover
 
 #82 (task batch 3, was #34), #35 (calibration) and #37 (test-matrix notes) are built and waiting for review. A reviewing
