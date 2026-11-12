@@ -945,6 +945,17 @@ the environment, PARTIAL at most), or, with `config.recover_malformed`, the mode
 again. Before this, the broken arguments were replayed, the provider refused the next request as a setup error,
 and the run was ERROR and left out of the cell's mean.
 
+Since HF-1 (`gateway.rejected_reply`), three more reply shapes are malformed in the same way, on any call that
+offers tools. A reply stopped at the output limit with tool calls is cut off even when their JSON parses: it never
+finished its calls (Anthropic closes the JSON, so `{"path": ...}` arrives without `content`), and none of them run.
+A reply stopped at the output limit with no tool calls and no text is cut off too: its reasoning used every output
+token. A reply without tool calls whose text holds tool-call syntax (`gateway.LEAKED_TOOL_TOKENS`, such as gpt-oss's
+`<|call|>` or `to=functions.`) is rejected as `leaked_tool_call`; a text that only mentions functions is not. The
+model_call span's `rejected` attribute names the kind (`cut_off` or `leaked_tool_call`). The note on a re-ask says
+the reply hit the output limit and that a shorter reply, or the work split over several calls, fits; it never names
+the task's files, checks or grading. Calls without tools (compaction, the judge) keep their own handling. These
+runs used to end `done`, graded as if the agent had quit.
+
 **Structured plans, concurrent workers, parallel tool calls.** `planning.structured: true` makes V4 and V5 ask for
 a JSON plan (steps with `id`, `instruction`, tool hints, `depends_on`, `done_when`), validated before anything runs.
 A plan that doesn't validate is re-asked with the reason (`planning.plan_retries`, default 1; each re-ask is an
